@@ -40,7 +40,7 @@ app.use('*', async (c, next) => {
 
 app.get('/', (c) => c.redirect(c.env.FRONTEND_URL, 302));
 app.get('/api', (c) =>
-  c.json({ success: true, message: 'ThreadForge API', version: '1.0.0' })
+  c.json({ success: true, message: 'CreatorOS API', version: '1.0.0' })
 );
 
 // ─── Routes ───────────────────────────────────────────────────────────────────

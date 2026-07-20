@@ -75,7 +75,7 @@ export default function OnboardingPage() {
         {step === 1 && (
           <div className='space-y-6'>
             <div>
-              <h1 className='text-2xl font-bold mb-1'>Welcome to ThreadForge</h1>
+              <h1 className='text-2xl font-bold mb-1'>Welcome to CreatorOS</h1>
               <p className='text-gray-400'>Let's set up your first workspace.</p>
             </div>
 

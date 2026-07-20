@@ -1,4 +1,4 @@
-# ThreadForge
+# CreatorOS
 
 AI-powered content creation and publishing platform. Chat with an AI to create posts for Instagram and TikTok.
 
@@ -18,7 +18,7 @@ AI-powered content creation and publishing platform. Chat with an AI to create p
 ## Project Structure
 
 ```
-thread-forge/
+creator-os/
 ├── backend/           # Hono.js Cloudflare Worker
 │   ├── src/
 │   │   ├── index.ts          # Entry + scheduled cron
@@ -48,10 +48,10 @@ thread-forge/
 cd backend && npx wrangler login
 
 # Create D1 database
-npx wrangler d1 create thread-forge-db
+npx wrangler d1 create creator-os-db
 
 # Create R2 bucket
-npx wrangler r2 bucket create thread-forge-assets
+npx wrangler r2 bucket create creator-os-assets
 
 # Create KV namespace
 npx wrangler kv namespace create TF_KV

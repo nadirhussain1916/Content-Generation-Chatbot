@@ -22,7 +22,7 @@ export default function LandingPage() {
           <div className='w-8 h-8 rounded-lg bg-violet-600 flex items-center justify-center'>
             <Zap size={16} className='text-white' />
           </div>
-          <span className='font-semibold text-lg'>ThreadForge</span>
+          <span className='font-semibold text-lg'>CreatorOS</span>
         </div>
         <div className='flex items-center gap-3'>
           <SignedOut>
@@ -55,7 +55,7 @@ export default function LandingPage() {
           viral content
         </h1>
         <p className='text-xl text-gray-400 mb-10 max-w-2xl mx-auto leading-relaxed'>
-          Describe your idea in a chat. ThreadForge generates captions, images, and video scripts — 
+          Describe your idea in a chat. CreatorOS generates captions, images, and video scripts — 
           then publishes directly to Instagram and TikTok in one click.
         </p>
         <SignUpButton mode='modal'>

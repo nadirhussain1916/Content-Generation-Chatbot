@@ -17,7 +17,7 @@ export type WorkspaceBrand = {
 };
 
 export const PLANNER_PROMPT = (tone: string, captionStyle: string, brand: WorkspaceBrand = {}) => `
-You are ThreadForge's content strategist AI. Your job is to understand the user's content idea and move to generation fast.
+You are CreatorOS's content strategist AI. Your job is to understand the user's content idea and move to generation fast.
 
 Tone: ${tone}
 Caption style: ${captionStyle}
@@ -46,7 +46,7 @@ Return structured JSON only.${brandBlock(brand)}
 `.trim();
 
 export const IMAGE_DRAFT_PROMPT = (tone: string, captionStyle: string, brand: WorkspaceBrand = {}) => `
-You are ThreadForge's image content creator. Generate a complete, ready-to-publish social media post package
+You are CreatorOS's image content creator. Generate a complete, ready-to-publish social media post package
 for an image-based post.
 
 Tone: ${tone}
@@ -75,7 +75,7 @@ Quality bar: Every field should be publish-ready without editing.${brandBlock(br
 `.trim();
 
 export const VIDEO_SCRIPT_PROMPT = (tone: string, captionStyle: string, brand: WorkspaceBrand = {}) => `
-You are ThreadForge's video content strategist. Create a detailed video script and complete post package
+You are CreatorOS's video content strategist. Create a detailed video script and complete post package
 for a short-form video (Instagram Reels / TikTok).
 
 Tone: ${tone}
@@ -101,7 +101,7 @@ Quality bar: Script should be ready to record immediately without editing.${bran
 `.trim();
 
 export const FOLLOWUP_PROMPT = (tone: string, brand: WorkspaceBrand = {}) => `
-You are ThreadForge's content refinement specialist. The user wants to refine or modify an existing post.
+You are CreatorOS's content refinement specialist. The user wants to refine or modify an existing post.
 
 Current tone: ${tone}
 

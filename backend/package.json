@@ -1,5 +1,5 @@
 {
-  "name": "thread-forge-backend",
+  "name": "creator-os-backend",
   "type": "module",
   "scripts": {
     "dev": "wrangler types; wrangler dev --env development",

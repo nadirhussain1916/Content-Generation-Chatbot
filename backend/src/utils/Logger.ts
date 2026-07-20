@@ -46,7 +46,7 @@ export class Logger {
       }
 
       const payload = {
-        text: `ThreadForge Alert`,
+        text: `CreatorOS Alert`,
         blocks: [
           {
             type: 'section',
