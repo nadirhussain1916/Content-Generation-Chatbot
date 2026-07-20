@@ -1,0 +1,101 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "thread-forge-backend",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-12-19",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "triggers": {
+    "crons": ["0 */6 * * *"]
+  },
+
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+
+  "env": {
+    "development": {
+      "vars": {
+        "ENVIRONMENT": "development",
+        "FRONTEND_URL": "http://localhost:5173",
+        "BACKEND_URL": "http://localhost:8787",
+        "MIGRATE_SECRET": "tf-migrate-dev-2026"
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "thread-forge-db",
+          "database_id": "REPLACE_WITH_YOUR_D1_ID"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "ASSETS",
+          "bucket_name": "thread-forge-assets",
+          "preview_bucket_name": "thread-forge-assets"
+        }
+      ],
+      "kv_namespaces": [
+        {
+          "binding": "KV",
+          "id": "REPLACE_WITH_YOUR_KV_ID",
+          "preview_id": "REPLACE_WITH_YOUR_KV_PREVIEW_ID"
+        }
+      ],
+      "workflows": [
+        {
+          "name": "generation-workflow",
+          "binding": "GENERATION_WORKFLOW",
+          "class_name": "GenerationWorkflow"
+        }
+      ]
+    }
+  },
+
+  "vars": {
+    "ENVIRONMENT": "production",
+    "FRONTEND_URL": "https://thread-forge.pages.dev",
+    "BACKEND_URL": "https://thread-forge-backend.zaibchahal.workers.dev"
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "thread-forge",
+      "database_id": "362cfea4-1e49-4489-abba-a113d76685c8"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "ASSETS",
+      "bucket_name": "thread-forge-assets",
+      "preview_bucket_name": "thread-forge-assets"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "KV",
+      "id": "9dec3a253d854d408022d53858729840",
+      "preview_id": "680e21604ce044a7a90a5b3718187ce6"
+    }
+  ],
+
+  "workflows": [
+    {
+      "name": "generation-workflow",
+      "binding": "GENERATION_WORKFLOW",
+      "class_name": "GenerationWorkflow"
+    }
+  ]
+
+  // Secrets (set via: wrangler secret put SECRET_NAME):
+  // CLERK_SECRET_KEY
+  // OPENAI_API_KEY
+  // META_APP_ID
+  // META_APP_SECRET
+  // TIKTOK_APP_ID
+  // TIKTOK_APP_SECRET
+  // REPLICATE_API_TOKEN
+  // SLACK_WEBHOOK_URL
+}

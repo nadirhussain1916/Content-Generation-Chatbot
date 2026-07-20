@@ -1,0 +1,25 @@
+{
+  "name": "thread-forge-backend",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler types; wrangler dev --env development",
+    "dev:remote": "wrangler dev --remote --env development",
+    "deploy": "wrangler deploy --minify",
+    "cf-typegen": "wrangler types --env-interface CloudflareBindings",
+    "migrate": "curl -s -X GET http://localhost:8787/api/migrate -H 'X-Migrate-Secret: tf-migrate-dev-2026' | cat",
+    "migrate:live": "curl -s -X GET https://thread-forge-backend.zaibchahal.workers.dev/api/migrate -H \"X-Migrate-Secret: $MIGRATE_SECRET\" | cat"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "^3.0.0",
+    "@clerk/backend": "^2.0.0",
+    "ai": "^6.0.0",
+    "hono": "^4.11.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260716.1",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0",
+    "wrangler": "^4.4.0"
+  }
+}
