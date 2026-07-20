@@ -62,8 +62,8 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "thread-forge",
-      "database_id": "362cfea4-1e49-4489-abba-a113d76685c8"
+      "database_name": "content-gen",
+      "database_id": "817de96b-2bb4-4b97-abbf-0250dada047d"
     }
   ],
   "r2_buckets": [
@@ -76,8 +76,8 @@
   "kv_namespaces": [
     {
       "binding": "KV",
-      "id": "9dec3a253d854d408022d53858729840",
-      "preview_id": "680e21604ce044a7a90a5b3718187ce6"
+      "id": "dd019f649ca94471823f631b1dfe5e85",
+      "preview_id": "7833db39bc0445ff8458c219e56b0b28"
     }
   ],
 
