@@ -55,8 +55,8 @@
 
   "vars": {
     "ENVIRONMENT": "production",
-    "FRONTEND_URL": "https://thread-forge.pages.dev",
-    "BACKEND_URL": "https://thread-forge-backend.zaibchahal.workers.dev"
+    "FRONTEND_URL": "https://content-generation-chatbot.pages.dev",
+    "BACKEND_URL": "https://agentos-backend.nadirhussain03000.workers.dev"
   },
 
   "d1_databases": [
