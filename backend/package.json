@@ -7,7 +7,7 @@
     "deploy": "wrangler deploy --minify",
     "cf-typegen": "wrangler types --env-interface CloudflareBindings",
     "migrate": "curl -s -X GET http://localhost:8787/api/migrate -H 'X-Migrate-Secret: tf-migrate-dev-2026' | cat",
-    "migrate:live": "curl -s -X GET https://thread-forge-backend.zaibchahal.workers.dev/api/migrate -H \"X-Migrate-Secret: $MIGRATE_SECRET\" | cat"
+    "migrate:live": "curl -s -X GET https://agentos-backend.nadirhussain03000.workers.dev/api/migrate -H \"X-Migrate-Secret: $MIGRATE_SECRET\" | cat"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.0",
