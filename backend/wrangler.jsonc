@@ -69,8 +69,8 @@
   "r2_buckets": [
     {
       "binding": "ASSETS",
-      "bucket_name": "thread-forge-assets",
-      "preview_bucket_name": "thread-forge-assets"
+      "bucket_name": "content-gen",
+      "preview_bucket_name": "content-gen"
     }
   ],
   "kv_namespaces": [
