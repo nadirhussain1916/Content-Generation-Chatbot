@@ -59,7 +59,7 @@ export default function ThreadPage() {
       `/api/workspaces/${slug}/threads/${threadId}/assets`,
       token ?? undefined
     );
-    if (!assetsRes.success || !assetsRes.data) return prevByMsgId;
+    if (!assetsRes.success || !assetsRes.data) return { nextByMsgId: prevByMsgId, hasInProgress: false };
 
     const nextByMsgId: Record<string, Asset> = {};
     for (const a of assetsRes.data) {
@@ -85,9 +85,7 @@ export default function ThreadPage() {
     if (pollTimer.current) clearTimeout(pollTimer.current);
     pollTimer.current = setTimeout(async () => {
       const result = await pollAssets(currentByMsgId);
-      if (result && typeof result === 'object' && 'hasInProgress' in result) {
-        if (result.hasInProgress) schedulePoll(result.nextByMsgId);
-      }
+      if (result?.hasInProgress) schedulePoll(result.nextByMsgId);
     }, POLL_INTERVAL_MS);
   }, [pollAssets]);
 

@@ -2,6 +2,8 @@ import { SignIn, SignUp } from '@clerk/clerk-react';
 import { useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { useAuth } from '@clerk/clerk-react';
+import { api } from '../lib/api';
+import type { TfResponse, Workspace } from '../types';
 import { Zap, MessageSquare, Image, Video, Share2, Sparkles } from 'lucide-react';
 
 const features = [
@@ -56,12 +58,30 @@ const clerkAppearance = {
 };
 
 export default function LandingPage() {
-  const { isSignedIn, isLoaded } = useAuth();
+  const { isSignedIn, isLoaded, getToken } = useAuth();
   const navigate = useNavigate();
   const [mode, setMode] = useState<'sign-in' | 'sign-up'>('sign-in');
 
   useEffect(() => {
-    if (isLoaded && isSignedIn) navigate('/onboarding');
+    if (!isLoaded || !isSignedIn) return;
+
+    (async () => {
+      try {
+        const token = await getToken();
+        const res = await api.get<TfResponse<Workspace[]>>(
+          '/api/workspaces',
+          token ?? undefined
+        );
+        const workspaces = res.data ?? [];
+        if (workspaces.length > 0) {
+          navigate(`/workspaces/${workspaces[0].slug}`, { replace: true });
+        } else {
+          navigate('/onboarding', { replace: true });
+        }
+      } catch {
+        navigate('/onboarding', { replace: true });
+      }
+    })();
   }, [isLoaded, isSignedIn]);
 
   return (

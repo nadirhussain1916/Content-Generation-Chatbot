@@ -2,20 +2,20 @@ import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Check } from 'lucide-react';
 import { cn } from '../lib/utils';
 
-interface ModelOption {
-  id: string;
+interface ModelOption<T extends string = string> {
+  id: T;
   label: string;
   desc: string;
 }
 
-interface ModelPickerProps {
-  options: readonly ModelOption[];
-  value: string;
-  onChange: (id: string) => void;
+interface ModelPickerProps<T extends string = string> {
+  options: readonly ModelOption<T>[];
+  value: T;
+  onChange: (id: T) => void;
   className?: string;
 }
 
-export default function ModelPicker({ options, value, onChange, className }: ModelPickerProps) {
+export default function ModelPicker<T extends string = string>({ options, value, onChange, className }: ModelPickerProps<T>) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
