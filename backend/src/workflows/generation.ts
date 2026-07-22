@@ -84,9 +84,10 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
           const res = await fetch(`https://api.replicate.com/v1/predictions/${p.predictionId}`, {
             headers: { Authorization: `Bearer ${this.env.REPLICATE_API_TOKEN}` },
           });
+          // minimax/video-01 returns output as a string URL; some models return string[]
           const prediction = await res.json() as {
             status: string;
-            output?: string[];
+            output?: string | string[];
             error?: string;
           };
 
@@ -98,12 +99,16 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
             };
           }
 
-          if (prediction.status !== 'succeeded' || !prediction.output?.[0]) {
+          const outputUrl = Array.isArray(prediction.output)
+            ? prediction.output[0]
+            : prediction.output;
+
+          if (prediction.status !== 'succeeded' || !outputUrl) {
             // Non-terminal (starting / processing) — throw to trigger retry with delay
             throw new Error(`Prediction still ${prediction.status}`);
           }
 
-          return { ok: true as const, url: prediction.output[0] };
+          return { ok: true as const, url: outputUrl };
         });
 
         // Handle permanent failure from Replicate

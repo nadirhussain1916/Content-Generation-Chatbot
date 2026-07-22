@@ -117,8 +117,13 @@ export default function SettingsPage() {
     <div className='flex h-screen bg-gray-950 text-white'>
       <Sidebar onNewThread={handleNewThread} />
 
-      <main className='flex-1 overflow-y-auto'>
-        <div className='max-w-2xl mx-auto px-6 py-8'>
+      <main className='flex-1 overflow-y-auto relative bg-gradient-to-br from-gray-950 via-gray-950 to-violet-950/25'>
+        {/* Ambient glows */}
+        <div className='pointer-events-none absolute inset-0 z-0'>
+          <div className='absolute -top-32 right-0 w-[600px] h-[600px] bg-violet-600/5 rounded-full blur-3xl' />
+          <div className='absolute bottom-0 left-1/4 w-96 h-96 bg-violet-800/5 rounded-full blur-3xl' />
+        </div>
+        <div className='relative z-10 max-w-2xl mx-auto px-6 py-8'>
           <div className='flex items-center gap-2 mb-8'>
             <Settings size={20} className='text-gray-400' />
             <h1 className='text-xl font-semibold'>Workspace settings</h1>

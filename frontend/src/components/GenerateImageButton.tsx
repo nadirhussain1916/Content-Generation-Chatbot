@@ -29,8 +29,14 @@ const POLL_TIMEOUT_MS = 120_000;
 export default function GenerateImageButton({ slug, threadId, message, existingAsset, onGenerated }: GenerateImageButtonProps) {
   const { getToken } = useAuth();
   const [loading, setLoading] = useState(false);
-  const [done, setDone] = useState(!!existingAsset);
-  const [error, setError] = useState<string | null>(null);
+  // only treat as done when the asset is actually ready — not failed/pending
+  const [done, setDone] = useState(existingAsset?.status === 'ready');
+  // pre-populate the error if the asset already failed before mounting
+  const [error, setError] = useState<string | null>(
+    existingAsset?.status === 'failed'
+      ? (existingAsset.error_message ?? 'Image generation failed')
+      : null
+  );
   const [imageModel, setImageModel] = useState(() => readPref(IMAGE_MODEL_KEY, DEFAULT_IMAGE_MODEL));
 
   // Parse AI-chosen size from package, default to square
@@ -137,27 +143,37 @@ export default function GenerateImageButton({ slug, threadId, message, existingA
         </div>
       )}
 
-      {/* Generate button */}
+      {/* Error banner */}
+      {error && !loading && (
+        <div className='flex items-start gap-1.5 bg-red-950/40 border border-red-700/40 rounded-lg px-3 py-2'>
+          <AlertCircle size={12} className='text-red-400 mt-0.5 flex-shrink-0' />
+          <p className='text-xs text-red-300 leading-snug'>{error}</p>
+        </div>
+      )}
+
+      {/* Generate / Retry button */}
       <div className='flex items-center gap-2'>
         <button
           onClick={handleGenerate}
           disabled={loading || done}
-          className='flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-blue-600 hover:bg-blue-500 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-lg transition-all'
+          className={cn(
+            'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white rounded-lg transition-all disabled:opacity-60 disabled:cursor-not-allowed',
+            error && !done
+              ? 'bg-red-600 hover:bg-red-500'
+              : 'bg-blue-600 hover:bg-blue-500'
+          )}
         >
           {loading ? (
             <Loader2 size={12} className='animate-spin' />
           ) : done ? (
             <CheckCircle size={12} />
+          ) : error ? (
+            <AlertCircle size={12} />
           ) : (
             <ImageIcon size={12} />
           )}
-          {loading ? 'Generating...' : done ? 'Image generated' : 'Generate image'}
+          {loading ? 'Generating...' : done ? 'Image generated' : error ? 'Retry' : 'Generate image'}
         </button>
-        {error && (
-          <span className='flex items-center gap-1 text-xs text-red-400'>
-            <AlertCircle size={11} /> {error}
-          </span>
-        )}
       </div>
     </div>
   );

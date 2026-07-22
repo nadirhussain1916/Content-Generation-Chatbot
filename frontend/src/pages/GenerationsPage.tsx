@@ -78,9 +78,15 @@ export default function GenerationsPage() {
     <div className='flex h-screen bg-gray-950 text-white'>
       <Sidebar onNewThread={() => navigate(`/workspaces/${slug}`)} />
 
-      <main className='flex-1 flex flex-col min-w-0 overflow-hidden'>
+      <main className='flex-1 flex flex-col min-w-0 overflow-hidden relative bg-gradient-to-br from-gray-950 via-gray-950 to-violet-950/25'>
+        {/* Ambient glows */}
+        <div className='pointer-events-none absolute inset-0 z-0'>
+          <div className='absolute -top-32 right-0 w-[600px] h-[600px] bg-violet-600/5 rounded-full blur-3xl' />
+          <div className='absolute bottom-0 left-1/4 w-96 h-96 bg-violet-800/5 rounded-full blur-3xl' />
+        </div>
+
         {/* Header */}
-        <header className='flex items-center justify-between px-6 py-4 border-b border-gray-800 bg-gray-900/50 flex-shrink-0'>
+        <header className='relative z-10 flex items-center justify-between px-6 py-4 border-b border-gray-800/60 bg-gray-950/60 backdrop-blur-sm flex-shrink-0'>
           <div className='flex items-center gap-3'>
             <div>
               <h1 className='text-base font-semibold'>Generations</h1>
@@ -120,7 +126,7 @@ export default function GenerationsPage() {
         </header>
 
         {/* Grid */}
-        <div className='flex-1 overflow-y-auto p-6'>
+        <div className='relative z-10 flex-1 overflow-y-auto p-6'>
           {loading ? (
             <div className='flex justify-center py-16'>
               <Loader2 size={22} className='animate-spin text-gray-500' />

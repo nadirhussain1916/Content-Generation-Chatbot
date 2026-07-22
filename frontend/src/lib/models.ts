@@ -22,6 +22,18 @@ export type ImageModelId = (typeof IMAGE_MODELS)[number]['id'];
 export const DEFAULT_IMAGE_MODEL: ImageModelId = 'gpt-image-1';
 export const IMAGE_MODEL_KEY = 'tf_image_model';
 
+// ─── Video generation models ──────────────────────────────────────────────────
+
+export const VIDEO_MODELS = [
+  { id: 'minimax/video-01',           label: 'MiniMax Video 01', desc: 'Fast · High quality · Default' },
+  { id: 'wavespeedai/wan-2.1-t2v-480p', label: 'WAN 2.1 (480p)',   desc: 'Open source · Faster · Smaller file' },
+  { id: 'wavespeedai/wan-2.1-t2v-720p', label: 'WAN 2.1 (720p)',   desc: 'Open source · Best resolution' },
+] as const;
+
+export type VideoModelId = (typeof VIDEO_MODELS)[number]['id'];
+export const DEFAULT_VIDEO_MODEL: VideoModelId = 'minimax/video-01';
+export const VIDEO_MODEL_KEY = 'tf_video_model';
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 export function readPref<T extends string>(key: string, fallback: T): T {

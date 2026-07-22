@@ -95,7 +95,12 @@ generateRouter.post('/video', async (c) => {
   const workspace = c.get('workspace');
 
   try {
-    const body = await c.req.json() as { threadId: string; prompt: string; messageId?: string };
+    const body = await c.req.json() as {
+      threadId: string;
+      prompt: string;
+      messageId?: string;
+      videoModel?: string;
+    };
     if (!body.threadId || !body.prompt) {
       return c.json<TfResponse<null>>({ success: false, message: 'threadId and prompt are required' }, 400);
     }
@@ -109,36 +114,65 @@ generateRouter.post('/video', async (c) => {
       return c.json<TfResponse<null>>({ success: false, message: 'Video generation is not configured' }, 501);
     }
 
-    // Resolve video params from workspace defaults
+    // ── Per-model config ──────────────────────────────────────────────────────
+    // Each entry defines the Replicate model slug and how to build its input.
+    // The workflow just polls the prediction ID — it doesn't need to know the model.
+    type VideoModelConfig = {
+      slug: string;
+      buildInput: (prompt: string, aspectRatio: string) => Record<string, unknown>;
+    };
+
+    const VIDEO_MODEL_CONFIGS: Record<string, VideoModelConfig> = {
+      'minimax/video-01': {
+        slug: 'minimax/video-01',
+        buildInput: (prompt) => ({
+          prompt,
+          prompt_optimizer: true,
+        }),
+      },
+      'wavespeedai/wan-2.1-t2v-480p': {
+        slug: 'wavespeedai/wan-2.1-t2v-480p',
+        buildInput: (prompt, aspectRatio) => ({
+          prompt,
+          aspect_ratio: aspectRatio,
+          disable_safety_checker: true,
+          negative_prompt: 'nsfw, nude, explicit, adult, sexual, violence, gore, disturbing',
+        }),
+      },
+      'wavespeedai/wan-2.1-t2v-720p': {
+        slug: 'wavespeedai/wan-2.1-t2v-720p',
+        buildInput: (prompt, aspectRatio) => ({
+          prompt,
+          aspect_ratio: aspectRatio,
+          disable_safety_checker: true,
+          negative_prompt: 'nsfw, nude, explicit, adult, sexual, violence, gore, disturbing',
+        }),
+      },
+    };
+
+    const modelId = body.videoModel ?? 'minimax/video-01';
+    const modelConfig = VIDEO_MODEL_CONFIGS[modelId] ?? VIDEO_MODEL_CONFIGS['minimax/video-01'];
+
+    // Resolve aspect ratio from workspace defaults (used by WAN models)
     const videoDimensions = workspace.default_video_dimensions ?? '1280x720';
     const [videoWidth, videoHeight] = videoDimensions.split('x').map(Number);
-    // WAN 2.1 t2v uses aspect_ratio string; duration is not a model input param
     const videoAspectRatio = videoWidth >= videoHeight ? '16:9' : '9:16';
 
-    // Replicate's platform-level filter can trigger E002 on business/marketing prompts.
-    // Prepending a neutral cinematic framing statement keeps the prompt clearly professional.
-    const safePrompt = `A professional cinematic video showing: ${body.prompt}`;
-
-    // Create the Replicate prediction — do NOT use Prefer:wait=5 here because
-    // holding a 5-second outgoing connection inside a Workers request handler
-    // triggers Cloudflare platform "internal error" on local dev and is fragile
-    // in production too. The Workflow will handle all polling durably.
-    const replicateRes = await fetch('https://api.replicate.com/v1/models/wavespeedai/wan-2.1-t2v-720p/predictions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${c.env.REPLICATE_API_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        input: {
-          prompt: safePrompt,
-          negative_prompt: 'nsfw, nude, explicit, adult, sexual, violence, gore, disturbing',
-          aspect_ratio: videoAspectRatio,
-          // Disable the model-level safety checker (belt-and-suspenders vs platform E002)
-          disable_safety_checker: true,
+    // Create the Replicate prediction — no Prefer:wait=5 to avoid Workers connection issues.
+    // The Workflow handles all polling durably.
+    const replicateRes = await fetch(
+      `https://api.replicate.com/v1/models/${modelConfig.slug}/predictions`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${c.env.REPLICATE_API_TOKEN}`,
+          'Content-Type': 'application/json',
         },
-      }),
-    });
+        body: JSON.stringify({
+          input: modelConfig.buildInput(body.prompt, videoAspectRatio),
+        }),
+      }
+    );
 
     if (!replicateRes.ok) {
       const errText = await replicateRes.text();
@@ -153,7 +187,7 @@ generateRouter.post('/video', async (c) => {
       return c.json<TfResponse<null>>({ success: false, message: `Failed to create Replicate prediction: ${prediction.error ?? 'unknown'}` }, 502);
     }
 
-    Logger.log('ReplicatePredictionCreated', { predictionId: prediction.id, prompt: safePrompt });
+    Logger.log('ReplicatePredictionCreated', { predictionId: prediction.id, prompt: body.prompt });
 
     const assetId = crypto.randomUUID();
     await createAsset(c.env.DB, {
