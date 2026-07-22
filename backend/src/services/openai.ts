@@ -96,11 +96,12 @@ export async function runPlanner(params: {
   tone: string;
   captionStyle: string;
   brand?: WorkspaceBrand;
+  textModel?: string;
 }): Promise<PlannerResult> {
   const openai = createOpenAI({ apiKey: params.apiKey });
 
   const { output: object } = await generateText({
-    model: openai.chat('gpt-4o'),
+    model: openai.chat(params.textModel ?? 'gpt-4o'),
     output: Output.object({ schema: PlannerSchema }),
     system: PLANNER_PROMPT(params.tone, params.captionStyle, params.brand),
     messages: buildHistory(params.messages),
@@ -117,11 +118,12 @@ export async function generateImageDraft(params: {
   tone: string;
   captionStyle: string;
   brand?: WorkspaceBrand;
+  textModel?: string;
 }): Promise<ImagePostPackage> {
   const openai = createOpenAI({ apiKey: params.apiKey });
 
   const { output: object } = await generateText({
-    model: openai.chat('gpt-4o'),
+    model: openai.chat(params.textModel ?? 'gpt-4o'),
     output: Output.object({ schema: ImagePostPackageSchema }),
     system: IMAGE_DRAFT_PROMPT(params.tone, params.captionStyle, params.brand),
     messages: buildHistory(params.messages),
@@ -136,11 +138,12 @@ export async function generateVideoScript(params: {
   tone: string;
   captionStyle: string;
   brand?: WorkspaceBrand;
+  textModel?: string;
 }): Promise<VideoPostPackage> {
   const openai = createOpenAI({ apiKey: params.apiKey });
 
   const { output: object } = await generateText({
-    model: openai.chat('gpt-4o'),
+    model: openai.chat(params.textModel ?? 'gpt-4o'),
     output: Output.object({ schema: VideoPostPackageSchema }),
     system: VIDEO_SCRIPT_PROMPT(params.tone, params.captionStyle, params.brand),
     messages: buildHistory(params.messages),
@@ -181,12 +184,14 @@ export async function runFollowup(params: {
   tone: string;
   captionStyle: string;
   brand?: WorkspaceBrand;
+  textModel?: string;
 }): Promise<FollowupResult> {
   const openai = createOpenAI({ apiKey: params.apiKey });
+  const model = openai.chat(params.textModel ?? 'gpt-4o');
 
   if (params.mediaType === 'image') {
     const { output } = await generateText({
-      model: openai.chat('gpt-4o'),
+      model,
       output: Output.object({ schema: ImageFollowupSchema }),
       system: FOLLOWUP_PROMPT(params.tone, params.brand),
       messages: buildHistory(params.messages),
@@ -197,7 +202,7 @@ export async function runFollowup(params: {
     return { mode: 'refined', reply: result.reply, package: result.package! as ImagePostPackage };
   } else {
     const { output } = await generateText({
-      model: openai.chat('gpt-4o'),
+      model,
       output: Output.object({ schema: VideoFollowupSchema }),
       system: FOLLOWUP_PROMPT(params.tone, params.brand),
       messages: buildHistory(params.messages),
@@ -215,7 +220,12 @@ export async function generateDalleImage(params: {
   apiKey: string;
   prompt: string;
   size?: '1024x1024' | '1024x1792' | '1792x1024';
+  imageModel?: string; // 'gpt-image-1' (default) | 'dall-e-3'
 }): Promise<string> {
+  const model = params.imageModel ?? 'gpt-image-1';
+  // dall-e-3 uses 'standard'/'hd'; gpt-image-1 uses 'auto'
+  const quality = model === 'dall-e-3' ? 'standard' : 'auto';
+
   const response = await fetch('https://api.openai.com/v1/images/generations', {
     method: 'POST',
     headers: {
@@ -223,11 +233,11 @@ export async function generateDalleImage(params: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'gpt-image-1',
+      model,
       prompt: params.prompt,
       n: 1,
       size: params.size ?? '1024x1024',
-      quality: 'auto',
+      quality,
     }),
   });
 

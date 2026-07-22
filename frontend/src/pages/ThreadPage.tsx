@@ -7,8 +7,10 @@ import type { TfResponse, Thread, Message, Asset } from '../types';
 import Sidebar from '../components/Sidebar';
 import ChatMessage from '../components/ChatMessage';
 import PublishBar from '../components/PublishBar';
+import ModelPicker from '../components/ModelPicker';
 import { Send, Loader2, ArrowLeft } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { TEXT_MODELS, DEFAULT_TEXT_MODEL, TEXT_MODEL_KEY, readPref, writePref } from '../lib/models';
 
 const POLL_INTERVAL_MS = 8000; // poll every 8 s — video generation can take 2-3 min
 
@@ -24,6 +26,7 @@ export default function ThreadPage() {
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sidebarRefreshKey, setSidebarRefreshKey] = useState(0);
+  const [textModel, setTextModel] = useState(() => readPref(TEXT_MODEL_KEY, DEFAULT_TEXT_MODEL));
   const initialMessageFiredRef = useRef(false);
   // keyed by message.id
   const [assetsByMessageId, setAssetsByMessageId] = useState<Record<string, Asset>>({});
@@ -181,7 +184,7 @@ export default function ThreadPage() {
         assistantMessage: Message;
       }>>(
         `/api/workspaces/${slug}/threads/${threadId}/messages`,
-        { content: content.trim() },
+        { content: content.trim(), textModel },
         token ?? undefined
       );
 
@@ -333,38 +336,49 @@ export default function ThreadPage() {
         {/* Input */}
         <div className='border-t border-gray-800 p-4'>
           <div className='max-w-3xl mx-auto'>
-            <div className='flex gap-3 items-end bg-gray-900 border border-gray-700 rounded-xl px-4 py-3 focus-within:border-violet-500 transition-colors'>
-              <textarea
-                ref={inputRef}
-                rows={1}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={
-                  thread?.status === 'planning'
-                    ? 'Describe what you want to create...'
-                    : 'Ask for changes, refinements, or say "looks good"...'
-                }
-                className='flex-1 bg-transparent text-sm text-white placeholder-gray-500 resize-none focus:outline-none max-h-32 overflow-y-auto'
-                style={{ height: 'auto' }}
-                onInput={(e) => {
-                  const el = e.currentTarget;
-                  el.style.height = 'auto';
-                  el.style.height = `${Math.min(el.scrollHeight, 128)}px`;
-                }}
-                disabled={thread?.status === 'published'}
-              />
-              <button
-                onClick={() => sendMessage(input)}
-                disabled={!input.trim() || sending || thread?.status === 'published'}
-                className='flex-shrink-0 p-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg transition-all'
-              >
-                {sending ? (
-                  <Loader2 size={16} className='animate-spin' />
-                ) : (
-                  <Send size={16} />
-                )}
-              </button>
+            <div className='bg-gray-900 border border-gray-700 rounded-xl focus-within:border-violet-500 transition-colors'>
+              <div className='flex gap-3 items-end px-4 pt-3 pb-2'>
+                <textarea
+                  ref={inputRef}
+                  rows={1}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder={
+                    thread?.status === 'planning'
+                      ? 'Describe what you want to create...'
+                      : 'Ask for changes, refinements, or say "looks good"...'
+                  }
+                  className='flex-1 bg-transparent text-sm text-white placeholder-gray-500 resize-none focus:outline-none max-h-32 overflow-y-auto'
+                  style={{ height: 'auto' }}
+                  onInput={(e) => {
+                    const el = e.currentTarget;
+                    el.style.height = 'auto';
+                    el.style.height = `${Math.min(el.scrollHeight, 128)}px`;
+                  }}
+                  disabled={thread?.status === 'published'}
+                />
+                <button
+                  onClick={() => sendMessage(input)}
+                  disabled={!input.trim() || sending || thread?.status === 'published'}
+                  className='flex-shrink-0 p-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg transition-all'
+                >
+                  {sending ? (
+                    <Loader2 size={16} className='animate-spin' />
+                  ) : (
+                    <Send size={16} />
+                  )}
+                </button>
+              </div>
+              {/* Model selector row */}
+              <div className='px-3 pb-2 flex items-center gap-1'>
+                <span className='text-xs text-gray-600'>Model</span>
+                <ModelPicker
+                  options={TEXT_MODELS}
+                  value={textModel}
+                  onChange={(id) => { setTextModel(id); writePref(TEXT_MODEL_KEY, id); }}
+                />
+              </div>
             </div>
             <p className='text-xs text-gray-600 mt-2 text-center'>
               Press Enter to send • Shift+Enter for new line

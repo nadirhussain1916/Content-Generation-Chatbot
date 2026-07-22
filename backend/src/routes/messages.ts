@@ -30,10 +30,11 @@ messagesRouter.post('/:threadId/messages', async (c) => {
       return c.json<TfResponse<null>>({ success: false, message: 'Thread not found' }, 404);
     }
 
-    const body = await c.req.json() as { content: string };
+    const body = await c.req.json() as { content: string; textModel?: string };
     if (!body.content?.trim()) {
       return c.json<TfResponse<null>>({ success: false, message: 'Message content is required' }, 400);
     }
+    const textModel = body.textModel ?? 'gpt-4o';
 
     // 1. Persist user message
     const userMsgId = crypto.randomUUID();
@@ -75,7 +76,7 @@ messagesRouter.post('/:threadId/messages', async (c) => {
     // 3. Route to the correct AI phase
     if (thread.status === 'planning') {
       // Planning phase — gather info and detect readiness
-      const planResult = await runPlanner({ apiKey: c.env.OPENAI_API_KEY, messages: history, tone, captionStyle, brand });
+      const planResult = await runPlanner({ apiKey: c.env.OPENAI_API_KEY, messages: history, tone, captionStyle, brand, textModel });
 
       if (planResult.mode === 'chat') {
         // Pure conversation — greetings, off-topic, etc.
@@ -88,11 +89,11 @@ messagesRouter.post('/:threadId/messages', async (c) => {
         messageType = 'draft';
 
         if (planResult.mediaType === 'image') {
-          const draft = await generateImageDraft({ apiKey: c.env.OPENAI_API_KEY, messages: history, tone, captionStyle, brand });
+          const draft = await generateImageDraft({ apiKey: c.env.OPENAI_API_KEY, messages: history, tone, captionStyle, brand, textModel });
           assistantContent = draft.content;
           postPackageJson = JSON.stringify(draft);
         } else {
-          const script = await generateVideoScript({ apiKey: c.env.OPENAI_API_KEY, messages: history, tone, captionStyle, brand });
+          const script = await generateVideoScript({ apiKey: c.env.OPENAI_API_KEY, messages: history, tone, captionStyle, brand, textModel });
           assistantContent = script.content;
           postPackageJson = JSON.stringify(script);
         }
@@ -110,6 +111,7 @@ messagesRouter.post('/:threadId/messages', async (c) => {
         tone,
         captionStyle,
         brand,
+        textModel,
       });
 
       if (followupResult.mode === 'chat') {

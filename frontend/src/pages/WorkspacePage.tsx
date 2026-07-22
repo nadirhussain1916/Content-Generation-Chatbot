@@ -4,7 +4,9 @@ import { useAuth } from '@clerk/clerk-react';
 import { api } from '../lib/api';
 import type { TfResponse, Thread, Workspace } from '../types';
 import Sidebar from '../components/Sidebar';
+import ModelPicker from '../components/ModelPicker';
 import { ArrowUp, Loader2, Zap, AlertCircle } from 'lucide-react';
+import { TEXT_MODELS, DEFAULT_TEXT_MODEL, TEXT_MODEL_KEY, readPref, writePref } from '../lib/models';
 
 export default function WorkspacePage() {
   const { slug } = useParams<{ slug: string }>();
@@ -13,6 +15,7 @@ export default function WorkspacePage() {
   const [input, setInput] = useState('');
   const [creating, setCreating] = useState(false);
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
+  const [textModel, setTextModel] = useState(() => readPref(TEXT_MODEL_KEY, DEFAULT_TEXT_MODEL));
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -93,35 +96,46 @@ export default function WorkspacePage() {
 
         {/* Input */}
         <div className='w-full max-w-2xl'>
-          <div className='relative flex items-end bg-gray-900 border border-gray-700 rounded-2xl px-4 pt-4 pb-3 focus-within:border-violet-500 transition-colors shadow-xl'>
-            <textarea
-              ref={textareaRef}
-              rows={1}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder='Describe what you want to create…'
-              className='flex-1 bg-transparent text-sm text-white placeholder-gray-500 resize-none focus:outline-none max-h-40 overflow-y-auto leading-relaxed pr-2'
-              style={{ height: 'auto' }}
-              onInput={(e) => {
-                const el = e.currentTarget;
-                el.style.height = 'auto';
-                el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
-              }}
-              disabled={creating}
-              autoFocus
-            />
-            <button
-              onClick={handleSubmit}
-              disabled={!input.trim() || creating}
-              className='flex-shrink-0 mb-0.5 w-8 h-8 flex items-center justify-center bg-violet-600 hover:bg-violet-500 disabled:opacity-30 disabled:cursor-not-allowed rounded-lg transition-all'
-            >
-              {creating ? (
-                <Loader2 size={15} className='animate-spin' />
-              ) : (
-                <ArrowUp size={15} />
-              )}
-            </button>
+          <div className='bg-gray-900 border border-gray-700 rounded-2xl focus-within:border-violet-500 transition-colors shadow-xl'>
+            <div className='flex items-end px-4 pt-4 pb-2 gap-3'>
+              <textarea
+                ref={textareaRef}
+                rows={1}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder='Describe what you want to create…'
+                className='flex-1 bg-transparent text-sm text-white placeholder-gray-500 resize-none focus:outline-none max-h-40 overflow-y-auto leading-relaxed'
+                style={{ height: 'auto' }}
+                onInput={(e) => {
+                  const el = e.currentTarget;
+                  el.style.height = 'auto';
+                  el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+                }}
+                disabled={creating}
+                autoFocus
+              />
+              <button
+                onClick={handleSubmit}
+                disabled={!input.trim() || creating}
+                className='flex-shrink-0 mb-0.5 w-8 h-8 flex items-center justify-center bg-violet-600 hover:bg-violet-500 disabled:opacity-30 disabled:cursor-not-allowed rounded-lg transition-all'
+              >
+                {creating ? (
+                  <Loader2 size={15} className='animate-spin' />
+                ) : (
+                  <ArrowUp size={15} />
+                )}
+              </button>
+            </div>
+            {/* Model selector row */}
+            <div className='px-3 pb-2.5 flex items-center gap-1'>
+              <span className='text-xs text-gray-600'>Model</span>
+              <ModelPicker
+                options={TEXT_MODELS}
+                value={textModel}
+                onChange={(id) => { setTextModel(id); writePref(TEXT_MODEL_KEY, id); }}
+              />
+            </div>
           </div>
           <p className='text-xs text-gray-600 mt-2.5 text-center'>
             Press Enter to send · Shift+Enter for new line

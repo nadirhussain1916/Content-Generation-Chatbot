@@ -4,6 +4,8 @@ import { api } from '../lib/api';
 import type { TfResponse, Asset, Message } from '../types';
 import { ImageIcon, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { cn } from '../lib/utils';
+import ModelPicker from './ModelPicker';
+import { IMAGE_MODELS, DEFAULT_IMAGE_MODEL, IMAGE_MODEL_KEY, readPref, writePref } from '../lib/models';
 
 type ImageSize = '1024x1024' | '1024x1792' | '1792x1024';
 
@@ -29,6 +31,7 @@ export default function GenerateImageButton({ slug, threadId, message, existingA
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(!!existingAsset);
   const [error, setError] = useState<string | null>(null);
+  const [imageModel, setImageModel] = useState(() => readPref(IMAGE_MODEL_KEY, DEFAULT_IMAGE_MODEL));
 
   // Parse AI-chosen size from package, default to square
   const pkgSize = (() => {
@@ -65,7 +68,7 @@ export default function GenerateImageButton({ slug, threadId, message, existingA
       const token = await getToken();
       const res = await api.post<TfResponse<{ assetId: string; status: string }>>(
         `/api/workspaces/${slug}/generate/image`,
-        { threadId, prompt, messageId: message.id, size },
+        { threadId, prompt, messageId: message.id, size, imageModel },
         token ?? undefined
       );
 
@@ -95,29 +98,41 @@ export default function GenerateImageButton({ slug, threadId, message, existingA
     <div className='space-y-2'>
       {/* Aspect ratio picker */}
       {!done && (
-        <div>
-          <p className='text-xs text-gray-500 mb-1.5'>Aspect ratio</p>
-          <div className='flex gap-1.5'>
-            {SIZE_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => !loading && setSize(opt.value)}
-                disabled={loading}
-                title={opt.desc}
-                className={cn(
-                  'px-2.5 py-1 text-xs font-mono rounded-lg border transition-all',
-                  size === opt.value
-                    ? 'bg-blue-600 border-blue-500 text-white'
-                    : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-blue-500 hover:text-white',
-                  loading && 'cursor-not-allowed opacity-50'
-                )}
-              >
-                {opt.label}
-              </button>
-            ))}
-            <span className='text-xs text-gray-600 self-center ml-1'>
-              {SIZE_OPTIONS.find(o => o.value === size)?.desc}
-            </span>
+        <div className='space-y-2'>
+          {/* Aspect ratio */}
+          <div>
+            <p className='text-xs text-gray-500 mb-1.5'>Aspect ratio</p>
+            <div className='flex gap-1.5'>
+              {SIZE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => !loading && setSize(opt.value)}
+                  disabled={loading}
+                  title={opt.desc}
+                  className={cn(
+                    'px-2.5 py-1 text-xs font-mono rounded-lg border transition-all',
+                    size === opt.value
+                      ? 'bg-blue-600 border-blue-500 text-white'
+                      : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-blue-500 hover:text-white',
+                    loading && 'cursor-not-allowed opacity-50'
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+              <span className='text-xs text-gray-600 self-center ml-1'>
+                {SIZE_OPTIONS.find(o => o.value === size)?.desc}
+              </span>
+            </div>
+          </div>
+          {/* Image model */}
+          <div className='flex items-center gap-1.5'>
+            <span className='text-xs text-gray-500'>Model</span>
+            <ModelPicker
+              options={IMAGE_MODELS}
+              value={imageModel}
+              onChange={(id) => { setImageModel(id); writePref(IMAGE_MODEL_KEY, id); }}
+            />
           </div>
         </div>
       )}

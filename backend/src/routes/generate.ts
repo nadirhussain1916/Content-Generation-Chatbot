@@ -35,6 +35,7 @@ generateRouter.post('/image', async (c) => {
     const body = await c.req.json() as {
       threadId: string; prompt: string; messageId?: string;
       size?: '1024x1024' | '1024x1792' | '1792x1024';
+      imageModel?: string;
     };
     if (!body.threadId || !body.prompt) {
       return c.json<TfResponse<null>>({ success: false, message: 'threadId and prompt are required' }, 400);
@@ -75,6 +76,7 @@ generateRouter.post('/image', async (c) => {
         r2KeyPrefix: `${workspace.id}/${body.threadId}/${assetId}`,
         prompt: body.prompt,
         size: imageSize as '1024x1024' | '1024x1792' | '1792x1024',
+        imageModel: body.imageModel,
       },
     });
 
@@ -113,26 +115,45 @@ generateRouter.post('/video', async (c) => {
     // WAN 2.1 t2v uses aspect_ratio string; duration is not a model input param
     const videoAspectRatio = videoWidth >= videoHeight ? '16:9' : '9:16';
 
-    // Start Replicate prediction immediately to get a predictionId for the Workflow
+    // Replicate's platform-level filter can trigger E002 on business/marketing prompts.
+    // Prepending a neutral cinematic framing statement keeps the prompt clearly professional.
+    const safePrompt = `A professional cinematic video showing: ${body.prompt}`;
+
+    // Create the Replicate prediction — do NOT use Prefer:wait=5 here because
+    // holding a 5-second outgoing connection inside a Workers request handler
+    // triggers Cloudflare platform "internal error" on local dev and is fragile
+    // in production too. The Workflow will handle all polling durably.
     const replicateRes = await fetch('https://api.replicate.com/v1/models/wavespeedai/wan-2.1-t2v-720p/predictions', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${c.env.REPLICATE_API_TOKEN}`,
         'Content-Type': 'application/json',
-        Prefer: 'wait=5',
       },
       body: JSON.stringify({
         input: {
-          prompt: body.prompt,
+          prompt: safePrompt,
+          negative_prompt: 'nsfw, nude, explicit, adult, sexual, violence, gore, disturbing',
           aspect_ratio: videoAspectRatio,
-          // Disable the model's built-in safety checker — it produces false positives
-          // on legitimate business/marketing prompts (Replicate error code E002)
+          // Disable the model-level safety checker (belt-and-suspenders vs platform E002)
           disable_safety_checker: true,
         },
       }),
     });
 
-    const prediction = await replicateRes.json() as { id: string; status: string };
+    if (!replicateRes.ok) {
+      const errText = await replicateRes.text();
+      Logger.log('ReplicateCreateFailed', { workspaceId: workspace.id, status: replicateRes.status, body: errText });
+      return c.json<TfResponse<null>>({ success: false, message: `Replicate rejected prediction (${replicateRes.status}): ${errText}` }, 502);
+    }
+
+    const prediction = await replicateRes.json() as { id: string; status: string; error?: string };
+
+    if (!prediction.id) {
+      Logger.log('ReplicateCreateFailed', { workspaceId: workspace.id, error: prediction.error });
+      return c.json<TfResponse<null>>({ success: false, message: `Failed to create Replicate prediction: ${prediction.error ?? 'unknown'}` }, 502);
+    }
+
+    Logger.log('ReplicatePredictionCreated', { predictionId: prediction.id, prompt: safePrompt });
 
     const assetId = crypto.randomUUID();
     await createAsset(c.env.DB, {
@@ -141,7 +162,7 @@ generateRouter.post('/video', async (c) => {
       workspace_id: workspace.id,
       type: 'video',
       message_id: body.messageId,
-      prompt: body.prompt,
+      prompt: body.prompt,       // store original user prompt
       prediction_id: prediction.id,
     });
 
