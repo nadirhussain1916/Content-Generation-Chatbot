@@ -31,9 +31,9 @@ export default function SettingsPage() {
     target_audience: '',
     agent_instructions: '',
     // Media defaults
-    default_image_size: '1024x1024' as Workspace['default_image_size'],
+    default_image_size: '1024x1024' as string,
     default_video_duration: 5 as number,
-    default_video_dimensions: '1280x720' as Workspace['default_video_dimensions'],
+    default_video_dimensions: '1280x720' as string,
   });
 
   useEffect(() => {
@@ -196,78 +196,211 @@ export default function SettingsPage() {
                 </div>
 
                 {/* Default image size */}
-                <div>
-                  <label className='block text-sm font-medium text-gray-300 mb-2'>Default image size</label>
-                  <div className='grid grid-cols-3 gap-2'>
-                    {([
-                      { value: '1024x1024', label: '1:1', sub: 'Square · Instagram feed' },
-                      { value: '1024x1792', label: '9:16', sub: 'Portrait · Stories / TikTok' },
-                      { value: '1792x1024', label: '16:9', sub: 'Landscape · YouTube / Twitter' },
-                    ] as const).map((opt) => (
-                      <button
-                        key={opt.value}
-                        onClick={() => setForm((f) => ({ ...f, default_image_size: opt.value }))}
-                        className={cn(
-                          'flex flex-col items-center gap-0.5 px-3 py-3 rounded-xl border text-sm transition-all',
-                          form.default_image_size === opt.value
-                            ? 'bg-blue-600 border-blue-500 text-white'
-                            : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-blue-500 hover:text-white'
-                        )}
-                      >
-                        <span className='font-mono font-semibold'>{opt.label}</span>
-                        <span className='text-[10px] opacity-70 text-center leading-tight'>{opt.sub}</span>
-                      </button>
-                    ))}
-                  </div>
-                  <p className='text-xs text-gray-600 mt-1.5'>Current: <span className='font-mono text-gray-400'>{form.default_image_size}</span></p>
-                </div>
+                {(() => {
+                  const imgPresets = ['1024x1024', '1024x1792', '1792x1024'];
+                  const isCustomImg = !imgPresets.includes(form.default_image_size);
+                  const [imgW, imgH] = form.default_image_size.split('x').map(Number);
+                  return (
+                    <div>
+                      <label className='block text-sm font-medium text-gray-300 mb-2'>Default image size</label>
+                      <div className='grid grid-cols-4 gap-2'>
+                        {[
+                          { value: '1024x1024', label: '1:1', sub: 'Square · Instagram feed' },
+                          { value: '1024x1792', label: '9:16', sub: 'Portrait · Stories / TikTok' },
+                          { value: '1792x1024', label: '16:9', sub: 'Landscape · YouTube / Twitter' },
+                        ].map((opt) => (
+                          <button
+                            key={opt.value}
+                            onClick={() => setForm((f) => ({ ...f, default_image_size: opt.value }))}
+                            className={cn(
+                              'flex flex-col items-center gap-0.5 px-2 py-3 rounded-xl border text-sm transition-all',
+                              form.default_image_size === opt.value
+                                ? 'bg-blue-600 border-blue-500 text-white'
+                                : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-blue-500 hover:text-white'
+                            )}
+                          >
+                            <span className='font-mono font-semibold'>{opt.label}</span>
+                            <span className='text-[10px] opacity-70 text-center leading-tight'>{opt.sub}</span>
+                          </button>
+                        ))}
+                        {/* Custom tile */}
+                        <button
+                          onClick={() => {
+                            if (!isCustomImg) setForm((f) => ({ ...f, default_image_size: '512x512' }));
+                          }}
+                          className={cn(
+                            'flex flex-col items-center gap-0.5 px-2 py-3 rounded-xl border text-sm transition-all',
+                            isCustomImg
+                              ? 'bg-blue-600 border-blue-500 text-white'
+                              : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-blue-500 hover:text-white'
+                          )}
+                        >
+                          <span className='font-mono font-semibold'>✎</span>
+                          <span className='text-[10px] opacity-70 text-center leading-tight'>Custom</span>
+                        </button>
+                      </div>
+                      {/* Custom dimension inputs */}
+                      {isCustomImg && (
+                        <div className='mt-2 flex items-center gap-2'>
+                          <input
+                            type='number'
+                            min={64}
+                            max={4096}
+                            step={8}
+                            value={imgW || ''}
+                            onChange={(e) => setForm((f) => ({ ...f, default_image_size: `${e.target.value}x${imgH || 512}` }))}
+                            placeholder='Width'
+                            className='w-24 bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition-colors font-mono'
+                          />
+                          <span className='text-gray-500 text-sm'>×</span>
+                          <input
+                            type='number'
+                            min={64}
+                            max={4096}
+                            step={8}
+                            value={imgH || ''}
+                            onChange={(e) => setForm((f) => ({ ...f, default_image_size: `${imgW || 512}x${e.target.value}` }))}
+                            placeholder='Height'
+                            className='w-24 bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition-colors font-mono'
+                          />
+                          <span className='text-xs text-gray-500'>px</span>
+                        </div>
+                      )}
+                      <p className='text-xs text-gray-600 mt-1.5'>Current: <span className='font-mono text-gray-400'>{form.default_image_size}</span></p>
+                    </div>
+                  );
+                })()}
 
                 {/* Default video duration */}
-                <div>
-                  <label className='block text-sm font-medium text-gray-300 mb-2'>Default video duration</label>
-                  <div className='flex gap-2'>
-                    {([5, 10] as const).map((d) => (
-                      <button
-                        key={d}
-                        onClick={() => setForm((f) => ({ ...f, default_video_duration: d }))}
-                        className={cn(
-                          'flex-1 py-2 rounded-lg border text-sm font-medium transition-all',
-                          form.default_video_duration === d
-                            ? 'bg-purple-600 border-purple-500 text-white'
-                            : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-purple-500 hover:text-white'
-                        )}
-                      >
-                        {d}s
-                      </button>
-                    ))}
-                  </div>
-                  <p className='text-xs text-gray-600 mt-1.5'>Saved as a preference. Duration is model-dependent — the current WAN 2.1 model generates ~5s clips.</p>
-                </div>
+                {(() => {
+                  const durationPresets = [5, 10];
+                  const isCustomDuration = !durationPresets.includes(form.default_video_duration);
+                  return (
+                    <div>
+                      <label className='block text-sm font-medium text-gray-300 mb-2'>Default video duration</label>
+                      <div className='flex gap-2'>
+                        {[5, 10].map((d) => (
+                          <button
+                            key={d}
+                            onClick={() => setForm((f) => ({ ...f, default_video_duration: d }))}
+                            className={cn(
+                              'flex-1 py-2 rounded-lg border text-sm font-medium transition-all',
+                              form.default_video_duration === d
+                                ? 'bg-purple-600 border-purple-500 text-white'
+                                : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-purple-500 hover:text-white'
+                            )}
+                          >
+                            {d}s
+                          </button>
+                        ))}
+                        {/* Custom duration button */}
+                        <button
+                          onClick={() => {
+                            if (!isCustomDuration) setForm((f) => ({ ...f, default_video_duration: 15 }));
+                          }}
+                          className={cn(
+                            'flex-1 py-2 rounded-lg border text-sm font-medium transition-all',
+                            isCustomDuration
+                              ? 'bg-purple-600 border-purple-500 text-white'
+                              : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-purple-500 hover:text-white'
+                          )}
+                        >
+                          Custom
+                        </button>
+                      </div>
+                      {/* Custom duration input */}
+                      {isCustomDuration && (
+                        <div className='mt-2 flex items-center gap-2'>
+                          <input
+                            type='number'
+                            min={1}
+                            max={120}
+                            step={1}
+                            value={form.default_video_duration}
+                            onChange={(e) => setForm((f) => ({ ...f, default_video_duration: Number(e.target.value) }))}
+                            className='w-24 bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-sm text-white focus:outline-none focus:border-purple-500 transition-colors font-mono'
+                          />
+                          <span className='text-xs text-gray-500'>seconds</span>
+                        </div>
+                      )}
+                      <p className='text-xs text-gray-600 mt-1.5'>Saved as a preference. Duration is model-dependent — the current WAN 2.1 model generates ~5s clips.</p>
+                    </div>
+                  );
+                })()}
 
                 {/* Default video dimensions */}
-                <div>
-                  <label className='block text-sm font-medium text-gray-300 mb-2'>Default video dimensions</label>
-                  <div className='grid grid-cols-2 gap-2'>
-                    {([
-                      { value: '1280x720', label: '16:9', sub: 'Landscape · 1280×720' },
-                      { value: '720x1280', label: '9:16', sub: 'Portrait · 720×1280 · TikTok / Reels' },
-                    ] as const).map((opt) => (
-                      <button
-                        key={opt.value}
-                        onClick={() => setForm((f) => ({ ...f, default_video_dimensions: opt.value }))}
-                        className={cn(
-                          'flex flex-col items-center gap-0.5 px-3 py-3 rounded-xl border text-sm transition-all',
-                          form.default_video_dimensions === opt.value
-                            ? 'bg-purple-600 border-purple-500 text-white'
-                            : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-purple-500 hover:text-white'
-                        )}
-                      >
-                        <span className='font-mono font-semibold'>{opt.label}</span>
-                        <span className='text-[10px] opacity-70 text-center leading-tight'>{opt.sub}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                {(() => {
+                  const vidPresets = ['1280x720', '720x1280'];
+                  const isCustomVid = !vidPresets.includes(form.default_video_dimensions);
+                  const [vidW, vidH] = form.default_video_dimensions.split('x').map(Number);
+                  return (
+                    <div>
+                      <label className='block text-sm font-medium text-gray-300 mb-2'>Default video dimensions</label>
+                      <div className='grid grid-cols-3 gap-2'>
+                        {[
+                          { value: '1280x720', label: '16:9', sub: 'Landscape · 1280×720' },
+                          { value: '720x1280', label: '9:16', sub: 'Portrait · 720×1280 · TikTok / Reels' },
+                        ].map((opt) => (
+                          <button
+                            key={opt.value}
+                            onClick={() => setForm((f) => ({ ...f, default_video_dimensions: opt.value }))}
+                            className={cn(
+                              'flex flex-col items-center gap-0.5 px-3 py-3 rounded-xl border text-sm transition-all',
+                              form.default_video_dimensions === opt.value
+                                ? 'bg-purple-600 border-purple-500 text-white'
+                                : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-purple-500 hover:text-white'
+                            )}
+                          >
+                            <span className='font-mono font-semibold'>{opt.label}</span>
+                            <span className='text-[10px] opacity-70 text-center leading-tight'>{opt.sub}</span>
+                          </button>
+                        ))}
+                        {/* Custom tile */}
+                        <button
+                          onClick={() => {
+                            if (!isCustomVid) setForm((f) => ({ ...f, default_video_dimensions: '1080x1080' }));
+                          }}
+                          className={cn(
+                            'flex flex-col items-center gap-0.5 px-3 py-3 rounded-xl border text-sm transition-all',
+                            isCustomVid
+                              ? 'bg-purple-600 border-purple-500 text-white'
+                              : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-purple-500 hover:text-white'
+                          )}
+                        >
+                          <span className='font-mono font-semibold'>✎</span>
+                          <span className='text-[10px] opacity-70 text-center leading-tight'>Custom</span>
+                        </button>
+                      </div>
+                      {/* Custom dimension inputs */}
+                      {isCustomVid && (
+                        <div className='mt-2 flex items-center gap-2'>
+                          <input
+                            type='number'
+                            min={64}
+                            max={4096}
+                            step={8}
+                            value={vidW || ''}
+                            onChange={(e) => setForm((f) => ({ ...f, default_video_dimensions: `${e.target.value}x${vidH || 720}` }))}
+                            placeholder='Width'
+                            className='w-24 bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 transition-colors font-mono'
+                          />
+                          <span className='text-gray-500 text-sm'>×</span>
+                          <input
+                            type='number'
+                            min={64}
+                            max={4096}
+                            step={8}
+                            value={vidH || ''}
+                            onChange={(e) => setForm((f) => ({ ...f, default_video_dimensions: `${vidW || 1280}x${e.target.value}` }))}
+                            placeholder='Height'
+                            className='w-24 bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 transition-colors font-mono'
+                          />
+                          <span className='text-xs text-gray-500'>px</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 <button
                   onClick={saveSettings}

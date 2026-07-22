@@ -19,9 +19,9 @@ export interface Workspace {
   target_audience: string | null;
   agent_instructions: string | null;
   // Media generation defaults
-  default_image_size: '1024x1024' | '1024x1792' | '1792x1024';
-  default_video_duration: number; // seconds: 5 | 10
-  default_video_dimensions: '1280x720' | '720x1280';
+  default_image_size: string; // e.g. '1024x1024', '1024x1792', '1792x1024', or custom 'WxH'
+  default_video_duration: number; // seconds
+  default_video_dimensions: string; // e.g. '1280x720', '720x1280', or custom 'WxH'
   created_at: number;
   updated_at: number;
 }
