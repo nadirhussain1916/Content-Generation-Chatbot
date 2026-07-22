@@ -1,5 +1,5 @@
 ---
-name: ThreadForge MVP
+name: CreaterOS MVP
 overview: Build a full-stack AI content creation and social media publishing platform using React + Cloudflare Workers (Hono.js) + D1 + R2, with Clerk auth, OpenAI for text/image generation, and scaffolded Instagram/TikTok publishing.
 todos:
   - id: scaffold
@@ -44,7 +44,7 @@ todos:
 isProject: false
 ---
 
-# ThreadForge MVP — Architecture Plan
+# CreaterOS MVP — Architecture Plan
 
 ## Stack
 
@@ -260,8 +260,8 @@ These files are copied directly or minimally adapted:
 | `src/migrations/index.ts` | Adapt | Use TypeScript migration runner (not raw .sql), replace table defs |
 | `src/types.ts` | Adapt | Keep `JzResponse<T>` / `JzPaginatedResponse<T>` shape, rename prefix to `Tf` |
 | `src/middleware/auth.ts` | Adapt | Replace OTP/JWT logic with Clerk JWT verification; keep three-tier (public/required/admin) structure |
-| `wrangler.jsonc` | Adapt | Use `.jsonc` format (not `.toml`), replace bindings with ThreadForge names |
-| `.dev.vars.example` | Adapt | Template for ThreadForge secrets |
+| `wrangler.jsonc` | Adapt | Use `.jsonc` format (not `.toml`), replace bindings with CreaterOS names |
+| `.dev.vars.example` | Adapt | Template for CreaterOS secrets |
 | `.cursor/rules/` | Copy | Logging and base rules carry over unchanged |
 
 **Patterns adopted from `me-ten-backend`:**
@@ -284,10 +284,10 @@ These files are copied directly or minimally adapted:
   "name": "thread-forge-backend",
   "main": "src/index.ts",
   "compatibility_date": "2025-01-01",
-  "d1_databases": [{ "binding": "DB", "database_name": "threadforge", "database_id": "..." }],
-  "r2_buckets": [{ "binding": "ASSETS", "bucket_name": "threadforge-assets" }],
+  "d1_databases": [{ "binding": "DB", "database_name": "createros", "database_id": "..." }],
+  "r2_buckets": [{ "binding": "ASSETS", "bucket_name": "createros-assets" }],
   "kv_namespaces": [{ "binding": "KV", "id": "..." }],
-  "vars": { "FRONTEND_URL": "https://threadforge.pages.dev" },
+  "vars": { "FRONTEND_URL": "https://createros.pages.dev" },
   "triggers": { "crons": ["0 */6 * * *"] },  // every 6h: covers Instagram (<7d) and TikTok (24h) token refresh
   // Secrets via wrangler secret put:
   // CLERK_SECRET_KEY, OPENAI_API_KEY, META_APP_ID, META_APP_SECRET
@@ -1304,7 +1304,7 @@ useEffect(() => {
 **`/onboarding` page — workspace setup form:**
 
 - Workspace name (e.g. "My Coffee Shop")
-- Slug (auto-generated from name, editable) — shown as `threadforge.app/workspaces/{slug}`
+- Slug (auto-generated from name, editable) — shown as `createros.app/workspaces/{slug}`
 - AI tone selector: Professional / Casual / Witty / Formal / Inspirational
 - Default platforms: Instagram / TikTok / Both (checkbox)
 - Submit → `POST /api/onboarding/complete` → redirect to workspace

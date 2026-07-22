@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@clerk/clerk-react';
 import { api } from '../lib/api';
@@ -6,11 +6,12 @@ import type { TfResponse, Asset, Message, ImagePostPackage, VideoPostPackage } f
 import Sidebar from '../components/Sidebar';
 import {
   ImageIcon, VideoIcon, Loader2, AlertCircle, X,
-  Copy, Check, Hash, Share2, CheckCircle, ExternalLink,
+  Copy, Check, Hash, Share2, CheckCircle, ExternalLink, RefreshCw,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 const BACKEND = import.meta.env.VITE_API_BASE_URL ?? '';
+const POLL_INTERVAL_MS = 5000; // re-fetch list every 5 s when any asset is in-progress
 
 export default function GenerationsPage() {
   const { slug } = useParams<{ slug: string }>();
@@ -19,24 +20,40 @@ export default function GenerationsPage() {
 
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [blobUrls, setBlobUrls] = useState<Record<string, string>>({});
   const [loadingImages, setLoadingImages] = useState<Record<string, boolean>>({});
   const [filter, setFilter] = useState<'all' | 'image' | 'video'>('all');
   const [detailAsset, setDetailAsset] = useState<Asset | null>(null);
+  const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    else setRefreshing(true);
     const token = await getToken();
     const res = await api.get<TfResponse<Asset[]>>(
       `/api/workspaces/${slug}/generate/assets`,
       token ?? undefined
     );
-    if (res.success && res.data) setAssets(res.data);
+    if (res.success && res.data) {
+      setAssets(res.data);
+      // If there are still in-progress assets, schedule another refresh
+      const hasInProgress = res.data.some((a) => a.status === 'generating' || a.status === 'pending');
+      if (hasInProgress) {
+        pollTimer.current = setTimeout(() => load(true), POLL_INTERVAL_MS);
+      }
+    }
     setLoading(false);
+    setRefreshing(false);
   }, [slug]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    return () => { if (pollTimer.current) clearTimeout(pollTimer.current); };
+  }, [load]);
 
   async function loadBlobUrl(asset: Asset) {
+    if (asset.status !== 'ready') return;
     if (blobUrls[asset.id] || loadingImages[asset.id] || !asset.r2_key) return;
     setLoadingImages((p) => ({ ...p, [asset.id]: true }));
     try {
@@ -55,6 +72,7 @@ export default function GenerationsPage() {
   }
 
   const filtered = filter === 'all' ? assets : assets.filter((a) => a.type === filter);
+  const inProgressCount = assets.filter((a) => a.status === 'generating' || a.status === 'pending').length;
 
   return (
     <div className='flex h-screen bg-gray-950 text-white'>
@@ -63,23 +81,41 @@ export default function GenerationsPage() {
       <main className='flex-1 flex flex-col min-w-0 overflow-hidden'>
         {/* Header */}
         <header className='flex items-center justify-between px-6 py-4 border-b border-gray-800 bg-gray-900/50 flex-shrink-0'>
-          <div>
-            <h1 className='text-base font-semibold'>Generations</h1>
-            <p className='text-xs text-gray-500 mt-0.5'>All generated images and videos</p>
+          <div className='flex items-center gap-3'>
+            <div>
+              <h1 className='text-base font-semibold'>Generations</h1>
+              <p className='text-xs text-gray-500 mt-0.5'>All generated images and videos</p>
+            </div>
+            {inProgressCount > 0 && (
+              <span className='flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-amber-900/40 border border-amber-700/40 text-amber-300'>
+                <Loader2 size={10} className='animate-spin' />
+                {inProgressCount} generating…
+              </span>
+            )}
           </div>
-          <div className='flex items-center gap-1 bg-gray-800 rounded-lg p-1'>
-            {(['all', 'image', 'video'] as const).map((f) => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={cn(
-                  'px-3 py-1 text-xs font-medium rounded-md transition-all capitalize',
-                  filter === f ? 'bg-violet-600 text-white' : 'text-gray-400 hover:text-white'
-                )}
-              >
-                {f}
-              </button>
-            ))}
+          <div className='flex items-center gap-2'>
+            <button
+              onClick={() => load(true)}
+              disabled={refreshing}
+              title='Refresh'
+              className='p-1.5 text-gray-500 hover:text-white hover:bg-gray-800 rounded-lg transition-colors disabled:opacity-50'
+            >
+              <RefreshCw size={14} className={cn(refreshing && 'animate-spin')} />
+            </button>
+            <div className='flex items-center gap-1 bg-gray-800 rounded-lg p-1'>
+              {(['all', 'image', 'video'] as const).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setFilter(f)}
+                  className={cn(
+                    'px-3 py-1 text-xs font-medium rounded-md transition-all capitalize',
+                    filter === f ? 'bg-violet-600 text-white' : 'text-gray-400 hover:text-white'
+                  )}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
           </div>
         </header>
 
@@ -107,7 +143,7 @@ export default function GenerationsPage() {
                   asset={asset}
                   slug={slug!}
                   blobUrl={blobUrls[asset.id]}
-                  isLoading={loadingImages[asset.id] ?? false}
+                  isLoadingBlob={loadingImages[asset.id] ?? false}
                   onVisible={() => loadBlobUrl(asset)}
                   onDetails={() => setDetailAsset(asset)}
                 />
@@ -134,21 +170,42 @@ export default function GenerationsPage() {
 // ─── Asset card ───────────────────────────────────────────────────────────────
 
 function AssetCard({
-  asset, slug, blobUrl, isLoading, onVisible, onDetails,
+  asset, slug, blobUrl, isLoadingBlob, onVisible, onDetails,
 }: {
-  asset: Asset; slug: string; blobUrl?: string; isLoading: boolean;
+  asset: Asset; slug: string; blobUrl?: string; isLoadingBlob: boolean;
   onVisible: () => void; onDetails: () => void;
 }) {
   const navigate = useNavigate();
   const isImage = asset.type === 'image';
+  const isGenerating = asset.status === 'generating' || asset.status === 'pending';
+  const isFailed = asset.status === 'failed';
 
   useEffect(() => { onVisible(); }, []);
 
   return (
-    <div className='group relative bg-gray-900 border border-gray-800 rounded-xl overflow-hidden hover:border-violet-700/50 transition-colors flex flex-col'>
+    <div className={cn(
+      'group relative bg-gray-900 border rounded-xl overflow-hidden flex flex-col transition-colors',
+      isGenerating ? 'border-amber-700/40 hover:border-amber-600/60'
+      : isFailed ? 'border-red-800/40 hover:border-red-700/60'
+      : 'border-gray-800 hover:border-violet-700/50'
+    )}>
       {/* Thumbnail */}
-      <div className='aspect-square bg-gray-950 flex items-center justify-center'>
-        {isLoading ? (
+      <div className='aspect-square bg-gray-950 flex items-center justify-center relative'>
+        {isGenerating ? (
+          <div className='flex flex-col items-center gap-2'>
+            <Loader2 size={22} className='animate-spin text-amber-500' />
+            <span className='text-[10px] text-amber-400/80 font-medium'>Generating…</span>
+          </div>
+        ) : isFailed ? (
+          <div className='flex flex-col items-center gap-2 px-3 text-center'>
+            <AlertCircle size={20} className='text-red-400' />
+            <span className='text-[10px] text-red-400/80 leading-tight'>
+              {asset.error_message
+                ? asset.error_message.slice(0, 60) + (asset.error_message.length > 60 ? '…' : '')
+                : 'Generation failed'}
+            </span>
+          </div>
+        ) : isLoadingBlob ? (
           <Loader2 size={18} className='animate-spin text-gray-600' />
         ) : blobUrl ? (
           isImage ? (
@@ -159,10 +216,15 @@ function AssetCard({
         ) : (
           <AlertCircle size={18} className='text-gray-600' />
         )}
+
+        {/* Animated shimmer overlay for generating */}
+        {isGenerating && (
+          <div className='absolute inset-0 bg-gradient-to-r from-transparent via-amber-900/10 to-transparent animate-pulse' />
+        )}
       </div>
 
-      {/* Type badge */}
-      <div className='absolute top-2 left-2'>
+      {/* Type + status badge */}
+      <div className='absolute top-2 left-2 flex items-center gap-1'>
         <span className={cn(
           'flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full',
           isImage ? 'bg-blue-900/80 text-blue-300' : 'bg-purple-900/80 text-purple-300'
@@ -170,23 +232,45 @@ function AssetCard({
           {isImage ? <ImageIcon size={9} /> : <VideoIcon size={9} />}
           {asset.type}
         </span>
+        {isGenerating && (
+          <span className='text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-900/80 text-amber-300'>
+            in progress
+          </span>
+        )}
+        {isFailed && (
+          <span className='text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-red-900/80 text-red-300'>
+            failed
+          </span>
+        )}
       </div>
 
       {/* Action buttons */}
       <div className='p-2 flex gap-1.5'>
-        <button
-          onClick={onDetails}
-          className='flex-1 py-1.5 text-xs font-medium bg-violet-600 hover:bg-violet-500 text-white rounded-lg transition-colors'
-        >
-          Details
-        </button>
-        <button
-          onClick={() => navigate(`/workspaces/${slug}/threads/${asset.thread_id}`)}
-          className='flex-1 py-1.5 text-xs font-medium bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg transition-colors flex items-center justify-center gap-1'
-        >
-          <ExternalLink size={10} />
-          Thread
-        </button>
+        {asset.status === 'ready' ? (
+          <>
+            <button
+              onClick={onDetails}
+              className='flex-1 py-1.5 text-xs font-medium bg-violet-600 hover:bg-violet-500 text-white rounded-lg transition-colors'
+            >
+              Details
+            </button>
+            <button
+              onClick={() => navigate(`/workspaces/${slug}/threads/${asset.thread_id}`)}
+              className='flex-1 py-1.5 text-xs font-medium bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg transition-colors flex items-center justify-center gap-1'
+            >
+              <ExternalLink size={10} />
+              Thread
+            </button>
+          </>
+        ) : (
+          <button
+            onClick={() => navigate(`/workspaces/${slug}/threads/${asset.thread_id}`)}
+            className='flex-1 py-1.5 text-xs font-medium bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg transition-colors flex items-center justify-center gap-1'
+          >
+            <ExternalLink size={10} />
+            View thread
+          </button>
+        )}
       </div>
     </div>
   );

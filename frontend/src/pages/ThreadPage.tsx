@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useLocation } from 'react-router-dom';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@clerk/clerk-react';
 import { api } from '../lib/api';
@@ -10,10 +10,13 @@ import PublishBar from '../components/PublishBar';
 import { Send, Loader2, ArrowLeft } from 'lucide-react';
 import { cn } from '../lib/utils';
 
+const POLL_INTERVAL_MS = 8000; // poll every 8 s — video generation can take 2-3 min
+
 export default function ThreadPage() {
   const { slug, threadId } = useParams<{ slug: string; threadId: string }>();
   const { getToken } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [thread, setThread] = useState<Thread | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -21,9 +24,11 @@ export default function ThreadPage() {
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sidebarRefreshKey, setSidebarRefreshKey] = useState(0);
+  const initialMessageFiredRef = useRef(false);
   // keyed by message.id
   const [assetsByMessageId, setAssetsByMessageId] = useState<Record<string, Asset>>({});
   const [blobUrlsByMessageId, setBlobUrlsByMessageId] = useState<Record<string, string>>({});
+  const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -31,7 +36,7 @@ export default function ThreadPage() {
   const BACKEND = import.meta.env.VITE_API_BASE_URL ?? '';
 
   async function fetchBlobForAsset(asset: Asset, token: string) {
-    if (!asset.message_id) return;
+    if (!asset.message_id || asset.status !== 'ready') return;
     try {
       const res = await fetch(
         `${BACKEND}/api/workspaces/${slug}/generate/assets/${asset.id}/file`,
@@ -43,6 +48,45 @@ export default function ThreadPage() {
       }
     } catch {}
   }
+
+  /** Lightweight poll — only re-fetches asset list, not messages */
+  const pollAssets = useCallback(async (prevByMsgId: Record<string, Asset>) => {
+    const token = await getToken();
+    const assetsRes = await api.get<TfResponse<Asset[]>>(
+      `/api/workspaces/${slug}/threads/${threadId}/assets`,
+      token ?? undefined
+    );
+    if (!assetsRes.success || !assetsRes.data) return prevByMsgId;
+
+    const nextByMsgId: Record<string, Asset> = {};
+    for (const a of assetsRes.data) {
+      if (a.message_id) nextByMsgId[a.message_id] = a;
+    }
+
+    // Find assets that just became ready — fetch their blobs
+    const newlyReady = assetsRes.data.filter((a) => {
+      const prev = a.message_id ? prevByMsgId[a.message_id] : undefined;
+      return a.status === 'ready' && prev?.status !== 'ready';
+    });
+    await Promise.all(newlyReady.map((a) => fetchBlobForAsset(a, token ?? '')));
+
+    setAssetsByMessageId(nextByMsgId);
+
+    const hasInProgress = assetsRes.data.some(
+      (a) => a.status === 'generating' || a.status === 'pending'
+    );
+    return { nextByMsgId, hasInProgress };
+  }, [slug, threadId]);
+
+  const schedulePoll = useCallback((currentByMsgId: Record<string, Asset>) => {
+    if (pollTimer.current) clearTimeout(pollTimer.current);
+    pollTimer.current = setTimeout(async () => {
+      const result = await pollAssets(currentByMsgId);
+      if (result && typeof result === 'object' && 'hasInProgress' in result) {
+        if (result.hasInProgress) schedulePoll(result.nextByMsgId);
+      }
+    }, POLL_INTERVAL_MS);
+  }, [pollAssets]);
 
   const load = useCallback(async () => {
     const token = await getToken();
@@ -66,8 +110,19 @@ export default function ThreadPage() {
           if (a.message_id) byMsgId[a.message_id] = a;
         }
         setAssetsByMessageId(byMsgId);
-        // Fetch blobs for all ready assets
-        await Promise.all(assetsRes.data.map((a) => fetchBlobForAsset(a, token ?? '')));
+
+        // Fetch blobs for all already-ready assets
+        await Promise.all(
+          assetsRes.data
+            .filter((a) => a.status === 'ready')
+            .map((a) => fetchBlobForAsset(a, token ?? ''))
+        );
+
+        // Kick off polling if any asset is still in progress
+        const hasInProgress = assetsRes.data.some(
+          (a) => a.status === 'generating' || a.status === 'pending'
+        );
+        if (hasInProgress) schedulePoll(byMsgId);
       }
     }
     setLoading(false);
@@ -75,23 +130,30 @@ export default function ThreadPage() {
 
   useEffect(() => {
     load();
+    return () => { if (pollTimer.current) clearTimeout(pollTimer.current); };
   }, [load]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  async function handleNewThread() {
-    const token = await getToken();
-    const res = await api.post<TfResponse<Thread>>(
-      `/api/workspaces/${slug}/threads`,
-      {},
-      token ?? undefined
-    );
-    if (res.success && res.data) {
-      setSidebarRefreshKey((k) => k + 1);
-      navigate(`/workspaces/${slug}/threads/${res.data.id}`);
-    }
+  // Auto-send an initial message that was passed from WorkspacePage via router state
+  useEffect(() => {
+    if (loading) return;
+    if (initialMessageFiredRef.current) return;
+    const msg = (location.state as { initialMessage?: string } | null)?.initialMessage;
+    if (!msg) return;
+    initialMessageFiredRef.current = true;
+    // Clear from history so a page refresh doesn't re-send
+    window.history.replaceState({}, '');
+    sendMessage(msg);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
+
+  function handleNewThread() {
+    // Navigate to the workspace home (centered prompt input) — thread is only
+    // created once the user actually sends their first message.
+    navigate(`/workspaces/${slug}`);
   }
 
   async function sendMessage(content: string) {
@@ -160,11 +222,20 @@ export default function ThreadPage() {
 
   async function handleAssetGenerated(asset: Asset) {
     if (asset.message_id) {
-      setAssetsByMessageId((p) => ({ ...p, [asset.message_id!]: asset }));
+      setAssetsByMessageId((p) => {
+        const next = { ...p, [asset.message_id!]: asset };
+        // If the asset is still generating, start polling to detect when it's done
+        if (asset.status === 'generating' || asset.status === 'pending') {
+          schedulePoll(next);
+        }
+        return next;
+      });
     }
-    setThread((t) => t ? { ...t, status: 'ready' } : t);
-    const token = await getToken();
-    await fetchBlobForAsset(asset, token ?? '');
+    if (asset.status === 'ready') {
+      setThread((t) => t ? { ...t, status: 'ready' } : t);
+      const token = await getToken();
+      await fetchBlobForAsset(asset, token ?? '');
+    }
   }
 
   const statusLabels: Record<Thread['status'], string> = {

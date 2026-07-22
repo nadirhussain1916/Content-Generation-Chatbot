@@ -13,7 +13,7 @@ interface GenerateVideoButtonProps {
 }
 
 const POLL_INTERVAL_MS = 5000;
-const POLL_TIMEOUT_MS = 300_000; // 5 min — Replicate can be slow
+const POLL_TIMEOUT_MS = 900_000; // 15 min — matches workflow max (WAN 2.1 cold starts can be slow)
 
 export default function GenerateVideoButton({ slug, threadId, message, existingAsset, onGenerated }: GenerateVideoButtonProps) {
   const { getToken } = useAuth();

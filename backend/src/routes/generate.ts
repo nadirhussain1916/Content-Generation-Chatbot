@@ -45,6 +45,9 @@ generateRouter.post('/image', async (c) => {
       return c.json<TfResponse<null>>({ success: false, message: 'Thread not found' }, 404);
     }
 
+    // Use explicit size from request, then workspace default, then global default
+    const imageSize = body.size ?? workspace.default_image_size ?? '1024x1024';
+
     const assetId = crypto.randomUUID();
     await createAsset(c.env.DB, {
       id: assetId,
@@ -71,7 +74,7 @@ generateRouter.post('/image', async (c) => {
         workspaceId: workspace.id,
         r2KeyPrefix: `${workspace.id}/${body.threadId}/${assetId}`,
         prompt: body.prompt,
-        size: body.size,
+        size: imageSize as '1024x1024' | '1024x1792' | '1792x1024',
       },
     });
 
@@ -104,6 +107,12 @@ generateRouter.post('/video', async (c) => {
       return c.json<TfResponse<null>>({ success: false, message: 'Video generation is not configured' }, 501);
     }
 
+    // Resolve video params from workspace defaults
+    const videoDimensions = workspace.default_video_dimensions ?? '1280x720';
+    const [videoWidth, videoHeight] = videoDimensions.split('x').map(Number);
+    // WAN 2.1 t2v uses aspect_ratio string; duration is not a model input param
+    const videoAspectRatio = videoWidth >= videoHeight ? '16:9' : '9:16';
+
     // Start Replicate prediction immediately to get a predictionId for the Workflow
     const replicateRes = await fetch('https://api.replicate.com/v1/models/wavespeedai/wan-2.1-t2v-720p/predictions', {
       method: 'POST',
@@ -112,7 +121,15 @@ generateRouter.post('/video', async (c) => {
         'Content-Type': 'application/json',
         Prefer: 'wait=5',
       },
-      body: JSON.stringify({ input: { prompt: body.prompt, duration: 5 } }),
+      body: JSON.stringify({
+        input: {
+          prompt: body.prompt,
+          aspect_ratio: videoAspectRatio,
+          // Disable the model's built-in safety checker — it produces false positives
+          // on legitimate business/marketing prompts (Replicate error code E002)
+          disable_safety_checker: true,
+        },
+      }),
     });
 
     const prediction = await replicateRes.json() as { id: string; status: string };
@@ -138,13 +155,14 @@ generateRouter.post('/video', async (c) => {
     // Trigger Workflow — handles polling Replicate + uploading to R2 durably
     await c.env.GENERATION_WORKFLOW.create({
       id: assetId,
-      params: {
+        params: {
         type: 'video',
         assetId,
         workspaceId: workspace.id,
         r2KeyPrefix: `${workspace.id}/${body.threadId}/${assetId}`,
         prompt: body.prompt,
         predictionId: prediction.id,
+        aspectRatio: videoAspectRatio,
       },
     });
 

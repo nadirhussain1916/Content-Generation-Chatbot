@@ -217,6 +217,16 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
                         })}
                       </div>
                     </div>
+                  ) : asset && asset.status === 'failed' ? (
+                    <div className='flex items-start gap-2 text-xs text-red-400 bg-red-950/30 border border-red-800/40 rounded-lg px-3 py-2'>
+                      <AlertCircle size={12} className='flex-shrink-0 mt-0.5' />
+                      <span>
+                        Generation failed.{' '}
+                        {asset.error_message && (
+                          <span className='text-red-500/80'>{asset.error_message}</span>
+                        )}
+                      </span>
+                    </div>
                   ) : asset && asset.status === 'generating' ? (
                     <div className='flex items-center gap-2 text-xs text-gray-400'>
                       <Loader2 size={12} className='animate-spin' />

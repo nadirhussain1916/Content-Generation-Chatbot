@@ -85,6 +85,16 @@ const UpdateWorkspaceSchema = z.object({
   default_caption_style: z.enum(['short', 'medium', 'long']).optional(),
   default_platforms: z.array(z.enum(['instagram', 'tiktok'])).optional(),
   avatar_url: z.string().url().optional().nullable(),
+  // Brand context
+  brand_name: z.string().max(120).optional().nullable(),
+  brand_description: z.string().max(500).optional().nullable(),
+  brand_voice: z.string().max(500).optional().nullable(),
+  target_audience: z.string().max(300).optional().nullable(),
+  agent_instructions: z.string().max(2000).optional().nullable(),
+  // Media generation defaults
+  default_image_size: z.enum(['1024x1024', '1024x1792', '1792x1024']).optional(),
+  default_video_duration: z.number().int().min(5).max(10).optional(),
+  default_video_dimensions: z.enum(['1280x720', '720x1280']).optional(),
 });
 
 // PATCH /api/workspaces/:slug — update workspace settings
@@ -109,6 +119,16 @@ workspacesRouter.patch('/:slug', async (c) => {
     if (parsed.data.default_caption_style) update.default_caption_style = parsed.data.default_caption_style;
     if (parsed.data.default_platforms) update.default_platforms = JSON.stringify(parsed.data.default_platforms);
     if ('avatar_url' in parsed.data) update.avatar_url = parsed.data.avatar_url;
+    // Brand context (nullable fields)
+    if ('brand_name' in parsed.data) update.brand_name = parsed.data.brand_name ?? null;
+    if ('brand_description' in parsed.data) update.brand_description = parsed.data.brand_description ?? null;
+    if ('brand_voice' in parsed.data) update.brand_voice = parsed.data.brand_voice ?? null;
+    if ('target_audience' in parsed.data) update.target_audience = parsed.data.target_audience ?? null;
+    if ('agent_instructions' in parsed.data) update.agent_instructions = parsed.data.agent_instructions ?? null;
+    // Media generation defaults
+    if (parsed.data.default_image_size) update.default_image_size = parsed.data.default_image_size;
+    if (parsed.data.default_video_duration) update.default_video_duration = parsed.data.default_video_duration;
+    if (parsed.data.default_video_dimensions) update.default_video_dimensions = parsed.data.default_video_dimensions;
 
     if (Object.keys(update).length > 0) {
       await updateWorkspace(c.env.DB, workspace.id, update as Parameters<typeof updateWorkspace>[2]);

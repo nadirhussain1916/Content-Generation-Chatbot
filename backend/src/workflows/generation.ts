@@ -21,6 +21,7 @@ export type GenerationParams =
       r2KeyPrefix: string;
       prompt: string;
       predictionId: string;
+      aspectRatio?: '16:9' | '9:16'; // default '16:9'
     };
 
 const KV_TTL = 60 * 60 * 24; // 24 h — long enough to cover any polling window
@@ -59,8 +60,9 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
           await writeKv(this.env.KV, p.assetId, { status: 'ready', r2_key: r2Key });
         });
       } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
         Logger.log('WorkflowImageFailed', { assetId: p.assetId }, err);
-        await updateAsset(this.env.DB, p.assetId, { status: 'failed' });
+        await updateAsset(this.env.DB, p.assetId, { status: 'failed', error_message: msg });
         await writeKv(this.env.KV, p.assetId, { status: 'failed' });
       }
       return;
@@ -69,23 +71,48 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
     // ── Video (Replicate) ─────────────────────────────────────────────────────
     if (p.type === 'video') {
       try {
-        // Poll Replicate until prediction completes — Workflow handles durable sleeping
-        const videoUrl = await step.do('wait-for-video', {
-          retries: { limit: 30, delay: '10 seconds', backoff: 'constant' },
-          timeout: '5 minutes',
+        // Poll Replicate until prediction completes — Workflow handles durable sleeping.
+        // Returns { ok: true; url: string } on success, { ok: false; reason: string } on
+        // permanent failure — returning (not throwing) avoids triggering further retries.
+        const pollResult = await step.do('wait-for-video', {
+          // 60 retries × 15 s = up to 15 minutes of polling (covers slow cold starts)
+          retries: { limit: 60, delay: '15 seconds', backoff: 'constant' },
+          timeout: '20 minutes',
         }, async () => {
           const res = await fetch(`https://api.replicate.com/v1/predictions/${p.predictionId}`, {
             headers: { Authorization: `Bearer ${this.env.REPLICATE_API_TOKEN}` },
           });
-          const prediction = await res.json() as { status: string; output?: string[] };
+          const prediction = await res.json() as {
+            status: string;
+            output?: string[];
+            error?: string;
+          };
 
-          if (prediction.status === 'failed') throw new Error('Replicate prediction failed');
+          // Permanent terminal failures — RETURN (not throw) so no retries are triggered
+          if (prediction.status === 'failed' || prediction.status === 'canceled') {
+            return {
+              ok: false as const,
+              reason: `Replicate prediction ${prediction.status}: ${prediction.error ?? 'unknown'}`,
+            };
+          }
+
           if (prediction.status !== 'succeeded' || !prediction.output?.[0]) {
-            // Non-terminal — throw to trigger retry with delay
+            // Non-terminal (starting / processing) — throw to trigger retry with delay
             throw new Error(`Prediction still ${prediction.status}`);
           }
-          return prediction.output[0];
+
+          return { ok: true as const, url: prediction.output[0] };
         });
+
+        // Handle permanent failure from Replicate
+        if (!pollResult.ok) {
+          Logger.log('ReplicatePredictionFailed', { assetId: p.assetId, reason: pollResult.reason });
+          await updateAsset(this.env.DB, p.assetId, { status: 'failed', error_message: pollResult.reason });
+          await writeKv(this.env.KV, p.assetId, { status: 'failed' });
+          return;
+        }
+
+        const videoUrl = pollResult.url;
 
         const r2Key = await step.do('upload-video', { retries: { limit: 2, delay: '5 seconds' } }, async () => {
           const key = `${p.r2KeyPrefix}.mp4`;
@@ -98,8 +125,9 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
           await writeKv(this.env.KV, p.assetId, { status: 'ready', r2_key: r2Key });
         });
       } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
         Logger.log('WorkflowVideoFailed', { assetId: p.assetId }, err);
-        await updateAsset(this.env.DB, p.assetId, { status: 'failed' });
+        await updateAsset(this.env.DB, p.assetId, { status: 'failed', error_message: msg });
         await writeKv(this.env.KV, p.assetId, { status: 'failed' });
       }
     }

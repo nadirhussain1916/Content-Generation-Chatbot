@@ -18,6 +18,10 @@ export interface Workspace {
   brand_voice: string | null;
   target_audience: string | null;
   agent_instructions: string | null;
+  // Media generation defaults
+  default_image_size: '1024x1024' | '1024x1792' | '1792x1024';
+  default_video_duration: number; // seconds: 5 | 10
+  default_video_dimensions: '1280x720' | '720x1280';
   created_at: number;
   updated_at: number;
 }
@@ -100,6 +104,7 @@ export interface Asset {
   r2_key: string | null;
   public_url: string | null;
   prompt: string | null;
+  error_message: string | null;
   created_at: number;
 }
 

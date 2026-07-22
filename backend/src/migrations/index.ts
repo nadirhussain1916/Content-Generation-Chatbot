@@ -6,6 +6,8 @@ import { migrateAssetsTable } from './005_assets';
 import { migrateSocialAccountsTable } from './006_social_accounts';
 import { migratePublishRecordsTable } from './007_publish_records';
 import { migrateWorkspaceBrandFields } from './008_workspace_brand';
+import { migrateWorkspaceMediaDefaults } from './009_workspace_media_defaults';
+import { migrateAssetErrorColumn } from './010_asset_error';
 
 export async function runAllMigrations(db: D1Database): Promise<string[]> {
   const all: string[] = ['[Migrations] Starting...'];
@@ -19,6 +21,8 @@ export async function runAllMigrations(db: D1Database): Promise<string[]> {
     migrateSocialAccountsTable,
     migratePublishRecordsTable,
     migrateWorkspaceBrandFields,
+    migrateWorkspaceMediaDefaults,
+    migrateAssetErrorColumn,
   ];
 
   for (const migrate of migrations) {

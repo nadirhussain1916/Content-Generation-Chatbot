@@ -56,11 +56,14 @@ messagesRouter.post('/:threadId/messages', async (c) => {
     const tone = workspace.ai_tone;
     const captionStyle = workspace.default_caption_style;
     const brand = {
-      brand_name:         workspace.brand_name,
-      brand_description:  workspace.brand_description,
-      brand_voice:        workspace.brand_voice,
-      target_audience:    workspace.target_audience,
-      agent_instructions: workspace.agent_instructions,
+      brand_name:               workspace.brand_name,
+      brand_description:        workspace.brand_description,
+      brand_voice:              workspace.brand_voice,
+      target_audience:          workspace.target_audience,
+      agent_instructions:       workspace.agent_instructions,
+      default_image_size:       workspace.default_image_size,
+      default_video_duration:   workspace.default_video_duration,
+      default_video_dimensions: workspace.default_video_dimensions,
     };
 
     let assistantContent: string;

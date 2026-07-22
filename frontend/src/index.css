@@ -23,6 +23,112 @@ body {
   border-radius: 4px;
 }
 
+/* ── Clerk inline form overrides (landing page) ── */
+/* Strip the card box so the form blends into our layout */
+.cl-card {
+  background: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+  padding: 0 !important;
+}
+/* cardBox is the outer wrapper that has the big dark shadow — remove it */
+.cl-cardBox {
+  box-shadow: none !important;
+  border: none !important;
+  background: transparent !important;
+}
+.cl-rootBox {
+  width: 100%;
+}
+/* Hide Clerk's built-in header (we render our own) */
+.cl-header {
+  display: none !important;
+}
+/* Hide Clerk's built-in footer links (we render our own toggle) */
+.cl-footer {
+  display: none !important;
+}
+/* Social button */
+.cl-socialButtonsBlockButton {
+  background: #111827 !important;
+  border: 1px solid #374151 !important;
+  border-radius: 0.75rem !important;
+  color: #f9fafb !important;
+  height: 2.5rem !important;
+  font-size: 0.875rem !important;
+  font-weight: 500 !important;
+  box-shadow: none !important;
+}
+.cl-socialButtonsBlockButton:hover {
+  background: #1f2937 !important;
+  border-color: #4b5563 !important;
+}
+/* Inputs */
+.cl-formFieldInput {
+  background: #111827 !important;
+  border: 1px solid #374151 !important;
+  border-radius: 0.75rem !important;
+  color: #fff !important;
+  height: 2.5rem !important;
+  font-size: 0.875rem !important;
+  box-shadow: none !important;
+}
+.cl-formFieldInput:focus {
+  border-color: #7c3aed !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+/* Primary button */
+.cl-formButtonPrimary {
+  background: #7c3aed !important;
+  border: none !important;
+  border-radius: 0.75rem !important;
+  color: #fff !important;
+  height: 2.5rem !important;
+  font-size: 0.875rem !important;
+  font-weight: 600 !important;
+  box-shadow: 0 4px 14px rgba(124, 58, 237, 0.3) !important;
+}
+.cl-formButtonPrimary:hover {
+  background: #6d28d9 !important;
+}
+/* Divider */
+.cl-dividerLine {
+  background: #1f2937 !important;
+}
+.cl-dividerText {
+  color: #6b7280 !important;
+  font-size: 0.75rem !important;
+}
+/* Labels */
+.cl-formFieldLabel {
+  color: #d1d5db !important;
+  font-size: 0.875rem !important;
+  font-weight: 500 !important;
+}
+/* Alternate method link */
+.cl-alternativeMethodsBlockButton,
+.cl-footerActionLink {
+  color: #a78bfa !important;
+}
+.cl-alternativeMethodsBlockButton:hover,
+.cl-footerActionLink:hover {
+  color: #c4b5fd !important;
+}
+/* Internal footer "don't have account" row - hide since we show our own */
+.cl-footerAction {
+  display: none !important;
+}
+/* Error alert */
+.cl-alert {
+  background: rgba(127, 29, 29, 0.3) !important;
+  border: 1px solid rgba(153, 27, 27, 0.4) !important;
+  border-radius: 0.75rem !important;
+}
+.cl-alertText {
+  color: #fca5a5 !important;
+}
+
 /* Prose for message content */
 .prose-dark {
   color: #e5e7eb;

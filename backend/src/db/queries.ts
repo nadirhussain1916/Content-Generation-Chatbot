@@ -39,7 +39,7 @@ export async function createWorkspace(db: D1Database, data: {
   ).bind(data.id, data.owner_id, data.name, data.slug, data.ai_tone, data.default_caption_style, data.default_platforms).run();
 }
 
-export async function updateWorkspace(db: D1Database, id: string, data: Partial<Pick<Workspace, 'name' | 'ai_tone' | 'default_caption_style' | 'default_platforms' | 'avatar_url' | 'brand_name' | 'brand_description' | 'brand_voice' | 'target_audience' | 'agent_instructions'>>) {
+export async function updateWorkspace(db: D1Database, id: string, data: Partial<Pick<Workspace, 'name' | 'ai_tone' | 'default_caption_style' | 'default_platforms' | 'avatar_url' | 'brand_name' | 'brand_description' | 'brand_voice' | 'target_audience' | 'agent_instructions' | 'default_image_size' | 'default_video_duration' | 'default_video_dimensions'>>) {
   const fields = Object.entries(data).map(([k]) => `${k} = ?`).join(', ');
   const values = Object.values(data);
   return db.prepare(`UPDATE workspaces SET ${fields}, updated_at = unixepoch() WHERE id = ?`)
@@ -99,15 +99,17 @@ export async function getAsset(db: D1Database, id: string) {
 }
 
 export async function getAssetsByWorkspace(db: D1Database, workspaceId: string, limit = 50) {
+  // Returns ALL statuses — the UI decides how to render each state
   return db.prepare(
-    'SELECT * FROM assets WHERE workspace_id = ? AND status = ? ORDER BY created_at DESC LIMIT ?'
-  ).bind(workspaceId, 'ready', limit).all<Asset>();
+    'SELECT * FROM assets WHERE workspace_id = ? ORDER BY created_at DESC LIMIT ?'
+  ).bind(workspaceId, limit).all<Asset>();
 }
 
 export async function getAssetsByThread(db: D1Database, threadId: string) {
+  // Returns ALL statuses so in-progress and failed assets are visible to the UI
   return db.prepare(
-    'SELECT * FROM assets WHERE thread_id = ? AND status = ? ORDER BY created_at DESC'
-  ).bind(threadId, 'ready').all<Asset>();
+    'SELECT * FROM assets WHERE thread_id = ? ORDER BY created_at DESC'
+  ).bind(threadId).all<Asset>();
 }
 
 export async function createAsset(db: D1Database, data: {
@@ -119,7 +121,7 @@ export async function createAsset(db: D1Database, data: {
   ).bind(data.id, data.thread_id, data.workspace_id, data.message_id ?? null, data.type, 'generating', data.prompt ?? null, data.prediction_id ?? null).run();
 }
 
-export async function updateAsset(db: D1Database, id: string, data: Partial<Pick<Asset, 'status' | 'r2_key' | 'public_url' | 'prediction_id'>>) {
+export async function updateAsset(db: D1Database, id: string, data: Partial<Pick<Asset, 'status' | 'r2_key' | 'public_url' | 'prediction_id' | 'error_message'>>) {
   const fields = Object.entries(data).map(([k]) => `${k} = ?`).join(', ');
   const values = Object.values(data);
   return db.prepare(`UPDATE assets SET ${fields} WHERE id = ?`).bind(...values, id).run();
