@@ -20,7 +20,10 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       const token = await getToken();
       const res = await api.post<TfResponse<BootstrapData>>('/api/onboarding/bootstrap', {}, token ?? undefined);
       if (res.success && res.data) {
-        if (!res.data.onboarded) {
+        // Redirect to onboarding only when the user has NO workspace yet.
+        // Having a workspace is the true "onboarded" signal — the DB flag
+        // can lag if a previous session was interrupted.
+        if (!res.data.workspaceSlug && !res.data.onboarded) {
           navigate('/onboarding', { replace: true });
           return;
         }

@@ -61,10 +61,13 @@ export default function LandingPage() {
   const { isSignedIn, isLoaded, getToken } = useAuth();
   const navigate = useNavigate();
   const [mode, setMode] = useState<'sign-in' | 'sign-up'>('sign-in');
+  // True while we are resolving where to send a signed-in user.
+  const [redirecting, setRedirecting] = useState(false);
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn) return;
 
+    setRedirecting(true);
     (async () => {
       try {
         const token = await getToken();
@@ -83,6 +86,15 @@ export default function LandingPage() {
       }
     })();
   }, [isLoaded, isSignedIn]);
+
+  // Blank loading screen — avoids flashing the sign-in form for returning users
+  if (redirecting) {
+    return (
+      <div className='h-screen bg-gray-950 flex items-center justify-center'>
+        <div className='animate-spin h-8 w-8 rounded-full border-2 border-violet-500 border-t-transparent' />
+      </div>
+    );
+  }
 
   return (
     <div className='h-screen bg-gray-950 text-white flex overflow-hidden'>
