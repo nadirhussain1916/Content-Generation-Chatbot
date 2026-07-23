@@ -100,6 +100,7 @@ generateRouter.post('/video', async (c) => {
       prompt: string;
       messageId?: string;
       videoModel?: string;
+      aspectRatio?: string;
     };
     if (!body.threadId || !body.prompt) {
       return c.json<TfResponse<null>>({ success: false, message: 'threadId and prompt are required' }, 400);
@@ -150,13 +151,19 @@ generateRouter.post('/video', async (c) => {
       },
     };
 
-    const modelId = body.videoModel ?? 'minimax/video-01';
-    const modelConfig = VIDEO_MODEL_CONFIGS[modelId] ?? VIDEO_MODEL_CONFIGS['minimax/video-01'];
+    const modelId = body.videoModel ?? 'wavespeedai/wan-2.1-t2v-480p';
+    const modelConfig = VIDEO_MODEL_CONFIGS[modelId] ?? VIDEO_MODEL_CONFIGS['wavespeedai/wan-2.1-t2v-480p'];
 
-    // Resolve aspect ratio from workspace defaults (used by WAN models)
-    const videoDimensions = workspace.default_video_dimensions ?? '1280x720';
-    const [videoWidth, videoHeight] = videoDimensions.split('x').map(Number);
-    const videoAspectRatio = videoWidth >= videoHeight ? '16:9' : '9:16';
+    // Aspect ratio: prefer explicit body param, fall back to workspace default
+    const VALID_ASPECT_RATIOS = new Set(['16:9', '9:16', '1:1', '4:3', '3:4']);
+    let videoAspectRatio = '9:16';
+    if (body.aspectRatio && VALID_ASPECT_RATIOS.has(body.aspectRatio)) {
+      videoAspectRatio = body.aspectRatio;
+    } else {
+      const videoDimensions = workspace.default_video_dimensions ?? '720x1280';
+      const [videoWidth, videoHeight] = videoDimensions.split('x').map(Number);
+      videoAspectRatio = videoWidth >= videoHeight ? '16:9' : '9:16';
+    }
 
     // Create the Replicate prediction — no Prefer:wait=5 to avoid Workers connection issues.
     // The Workflow handles all polling durably.

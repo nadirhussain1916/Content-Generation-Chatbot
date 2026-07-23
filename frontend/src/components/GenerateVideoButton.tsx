@@ -5,7 +5,12 @@ import type { TfResponse, Asset, Message } from '../types';
 import { Video, Loader2, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
 import { cn } from '../lib/utils';
 import ModelPicker from './ModelPicker';
-import { VIDEO_MODELS, DEFAULT_VIDEO_MODEL, VIDEO_MODEL_KEY, readPref, writePref } from '../lib/models';
+import {
+  VIDEO_MODELS, DEFAULT_VIDEO_MODEL, VIDEO_MODEL_KEY,
+  VIDEO_ASPECT_RATIOS, DEFAULT_VIDEO_ASPECT_RATIO, VIDEO_ASPECT_RATIO_KEY,
+  WAN_MODEL_IDS,
+  readPref, writePref,
+} from '../lib/models';
 
 interface GenerateVideoButtonProps {
   slug: string;
@@ -30,6 +35,9 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
       : null
   );
   const [videoModel, setVideoModel] = useState(() => readPref(VIDEO_MODEL_KEY, DEFAULT_VIDEO_MODEL));
+  const [aspectRatio, setAspectRatio] = useState(() => readPref(VIDEO_ASPECT_RATIO_KEY, DEFAULT_VIDEO_ASPECT_RATIO));
+
+  const isWanModel = WAN_MODEL_IDS.includes(videoModel as typeof WAN_MODEL_IDS[number]);
 
   async function pollUntilReady(assetId: string): Promise<Asset> {
     const deadline = Date.now() + POLL_TIMEOUT_MS;
@@ -60,7 +68,7 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
       const token = await getToken();
       const res = await api.post<TfResponse<{ assetId: string; predictionId: string; status: string }>>(
         `/api/workspaces/${slug}/generate/video`,
-        { threadId, prompt, messageId: message.id, videoModel },
+        { threadId, prompt, messageId: message.id, videoModel, ...(isWanModel && { aspectRatio }) },
         token ?? undefined
       );
 
@@ -90,13 +98,25 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
     <div className='space-y-2 pt-1'>
       {/* Model picker — only shown before generation */}
       {!done && (
-        <div className='flex items-center gap-1.5'>
-          <span className='text-xs text-gray-500'>Model</span>
-          <ModelPicker
-            options={VIDEO_MODELS}
-            value={videoModel}
-            onChange={(id) => { setVideoModel(id); writePref(VIDEO_MODEL_KEY, id); }}
-          />
+        <div className='flex items-center gap-3 flex-wrap'>
+          <div className='flex items-center gap-1.5'>
+            <span className='text-xs text-gray-500'>Model</span>
+            <ModelPicker
+              options={VIDEO_MODELS}
+              value={videoModel}
+              onChange={(id) => { setVideoModel(id); writePref(VIDEO_MODEL_KEY, id); }}
+            />
+          </div>
+          {isWanModel && (
+            <div className='flex items-center gap-1.5'>
+              <span className='text-xs text-gray-500'>Size</span>
+              <ModelPicker
+                options={VIDEO_ASPECT_RATIOS}
+                value={aspectRatio}
+                onChange={(id) => { setAspectRatio(id); writePref(VIDEO_ASPECT_RATIO_KEY, id); }}
+              />
+            </div>
+          )}
         </div>
       )}
 
