@@ -136,8 +136,7 @@ generateRouter.post('/video', async (c) => {
         buildInput: (prompt, aspectRatio) => ({
           prompt,
           aspect_ratio: aspectRatio,
-          disable_safety_checker: true,
-          negative_prompt: 'nsfw, nude, explicit, adult, sexual, violence, gore, disturbing',
+          fast_mode: 'Balanced',
         }),
       },
       'wavespeedai/wan-2.1-t2v-720p': {
@@ -145,8 +144,7 @@ generateRouter.post('/video', async (c) => {
         buildInput: (prompt, aspectRatio) => ({
           prompt,
           aspect_ratio: aspectRatio,
-          disable_safety_checker: true,
-          negative_prompt: 'nsfw, nude, explicit, adult, sexual, violence, gore, disturbing',
+          fast_mode: 'Balanced',
         }),
       },
     };
