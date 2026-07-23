@@ -13,10 +13,10 @@ const messagesRouter = new Hono<Env>();
 
 messagesRouter.use('*', authMiddleware);
 messagesRouter.use('*', workspaceMiddleware);
-messagesRouter.use(
-  '/:threadId/messages',
-  kvRateLimiter({ windowMs: 60 * 1000, limit: 20, message: 'Slow down — 20 AI calls per minute max' })
-);
+// messagesRouter.use(
+//   '/:threadId/messages',
+//   kvRateLimiter({ windowMs: 60 * 1000, limit: 20, message: 'Slow down — 20 AI calls per minute max' })
+// );
 
 // POST /api/workspaces/:slug/threads/:threadId/messages
 // Handles ALL phases: planning → draft → followup

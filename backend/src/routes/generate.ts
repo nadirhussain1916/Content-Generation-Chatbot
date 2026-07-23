@@ -12,8 +12,8 @@ const generateRouter = new Hono<Env>();
 
 generateRouter.use('*', authMiddleware);
 generateRouter.use('*', workspaceMiddleware);
-generateRouter.use('/image', kvRateLimiter({ windowMs: 60 * 1000, limit: 5, message: 'Max 5 image generations per minute' }));
-generateRouter.use('/video', kvRateLimiter({ windowMs: 60 * 1000, limit: 3, message: 'Max 3 video generations per minute' }));
+// generateRouter.use('/image', kvRateLimiter({ windowMs: 60 * 1000, limit: 5, message: 'Max 5 image generations per minute' }));
+// generateRouter.use('/video', kvRateLimiter({ windowMs: 60 * 1000, limit: 3, message: 'Max 3 video generations per minute' }));
 
 // GET /api/workspaces/:slug/generate/assets — list all ready assets for workspace
 generateRouter.get('/assets', async (c) => {
