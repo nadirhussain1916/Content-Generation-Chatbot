@@ -20,8 +20,11 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #374151;
+  background: #d1d5db;
   border-radius: 4px;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #374151;
 }
 
 /* ── Clerk inline form overrides (landing page) ── */
@@ -49,27 +52,27 @@ body {
 .cl-footer {
   display: none !important;
 }
-/* Social button */
+
+/* ── Light mode Clerk overrides ── */
 .cl-socialButtonsBlockButton {
-  background: #111827 !important;
-  border: 1px solid #374151 !important;
+  background: #ffffff !important;
+  border: 1px solid #d1d5db !important;
   border-radius: 0.75rem !important;
-  color: #f9fafb !important;
+  color: #111827 !important;
   height: 2.5rem !important;
   font-size: 0.875rem !important;
   font-weight: 500 !important;
   box-shadow: none !important;
 }
 .cl-socialButtonsBlockButton:hover {
-  background: #1f2937 !important;
-  border-color: #4b5563 !important;
+  background: #f9fafb !important;
+  border-color: #9ca3af !important;
 }
-/* Inputs */
 .cl-formFieldInput {
-  background: #111827 !important;
-  border: 1px solid #374151 !important;
+  background: #ffffff !important;
+  border: 1px solid #d1d5db !important;
   border-radius: 0.75rem !important;
-  color: #fff !important;
+  color: #111827 !important;
   height: 2.5rem !important;
   font-size: 0.875rem !important;
   box-shadow: none !important;
@@ -79,7 +82,6 @@ body {
   outline: none !important;
   box-shadow: none !important;
 }
-/* Primary button */
 .cl-formButtonPrimary {
   background: #7c3aed !important;
   border: none !important;
@@ -93,51 +95,93 @@ body {
 .cl-formButtonPrimary:hover {
   background: #6d28d9 !important;
 }
-/* Divider */
 .cl-dividerLine {
-  background: #1f2937 !important;
+  background: #e5e7eb !important;
 }
 .cl-dividerText {
   color: #6b7280 !important;
   font-size: 0.75rem !important;
 }
-/* Labels */
 .cl-formFieldLabel {
-  color: #d1d5db !important;
+  color: #374151 !important;
   font-size: 0.875rem !important;
   font-weight: 500 !important;
 }
-/* Alternate method link */
 .cl-alternativeMethodsBlockButton,
 .cl-footerActionLink {
-  color: #a78bfa !important;
+  color: #7c3aed !important;
 }
 .cl-alternativeMethodsBlockButton:hover,
 .cl-footerActionLink:hover {
-  color: #c4b5fd !important;
+  color: #6d28d9 !important;
 }
 /* Internal footer "don't have account" row - hide since we show our own */
 .cl-footerAction {
   display: none !important;
 }
-/* Error alert */
 .cl-alert {
-  background: rgba(127, 29, 29, 0.3) !important;
-  border: 1px solid rgba(153, 27, 27, 0.4) !important;
+  background: rgba(254, 242, 242, 0.8) !important;
+  border: 1px solid rgba(252, 165, 165, 0.6) !important;
   border-radius: 0.75rem !important;
 }
 .cl-alertText {
+  color: #dc2626 !important;
+}
+
+/* ── Dark mode Clerk overrides ── */
+.dark .cl-socialButtonsBlockButton {
+  background: #111827 !important;
+  border: 1px solid #374151 !important;
+  color: #f9fafb !important;
+}
+.dark .cl-socialButtonsBlockButton:hover {
+  background: #1f2937 !important;
+  border-color: #4b5563 !important;
+}
+.dark .cl-formFieldInput {
+  background: #111827 !important;
+  border: 1px solid #374151 !important;
+  color: #fff !important;
+}
+.dark .cl-formFieldInput:focus {
+  border-color: #7c3aed !important;
+}
+.dark .cl-dividerLine {
+  background: #1f2937 !important;
+}
+.dark .cl-formFieldLabel {
+  color: #d1d5db !important;
+}
+.dark .cl-alternativeMethodsBlockButton,
+.dark .cl-footerActionLink {
+  color: #a78bfa !important;
+}
+.dark .cl-alternativeMethodsBlockButton:hover,
+.dark .cl-footerActionLink:hover {
+  color: #c4b5fd !important;
+}
+.dark .cl-alert {
+  background: rgba(127, 29, 29, 0.3) !important;
+  border: 1px solid rgba(153, 27, 27, 0.4) !important;
+}
+.dark .cl-alertText {
   color: #fca5a5 !important;
 }
 
 /* Prose for message content */
-.prose-dark {
-  color: #e5e7eb;
+.prose-content {
+  color: #374151;
   line-height: 1.7;
 }
-.prose-dark code {
-  background: #1f2937;
+.dark .prose-content {
+  color: #e5e7eb;
+}
+.prose-content code {
+  background: #f3f4f6;
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 0.875em;
+}
+.dark .prose-content code {
+  background: #1f2937;
 }

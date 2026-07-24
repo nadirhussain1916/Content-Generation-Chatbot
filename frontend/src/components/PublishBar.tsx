@@ -56,9 +56,9 @@ export default function PublishBar({ slug, thread, onPublished }: PublishBarProp
   };
 
   return (
-    <div className='border-t border-gray-800 bg-gray-900/50 px-4 py-3'>
+    <div className='border-t border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50 px-4 py-3'>
       <div className='flex items-center gap-2'>
-        <div className='flex items-center gap-1.5 text-xs text-gray-400'>
+        <div className='flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400'>
           {thread.media_type === 'image' ? (
             <ImageIcon size={13} />
           ) : (
@@ -80,7 +80,7 @@ export default function PublishBar({ slug, thread, onPublished }: PublishBarProp
                 ? 'bg-red-900/30 text-red-400 border border-red-700/30'
                 : platform === 'instagram'
                 ? 'bg-gradient-to-r from-pink-600 to-orange-500 text-white hover:opacity-90 disabled:opacity-50'
-                : 'bg-gray-800 text-white border border-gray-700 hover:bg-gray-700 disabled:opacity-50'
+                : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50'
             )}
           >
             {statusIcon(platform)}

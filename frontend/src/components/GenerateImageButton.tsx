@@ -119,14 +119,14 @@ export default function GenerateImageButton({ slug, threadId, message, existingA
                     'px-2.5 py-1 text-xs font-mono rounded-lg border transition-all',
                     size === opt.value
                       ? 'bg-blue-600 border-blue-500 text-white'
-                      : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-blue-500 hover:text-white',
+                      : 'bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-blue-500 hover:text-blue-600 dark:hover:text-white',
                     loading && 'cursor-not-allowed opacity-50'
                   )}
                 >
                   {opt.label}
                 </button>
               ))}
-              <span className='text-xs text-gray-600 self-center ml-1'>
+              <span className='text-xs text-gray-400 dark:text-gray-600 self-center ml-1'>
                 {SIZE_OPTIONS.find(o => o.value === size)?.desc}
               </span>
             </div>

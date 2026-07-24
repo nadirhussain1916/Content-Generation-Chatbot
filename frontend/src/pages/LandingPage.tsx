@@ -5,6 +5,7 @@ import { useAuth } from '@clerk/clerk-react';
 import { api } from '../lib/api';
 import type { TfResponse, Workspace } from '../types';
 import { Zap, MessageSquare, Image, Video, Share2, Sparkles } from 'lucide-react';
+import { useTheme } from '../lib/theme';
 
 const features = [
   { icon: MessageSquare, text: 'Describe your idea in chat — AI handles the rest.' },
@@ -14,7 +15,7 @@ const features = [
   { icon: Sparkles, text: 'Brand voice training that persists across every thread.' },
 ];
 
-const clerkAppearance = {
+const darkAppearance = {
   variables: {
     colorBackground: 'transparent',
     colorInputBackground: '#111827',
@@ -57,12 +58,58 @@ const clerkAppearance = {
   },
 };
 
+const lightAppearance = {
+  variables: {
+    colorBackground: 'transparent',
+    colorInputBackground: '#f9fafb',
+    colorInputText: '#111827',
+    colorText: '#111827',
+    colorTextSecondary: '#6b7280',
+    colorPrimary: '#7c3aed',
+    colorNeutral: '#d1d5db',
+    borderRadius: '0.75rem',
+    fontFamily: 'inherit',
+    fontSize: '0.875rem',
+  },
+  elements: {
+    rootBox: 'w-full',
+    card: '!bg-transparent !shadow-none !p-0 !border-none',
+    header: '!hidden',
+    headerTitle: '!hidden',
+    headerSubtitle: '!hidden',
+    socialButtonsBlockButton:
+      '!bg-white !border !border-gray-300 !text-gray-900 hover:!bg-gray-50 hover:!border-gray-400 !rounded-xl !h-10 !text-sm !font-medium !transition-colors !shadow-none',
+    socialButtonsBlockButtonText: '!text-gray-900 !font-medium',
+    dividerLine: '!bg-gray-200',
+    dividerText: '!text-gray-500 !text-xs',
+    formFieldLabel: '!text-gray-700 !text-sm !font-medium',
+    formFieldInput:
+      '!bg-white !border !border-gray-300 !text-gray-900 !rounded-xl !h-10 !text-sm placeholder:!text-gray-400 focus:!border-violet-500 !transition-colors !shadow-none',
+    formButtonPrimary:
+      '!bg-violet-600 hover:!bg-violet-500 !text-white !rounded-xl !h-10 !text-sm !font-semibold !transition-colors !shadow-lg !border-none',
+    footerAction: '!hidden',
+    footer: '!hidden',
+    identityPreviewText: '!text-gray-700',
+    identityPreviewEditButton: '!text-violet-600',
+    formFieldSuccessText: '!text-green-600',
+    formFieldErrorText: '!text-red-600',
+    alert: '!bg-red-50 !border !border-red-200 !rounded-xl',
+    alertText: '!text-red-600',
+    formResendCodeLink: '!text-violet-600',
+    otpCodeFieldInput: '!bg-white !border !border-gray-300 !text-gray-900 !rounded-xl',
+    alternativeMethodsBlockButton: '!text-violet-600',
+  },
+};
+
 export default function LandingPage() {
   const { isSignedIn, isLoaded, getToken } = useAuth();
   const navigate = useNavigate();
+  const { theme } = useTheme();
   const [mode, setMode] = useState<'sign-in' | 'sign-up'>('sign-in');
   // True while we are resolving where to send a signed-in user.
   const [redirecting, setRedirecting] = useState(false);
+
+  const clerkAppearance = theme === 'dark' ? darkAppearance : lightAppearance;
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn) return;
@@ -90,17 +137,17 @@ export default function LandingPage() {
   // Blank loading screen — avoids flashing the sign-in form for returning users
   if (redirecting) {
     return (
-      <div className='h-screen bg-gray-950 flex items-center justify-center'>
+      <div className='h-screen bg-white dark:bg-gray-950 flex items-center justify-center'>
         <div className='animate-spin h-8 w-8 rounded-full border-2 border-violet-500 border-t-transparent' />
       </div>
     );
   }
 
   return (
-    <div className='h-screen bg-gray-950 text-white flex overflow-hidden'>
+    <div className='h-screen bg-white dark:bg-gray-950 text-gray-900 dark:text-white flex overflow-hidden'>
 
       {/* ── Left panel: auth ── */}
-      <div className='w-full lg:w-[44%] h-full flex items-center justify-center border-r border-gray-800/60 overflow-y-auto'>
+      <div className='w-full lg:w-[44%] h-full flex items-center justify-center border-r border-gray-200/60 dark:border-gray-800/60 overflow-y-auto'>
         <div className='w-full max-w-[360px] px-6 py-16 mx-auto'>
 
           {/* Logo */}
@@ -113,7 +160,7 @@ export default function LandingPage() {
 
           {/* Heading */}
           <div className='mb-7'>
-            <h1 className='text-2xl font-semibold text-white mb-1'>
+            <h1 className='text-2xl font-semibold text-gray-900 dark:text-white mb-1'>
               {mode === 'sign-in' ? 'Welcome back' : 'Create your account'}
             </h1>
             <p className='text-sm text-gray-500'>
@@ -145,7 +192,7 @@ export default function LandingPage() {
                 Don't have an account?{' '}
                 <button
                   onClick={() => setMode('sign-up')}
-                  className='text-violet-400 hover:text-violet-300 font-medium transition-colors'
+                  className='text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300 font-medium transition-colors'
                 >
                   Sign up
                 </button>
@@ -155,7 +202,7 @@ export default function LandingPage() {
                 Already have an account?{' '}
                 <button
                   onClick={() => setMode('sign-in')}
-                  className='text-violet-400 hover:text-violet-300 font-medium transition-colors'
+                  className='text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300 font-medium transition-colors'
                 >
                   Sign in
                 </button>
@@ -166,7 +213,7 @@ export default function LandingPage() {
       </div>
 
       {/* ── Right panel: app info ── */}
-      <div className='hidden lg:flex flex-1 h-full items-center justify-center overflow-hidden bg-gradient-to-br from-gray-950 via-violet-950/20 to-gray-950 relative'>
+      <div className='hidden lg:flex flex-1 h-full items-center justify-center overflow-hidden bg-gradient-to-br from-white via-violet-50/20 to-white dark:from-gray-950 dark:via-violet-950/20 dark:to-gray-950 relative'>
         {/* Background glows */}
         <div className='absolute inset-0 pointer-events-none'>
           <div className='absolute top-1/3 left-1/3 w-80 h-80 bg-violet-600/10 rounded-full blur-3xl' />
@@ -181,20 +228,20 @@ export default function LandingPage() {
           </div>
 
           {/* Headline */}
-          <h2 className='text-3xl xl:text-4xl font-bold leading-[1.2] tracking-tight mb-4'>
+          <h2 className='text-3xl xl:text-4xl font-bold leading-[1.2] tracking-tight mb-4 text-gray-900 dark:text-white'>
             Say goodbye to{' '}
-            <span className='bg-gradient-to-r from-violet-400 to-violet-200 bg-clip-text text-transparent'>
+            <span className='bg-gradient-to-r from-violet-500 to-violet-300 bg-clip-text text-transparent'>
               manual content.
             </span>
             <br />
             Let{' '}
-            <span className='bg-gradient-to-r from-violet-400 to-violet-200 bg-clip-text text-transparent'>
+            <span className='bg-gradient-to-r from-violet-500 to-violet-300 bg-clip-text text-transparent'>
               CreatorOS
             </span>{' '}
             do the heavy lifting.
           </h2>
 
-          <p className='text-gray-400 text-sm leading-relaxed mb-8'>
+          <p className='text-gray-500 dark:text-gray-400 text-sm leading-relaxed mb-8'>
             Chat with AI to instantly produce captions, images, and video scripts —
             then publish straight to your social accounts.
           </p>
@@ -206,7 +253,7 @@ export default function LandingPage() {
                 <div className='w-6 h-6 rounded-md bg-violet-900/60 border border-violet-700/30 flex items-center justify-center flex-shrink-0'>
                   <Icon size={12} className='text-violet-400' />
                 </div>
-                <span className='text-sm text-gray-300'>{text}</span>
+                <span className='text-sm text-gray-600 dark:text-gray-300'>{text}</span>
               </li>
             ))}
           </ul>
