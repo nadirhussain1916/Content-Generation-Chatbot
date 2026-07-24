@@ -99,8 +99,10 @@ export default function SettingsPage() {
     setAccounts((prev) => prev.filter((a) => a.platform !== platform));
   }
 
-  function connectUrl(platform: string) {
-    return `${BACKEND}/api/workspaces/${slug}/social/connect/${platform}`;
+  async function connectPlatform(platform: string) {
+    const token = await getToken();
+    const url = `${BACKEND}/api/workspaces/${slug}/social/connect/${platform}${token ? `?t=${token}` : ''}`;
+    window.location.href = url;
   }
 
   async function handleNewThread() {
@@ -523,12 +525,12 @@ export default function SettingsPage() {
                       <Unlink size={13} /> Disconnect
                     </button>
                   ) : (
-                    <a
-                      href={connectUrl('instagram')}
+                    <button
+                      onClick={() => connectPlatform('instagram')}
                       className='flex items-center gap-1.5 text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-white px-3 py-1.5 rounded-lg transition-colors'
                     >
                       <Link2 size={13} /> Connect
-                    </a>
+                    </button>
                   )}
                 </div>
 
@@ -553,12 +555,12 @@ export default function SettingsPage() {
                       <Unlink size={13} /> Disconnect
                     </button>
                   ) : (
-                    <a
-                      href={connectUrl('tiktok')}
+                    <button
+                      onClick={() => connectPlatform('tiktok')}
                       className='flex items-center gap-1.5 text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-white px-3 py-1.5 rounded-lg transition-colors'
                     >
                       <Link2 size={13} /> Connect
-                    </a>
+                    </button>
                   )}
                 </div>
               </section>

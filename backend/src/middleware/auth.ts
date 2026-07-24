@@ -121,12 +121,16 @@ async function verifyClerkToken(
 // Tier 1 — Required auth: 401 if no valid Clerk JWT
 export const authMiddleware = async (c: HonoContext, next: Next) => {
   const authHeader = c.req.header('Authorization');
-  if (!authHeader?.startsWith('Bearer ')) {
+  // Accept token from ?t= query param as fallback for browser-initiated OAuth redirects
+  const queryToken = c.req.query('t');
+  const rawToken = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : (queryToken ?? null);
+
+  if (!rawToken) {
     return c.json({ success: false, message: 'Missing or invalid Authorization header' }, 401);
   }
 
   const userId = await verifyClerkToken(
-    authHeader.substring(7),
+    rawToken,
     c.env.CLERK_SECRET_KEY,
     c.env.KV
   );
