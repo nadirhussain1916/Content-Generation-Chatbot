@@ -7,6 +7,8 @@ import ThreadPage from './pages/ThreadPage';
 import SettingsPage from './pages/SettingsPage';
 import GenerationsPage from './pages/GenerationsPage';
 import AuthGuard from './components/AuthGuard';
+import TermsPage from './pages/TermsPage';
+import PrivacyPage from './pages/PrivacyPage';
 
 export default function App() {
   return (
@@ -14,6 +16,8 @@ export default function App() {
       <Routes>
         {/* Public */}
         <Route path='/' element={<LandingPage />} />
+        <Route path='/terms' element={<TermsPage />} />
+        <Route path='/privacy' element={<PrivacyPage />} />
 
         {/* Auth-required */}
         <Route
