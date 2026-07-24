@@ -10,7 +10,7 @@ import workspacesRouter from './routes/workspaces';
 import threadsRouter from './routes/threads';
 import messagesRouter from './routes/messages';
 import generateRouter from './routes/generate';
-import socialRouter from './routes/social';
+import socialRouter, { socialCallbackRouter } from './routes/social';
 import publishRouter from './routes/publish';
 import adminRouter from './routes/admin/index';
 import { getExpiringTokens, getSocialAccount, upsertSocialAccount } from './db/queries';
@@ -51,6 +51,7 @@ app.route('/api/workspaces/:slug/threads', threadsRouter);
 app.route('/api/workspaces/:slug/threads', messagesRouter);
 app.route('/api/workspaces/:slug/generate', generateRouter);
 app.route('/api/workspaces/:slug/social', socialRouter);
+app.route('/api/social', socialCallbackRouter);
 app.route('/api/workspaces/:slug/publish', publishRouter);
 app.route('/api/admin', adminRouter);
 
