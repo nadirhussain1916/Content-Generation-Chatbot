@@ -7,16 +7,41 @@ async function tiktokRequest<T>(
   accessToken: string,
   body?: Record<string, unknown>
 ): Promise<T> {
-  const res = await fetch(`${TIKTOK_BASE}${endpoint}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json; charset=UTF-8',
-    },
-    body: JSON.stringify(body ?? {}),
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30_000); // 30s hard timeout
 
-  const data = await res.json() as T & { error?: { code: string; message: string } };
+  let res: Response;
+  try {
+    res = await fetch(`${TIKTOK_BASE}${endpoint}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json; charset=UTF-8',
+      },
+      body: JSON.stringify(body ?? {}),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    clearTimeout(timer);
+    const isAbort = err instanceof Error && err.name === 'AbortError';
+    throw new Error(`TikTok fetch ${isAbort ? 'timed out' : 'failed'} [${endpoint}]: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  clearTimeout(timer);
+
+  const rawText = await res.text();
+  Logger.log('TikTokRawResponse', { endpoint, status: res.status, body: rawText.slice(0, 500) });
+
+  if (!res.ok) {
+    throw new Error(`TikTok API HTTP ${res.status} [${endpoint}]: ${rawText.slice(0, 300)}`);
+  }
+
+  let data: T & { error?: { code: string; message: string } };
+  try {
+    data = JSON.parse(rawText) as T & { error?: { code: string; message: string } };
+  } catch {
+    throw new Error(`TikTok API returned non-JSON [${endpoint}]: ${rawText.slice(0, 300)}`);
+  }
+
   if ((data as { error?: { code: string } }).error?.code && (data as { error: { code: string } }).error.code !== 'ok') {
     throw new Error(`TikTok API: ${(data as { error: { message: string } }).error.message}`);
   }

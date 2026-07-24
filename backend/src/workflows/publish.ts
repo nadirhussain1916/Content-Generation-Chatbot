@@ -35,25 +35,37 @@ export class PublishWorkflow extends WorkflowEntrypoint<CloudflareBindings, Publ
   async run(event: WorkflowEvent<PublishParams>, step: WorkflowStep) {
     const p = event.payload;
 
+    Logger.log('PublishWorkflowStarted', { recordId: p.recordId, r2Key: p.r2Key, title: p.title });
+
     try {
       // ── Step 1: Get video size from R2 metadata ──────────────────────────────
+      Logger.log('PublishStep1Start', { recordId: p.recordId, step: 'get-video-size' });
       const videoSize = await step.do('get-video-size', { retries: { limit: 2, delay: '3 seconds' } }, async () => {
+        Logger.log('R2HeadStart', { r2Key: p.r2Key });
         const obj = await this.env.ASSETS.head(p.r2Key);
+        Logger.log('R2HeadResult', { r2Key: p.r2Key, found: !!obj, size: obj?.size });
         if (!obj) throw new Error(`R2 object not found: ${p.r2Key}`);
         return obj.size;
       });
+      Logger.log('PublishStep1Done', { recordId: p.recordId, videoSize });
 
       // ── Step 2: Init TikTok FILE_UPLOAD session ───────────────────────────────
+      Logger.log('PublishStep2Start', { recordId: p.recordId, step: 'init-tiktok-upload', videoSize });
       const uploadInfo = await step.do('init-tiktok-upload', { retries: { limit: 2, delay: '5 seconds' } }, async () => {
-        return initVideoUpload({
+        Logger.log('TikTokInitUploadStart', { videoSize, title: p.title });
+        const result = await initVideoUpload({
           accessToken: p.accessToken,
           title: p.title,
           description: p.description,
           videoSize,
         });
+        Logger.log('TikTokInitUploadDone', { publishId: result.publish_id, chunkSize: result.chunk_size, totalChunks: result.total_chunk_count });
+        return result;
       });
+      Logger.log('PublishStep2Done', { recordId: p.recordId, publishId: uploadInfo.publish_id });
 
       await step.do('mark-processing', async () => {
+        Logger.log('MarkProcessingStart', { recordId: p.recordId });
         await Promise.all([
           updatePublishRecord(this.env.DB, p.recordId, {
             status: 'processing',
@@ -66,19 +78,26 @@ export class PublishWorkflow extends WorkflowEntrypoint<CloudflareBindings, Publ
             percent: 0,
           }),
         ]);
+        Logger.log('MarkProcessingDone', { recordId: p.recordId });
       });
 
       // ── Step 3: Fetch from R2 and upload chunks to TikTok ────────────────────
-      // ArrayBuffer is consumed within this step — not returned (not serializable).
+      Logger.log('PublishStep3Start', { recordId: p.recordId, step: 'upload-video', totalChunks: uploadInfo.total_chunk_count });
       await step.do('upload-video', { retries: { limit: 2, delay: '10 seconds' }, timeout: '10 minutes' }, async () => {
+        Logger.log('R2GetStart', { r2Key: p.r2Key });
         const obj = await this.env.ASSETS.get(p.r2Key);
+        Logger.log('R2GetResult', { r2Key: p.r2Key, found: !!obj });
         if (!obj) throw new Error(`R2 object not found: ${p.r2Key}`);
+
+        Logger.log('ArrayBufferStart', { r2Key: p.r2Key, size: videoSize });
         const videoBuffer = await obj.arrayBuffer();
+        Logger.log('ArrayBufferDone', { byteLength: videoBuffer.byteLength });
 
         const { upload_url, chunk_size, total_chunk_count } = uploadInfo;
         for (let i = 0; i < total_chunk_count; i++) {
           const start = i * chunk_size;
           const chunk = videoBuffer.slice(start, Math.min(start + chunk_size, videoSize));
+          Logger.log('ChunkUploadStart', { chunkIndex: i, totalChunks: total_chunk_count, chunkBytes: chunk.byteLength });
           await uploadVideoChunk({
             uploadUrl: upload_url,
             chunk,
@@ -86,23 +105,25 @@ export class PublishWorkflow extends WorkflowEntrypoint<CloudflareBindings, Publ
             chunkSize: chunk_size,
             totalSize: videoSize,
           });
-          // Write progress after each chunk — frontend can poll this
+          Logger.log('ChunkUploadDone', { chunkIndex: i, totalChunks: total_chunk_count });
           await writeProgress(this.env.KV, p.recordId, {
             phase: 'uploading',
             chunksUploaded: i + 1,
             totalChunks: total_chunk_count,
-            percent: Math.round(((i + 1) / total_chunk_count) * 80), // 0–80% for upload phase
+            percent: Math.round(((i + 1) / total_chunk_count) * 80),
           });
         }
+        Logger.log('AllChunksUploaded', { recordId: p.recordId, totalChunks: total_chunk_count });
       });
+      Logger.log('PublishStep3Done', { recordId: p.recordId });
 
       // ── Step 4: Poll for TikTok publish status ────────────────────────────────
-      // 36 retries × 10s = up to 6 minutes of polling
+      Logger.log('PublishStep4Start', { recordId: p.recordId, step: 'poll-status', publishId: uploadInfo.publish_id });
       await writeProgress(this.env.KV, p.recordId, {
         phase: 'processing',
         chunksUploaded: uploadInfo.total_chunk_count,
         totalChunks: uploadInfo.total_chunk_count,
-        percent: 85, // 80–100% for TikTok processing phase
+        percent: 85,
       });
 
       const finalStatus = await step.do('poll-status', {
@@ -113,11 +134,12 @@ export class PublishWorkflow extends WorkflowEntrypoint<CloudflareBindings, Publ
           accessToken: p.accessToken,
           publishId: uploadInfo.publish_id,
         });
+        Logger.log('TikTokPollStatus', { recordId: p.recordId, publishId: uploadInfo.publish_id, status });
         if (status === 'PUBLISH_COMPLETE') return 'published' as const;
         if (status === 'FAILED') return 'failed' as const;
-        // Still processing — throw to trigger retry with delay
         throw new Error(`TikTok publish still processing: ${status}`);
       });
+      Logger.log('PublishStep4Done', { recordId: p.recordId, finalStatus });
 
       // ── Step 5: Finalize record ───────────────────────────────────────────────
       await step.do('finalize', async () => {
@@ -135,7 +157,7 @@ export class PublishWorkflow extends WorkflowEntrypoint<CloudflareBindings, Publ
       Logger.log('TikTokPublishWorkflowComplete', { recordId: p.recordId, status: finalStatus });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      Logger.log('TikTokPublishWorkflowFailed', { recordId: p.recordId }, err);
+      Logger.log('TikTokPublishWorkflowFailed', { recordId: p.recordId, error: msg }, err);
       await Promise.all([
         updatePublishRecord(this.env.DB, p.recordId, { status: 'failed', error_message: msg }),
         writeProgress(this.env.KV, p.recordId, {
