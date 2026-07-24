@@ -2,7 +2,9 @@ import { Hono } from 'hono';
 import { authMiddleware, workspaceMiddleware } from '../middleware/auth';
 import { getAsset, getSocialAccount, createPublishRecord, updatePublishRecord, getPublishRecord, getPublishRecordsByWorkspace } from '../db/queries';
 import { publishImage, createReelsContainer, publishContainer } from '../services/instagram';
-import { initVideoUpload, initPhotoPost, checkTikTokPublishStatus } from '../services/tiktok';
+import { initPhotoPost, checkTikTokPublishStatus } from '../services/tiktok';
+import type { PublishParams, PublishProgress } from '../workflows/publish';
+import { publishProgressKey } from '../workflows/publish';
 import type { CloudflareBindings } from '../env';
 import type { ContextVariables, TfResponse, PublishRecord } from '../types';
 import { Logger } from '../utils/Logger';
@@ -132,26 +134,28 @@ publishRouter.post('/tiktok', async (c) => {
     const publicUrl = assetPublicUrl(c.env, asset.r2_key);
 
     try {
-      let publishId: string;
       if (asset.type === 'video') {
-        const result = await initVideoUpload({
+        // Delegate to PublishWorkflow — handles chunked FILE_UPLOAD + status polling durably
+        const workflowParams: PublishParams = {
+          recordId,
+          workspaceId: workspace.id,
+          r2Key: asset.r2_key,
           accessToken: account.access_token,
           title: body.title,
-          description: body.description,
-          videoUrl: publicUrl,
-        });
-        publishId = result.publish_id;
+          description: body.description ?? '',
+        };
+        await c.env.PUBLISH_WORKFLOW.create({ params: workflowParams });
+        await updatePublishRecord(c.env.DB, recordId, { status: 'processing' });
       } else {
+        // Photo posts are fast — handle inline
         const result = await initPhotoPost({
           accessToken: account.access_token,
           title: body.title,
           description: body.description,
           photoUrls: [publicUrl],
         });
-        publishId = result.publish_id;
+        await updatePublishRecord(c.env.DB, recordId, { status: 'processing', platform_post_id: result.publish_id });
       }
-
-      await updatePublishRecord(c.env.DB, recordId, { status: 'processing', platform_post_id: publishId });
     } catch (publishErr) {
       const msg = publishErr instanceof Error ? publishErr.message : String(publishErr);
       await updatePublishRecord(c.env.DB, recordId, { status: 'failed', error_message: msg });
@@ -226,7 +230,19 @@ publishRouter.get('/status/:recordId', async (c) => {
       }
     }
 
-    return c.json<TfResponse<PublishRecord>>({ success: true, data: record });
+    // Attach KV progress for TikTok video uploads (workflow-driven)
+    let progress: PublishProgress | null = null;
+    if (record.platform === 'tiktok') {
+      const raw = await c.env.KV.get(publishProgressKey(recordId));
+      if (raw) {
+        try { progress = JSON.parse(raw) as PublishProgress; } catch {}
+      }
+    }
+
+    return c.json<TfResponse<PublishRecord & { progress?: PublishProgress | null }>>({
+      success: true,
+      data: { ...record, progress },
+    });
   } catch (error) {
     Logger.log('PublishStatusError', { recordId }, error);
     return c.json<TfResponse<null>>({ success: false, message: 'Internal server error' }, 500);

@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { CloudflareBindings } from './env';
 import type { ContextVariables } from './types';
 export { GenerationWorkflow } from './workflows/generation';
+export { PublishWorkflow } from './workflows/publish';
 import { runAllMigrations } from './migrations';
 import { Logger } from './utils/Logger';
 

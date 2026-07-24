@@ -48,6 +48,11 @@
           "name": "generation-workflow",
           "binding": "GENERATION_WORKFLOW",
           "class_name": "GenerationWorkflow"
+        },
+        {
+          "name": "publish-workflow",
+          "binding": "PUBLISH_WORKFLOW",
+          "class_name": "PublishWorkflow"
         }
       ]
     }
@@ -86,6 +91,11 @@
       "name": "generation-workflow",
       "binding": "GENERATION_WORKFLOW",
       "class_name": "GenerationWorkflow"
+    },
+    {
+      "name": "publish-workflow",
+      "binding": "PUBLISH_WORKFLOW",
+      "class_name": "PublishWorkflow"
     }
   ]
 

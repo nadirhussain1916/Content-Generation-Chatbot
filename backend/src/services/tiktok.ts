@@ -111,7 +111,12 @@ export async function getTikTokUserInfo(accessToken: string): Promise<{ open_id:
 
 // ─── Publishing ───────────────────────────────────────────────────────────────
 
-export async function initVideoUpload(params: {
+/**
+ * PULL_FROM_URL: TikTok fetches the video from your URL.
+ * Requires URL ownership verification in the TikTok developer portal.
+ * Keep for future use once domain is verified.
+ */
+export async function initVideoUploadByUrl(params: {
   accessToken: string;
   title: string;
   description: string;
@@ -124,7 +129,7 @@ export async function initVideoUpload(params: {
       post_info: {
         title: params.title.substring(0, 150),
         description: params.description.substring(0, 2200),
-        privacy_level: 'SELF_ONLY', // change to PUBLIC_TO_EVERYONE for production
+        privacy_level: 'SELF_ONLY',
         disable_duet: false,
         disable_comment: false,
         disable_stitch: false,
@@ -136,8 +141,86 @@ export async function initVideoUpload(params: {
     }
   );
 
-  Logger.log('TikTokVideoInitiated', { publishId: data.data.publish_id });
+  Logger.log('TikTokVideoInitiatedByUrl', { publishId: data.data.publish_id });
   return { publish_id: data.data.publish_id };
+}
+
+/**
+ * FILE_UPLOAD step 1: Init upload session with video size.
+ * Returns publish_id, upload_url, and confirmed chunk sizing from TikTok.
+ * No domain verification required.
+ */
+export async function initVideoUpload(params: {
+  accessToken: string;
+  title: string;
+  description: string;
+  videoSize: number;
+}): Promise<{ publish_id: string; upload_url: string; chunk_size: number; total_chunk_count: number }> {
+  // TikTok requires chunks between 5MB–64MB; last chunk can be smaller
+  const MAX_CHUNK = 64 * 1024 * 1024; // 64MB
+  const chunkSize = Math.min(params.videoSize, MAX_CHUNK);
+  const totalChunks = Math.ceil(params.videoSize / chunkSize);
+
+  const data = await tiktokRequest<{
+    data: { publish_id: string; upload_url: string; chunk_size: number; total_chunk_count: number };
+  }>(
+    '/post/publish/video/init/',
+    params.accessToken,
+    {
+      post_info: {
+        title: params.title.substring(0, 150),
+        description: params.description.substring(0, 2200),
+        privacy_level: 'SELF_ONLY',
+        disable_duet: false,
+        disable_comment: false,
+        disable_stitch: false,
+      },
+      source_info: {
+        source: 'FILE_UPLOAD',
+        video_size: params.videoSize,
+        chunk_size: chunkSize,
+        total_chunk_count: totalChunks,
+      },
+    }
+  );
+
+  Logger.log('TikTokVideoInitiatedFileUpload', { publishId: data.data.publish_id });
+  return {
+    publish_id: data.data.publish_id,
+    upload_url: data.data.upload_url,
+    chunk_size: data.data.chunk_size ?? chunkSize,
+    total_chunk_count: data.data.total_chunk_count ?? totalChunks,
+  };
+}
+
+/**
+ * FILE_UPLOAD step 2: Upload a single chunk to TikTok's upload URL.
+ * Use Content-Range header to specify byte range within the total video.
+ */
+export async function uploadVideoChunk(params: {
+  uploadUrl: string;
+  chunk: ArrayBuffer;
+  chunkIndex: number;
+  chunkSize: number;
+  totalSize: number;
+}): Promise<void> {
+  const start = params.chunkIndex * params.chunkSize;
+  const end = start + params.chunk.byteLength - 1;
+
+  const res = await fetch(params.uploadUrl, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'video/mp4',
+      'Content-Length': String(params.chunk.byteLength),
+      'Content-Range': `bytes ${start}-${end}/${params.totalSize}`,
+    },
+    body: params.chunk,
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`TikTok chunk upload failed (${res.status}): ${text}`);
+  }
 }
 
 export async function initPhotoPost(params: {
