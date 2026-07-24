@@ -32,7 +32,7 @@ export function getTikTokOAuthUrl(params: {
 }): string {
   const p = new URLSearchParams({
     client_key: params.clientKey,
-    scope: 'user.info.basic,video.upload,video.publish,photo.publish',
+    scope: 'user.info.basic,video.upload,video.publish',
     response_type: 'code',
     redirect_uri: params.redirectUri,
     state: params.state,
