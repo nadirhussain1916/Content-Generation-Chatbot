@@ -135,11 +135,11 @@ publishRouter.post('/tiktok', async (c) => {
 
     try {
       if (asset.type === 'video') {
-        // Delegate to PublishWorkflow — handles chunked FILE_UPLOAD + status polling durably
+        // Delegate to PublishWorkflow — TikTok pulls the video from our R2 public URL (PULL_FROM_URL)
         const workflowParams: PublishParams = {
           recordId,
           workspaceId: workspace.id,
-          r2Key: asset.r2_key,
+          videoUrl: publicUrl,
           accessToken: account.access_token,
           title: body.title,
           description: body.description ?? '',
