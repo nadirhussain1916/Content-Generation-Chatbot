@@ -152,8 +152,6 @@ export default function ThreadPage() {
   }, [loading]);
 
   function handleNewThread() {
-    // Navigate to the workspace home (centered prompt input) — thread is only
-    // created once the user actually sends their first message.
     navigate(`/workspaces/${slug}`);
   }
 
@@ -249,24 +247,24 @@ export default function ThreadPage() {
   };
 
   const statusColors: Record<Thread['status'], string> = {
-    planning: 'text-yellow-400 bg-yellow-900/20 border-yellow-700/30',
-    draft: 'text-blue-400 bg-blue-900/20 border-blue-700/30',
-    script_ready: 'text-purple-400 bg-purple-900/20 border-purple-700/30',
-    media_pending: 'text-orange-400 bg-orange-900/20 border-orange-700/30',
-    ready: 'text-green-400 bg-green-900/20 border-green-700/30',
-    published: 'text-gray-400 bg-gray-800 border-gray-700',
+    planning: 'text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/20 border-yellow-300 dark:border-yellow-700/30',
+    draft: 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-700/30',
+    script_ready: 'text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 border-purple-300 dark:border-purple-700/30',
+    media_pending: 'text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 border-orange-300 dark:border-orange-700/30',
+    ready: 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700/30',
+    published: 'text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-700',
   };
 
   return (
-    <div className='flex h-screen bg-gray-950 text-white'>
+    <div className='flex h-screen bg-white dark:bg-gray-950 text-gray-900 dark:text-white'>
       <Sidebar onNewThread={handleNewThread} refreshKey={sidebarRefreshKey} />
 
       <main className='flex-1 flex flex-col min-w-0'>
         {/* Thread header */}
-        <header className='flex items-center gap-3 px-4 py-3 border-b border-gray-800 bg-gray-900/50'>
+        <header className='flex items-center gap-3 px-4 py-3 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50'>
           <button
             onClick={() => navigate(`/workspaces/${slug}`)}
-            className='text-gray-400 hover:text-white lg:hidden'
+            className='text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white lg:hidden'
           >
             <ArrowLeft size={18} />
           </button>
@@ -286,12 +284,12 @@ export default function ThreadPage() {
         <div className='flex-1 overflow-y-auto px-4 py-6'>
           {loading ? (
             <div className='flex justify-center py-12'>
-              <Loader2 size={20} className='animate-spin text-gray-500' />
+              <Loader2 size={20} className='animate-spin text-gray-400 dark:text-gray-500' />
             </div>
           ) : messages.length === 0 ? (
             <div className='flex flex-col items-center justify-center h-full gap-3 text-center'>
               <p className='text-gray-500 text-sm'>Describe what you want to create.</p>
-              <p className='text-gray-600 text-xs max-w-xs'>
+              <p className='text-gray-400 dark:text-gray-600 text-xs max-w-xs'>
                 The AI will ask a few questions to understand your idea, then generate a complete post.
               </p>
             </div>
@@ -311,7 +309,7 @@ export default function ThreadPage() {
               ))}
               {sending && (
                 <div className='flex justify-start'>
-                  <div className='bg-gray-900 border border-gray-800 rounded-2xl rounded-tl-sm px-4 py-2.5'>
+                  <div className='bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl rounded-tl-sm px-4 py-2.5'>
                     <Loader2 size={14} className='animate-spin text-gray-400' />
                   </div>
                 </div>
@@ -332,9 +330,9 @@ export default function ThreadPage() {
         )}
 
         {/* Input */}
-        <div className='border-t border-gray-800 p-4'>
+        <div className='border-t border-gray-200 dark:border-gray-800 p-4'>
           <div className='max-w-3xl mx-auto'>
-            <div className='bg-gray-900 border border-gray-700 rounded-xl focus-within:border-violet-500 transition-colors'>
+            <div className='bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-xl focus-within:border-violet-500 transition-colors'>
               <div className='flex gap-3 items-end px-4 pt-3 pb-2'>
                 <textarea
                   ref={inputRef}
@@ -347,7 +345,7 @@ export default function ThreadPage() {
                       ? 'Describe what you want to create...'
                       : 'Ask for changes, refinements, or say "looks good"...'
                   }
-                  className='flex-1 bg-transparent text-sm text-white placeholder-gray-500 resize-none focus:outline-none max-h-32 overflow-y-auto'
+                  className='flex-1 bg-transparent text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 resize-none focus:outline-none max-h-32 overflow-y-auto'
                   style={{ height: 'auto' }}
                   onInput={(e) => {
                     const el = e.currentTarget;
@@ -370,7 +368,7 @@ export default function ThreadPage() {
               </div>
               {/* Model selector row */}
               <div className='px-3 pb-2 flex items-center gap-1'>
-                <span className='text-xs text-gray-600'>Model</span>
+                <span className='text-xs text-gray-400 dark:text-gray-600'>Model</span>
                 <ModelPicker
                   options={TEXT_MODELS}
                   value={textModel}
@@ -378,7 +376,7 @@ export default function ThreadPage() {
                 />
               </div>
             </div>
-            <p className='text-xs text-gray-600 mt-2 text-center'>
+            <p className='text-xs text-gray-400 dark:text-gray-600 mt-2 text-center'>
               Press Enter to send • Shift+Enter for new line
             </p>
           </div>

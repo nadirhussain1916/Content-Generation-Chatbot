@@ -50,7 +50,6 @@ export default function WorkspacePage() {
   }
 
   function handleNewThread() {
-    // We're already on the prompt screen — just focus the input
     textareaRef.current?.focus();
   }
 
@@ -62,7 +61,7 @@ export default function WorkspacePage() {
   }
 
   return (
-    <div className='flex h-screen bg-gray-950 text-white'>
+    <div className='flex h-screen bg-white dark:bg-gray-950 text-gray-900 dark:text-white'>
       <Sidebar onNewThread={handleNewThread} />
 
       <main className='flex-1 flex flex-col items-center justify-center px-4'>
@@ -71,7 +70,7 @@ export default function WorkspacePage() {
           <div className='w-12 h-12 rounded-2xl bg-violet-900/30 border border-violet-700/30 flex items-center justify-center mx-auto mb-4'>
             <Zap size={22} className='text-violet-400' />
           </div>
-          <h1 className='text-2xl font-semibold text-white mb-1'>What do you want to create?</h1>
+          <h1 className='text-2xl font-semibold text-gray-900 dark:text-white mb-1'>What do you want to create?</h1>
           <p className='text-gray-500 text-sm'>Describe your idea and the AI will guide you through the rest.</p>
         </div>
 
@@ -96,7 +95,7 @@ export default function WorkspacePage() {
 
         {/* Input */}
         <div className='w-full max-w-2xl'>
-          <div className='bg-gray-900 border border-gray-700 rounded-2xl focus-within:border-violet-500 transition-colors shadow-xl'>
+          <div className='bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-2xl focus-within:border-violet-500 transition-colors shadow-xl'>
             <div className='flex items-end px-4 pt-4 pb-2 gap-3'>
               <textarea
                 ref={textareaRef}
@@ -105,7 +104,7 @@ export default function WorkspacePage() {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder='Describe what you want to create…'
-                className='flex-1 bg-transparent text-sm text-white placeholder-gray-500 resize-none focus:outline-none max-h-40 overflow-y-auto leading-relaxed'
+                className='flex-1 bg-transparent text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 resize-none focus:outline-none max-h-40 overflow-y-auto leading-relaxed'
                 style={{ height: 'auto' }}
                 onInput={(e) => {
                   const el = e.currentTarget;
@@ -129,7 +128,7 @@ export default function WorkspacePage() {
             </div>
             {/* Model selector row */}
             <div className='px-3 pb-2.5 flex items-center gap-1'>
-              <span className='text-xs text-gray-600'>Model</span>
+              <span className='text-xs text-gray-400 dark:text-gray-600'>Model</span>
               <ModelPicker
                 options={TEXT_MODELS}
                 value={textModel}
@@ -137,7 +136,7 @@ export default function WorkspacePage() {
               />
             </div>
           </div>
-          <p className='text-xs text-gray-600 mt-2.5 text-center'>
+          <p className='text-xs text-gray-400 dark:text-gray-600 mt-2.5 text-center'>
             Press Enter to send · Shift+Enter for new line
           </p>
         </div>

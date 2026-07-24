@@ -49,8 +49,10 @@ export default function OnboardingPage() {
     }));
   }
 
+  const inactiveBtn = 'bg-gray-50 dark:bg-gray-900 border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-gray-400 dark:hover:border-gray-500';
+
   return (
-    <div className='min-h-screen bg-gray-950 text-white flex flex-col items-center justify-center px-4'>
+    <div className='min-h-screen bg-white dark:bg-gray-950 text-gray-900 dark:text-white flex flex-col items-center justify-center px-4'>
       <div className='w-full max-w-md'>
         {/* Logo */}
         <div className='flex justify-center mb-8'>
@@ -66,7 +68,7 @@ export default function OnboardingPage() {
               key={s}
               className={cn(
                 'h-1 flex-1 rounded-full transition-all',
-                step >= s ? 'bg-violet-500' : 'bg-gray-800'
+                step >= s ? 'bg-violet-500' : 'bg-gray-200 dark:bg-gray-800'
               )}
             />
           ))}
@@ -76,11 +78,11 @@ export default function OnboardingPage() {
           <div className='space-y-6'>
             <div>
               <h1 className='text-2xl font-bold mb-1'>Welcome to CreatorOS</h1>
-              <p className='text-gray-400'>Let's set up your first workspace.</p>
+              <p className='text-gray-500 dark:text-gray-400'>Let's set up your first workspace.</p>
             </div>
 
             <div>
-              <label className='block text-sm font-medium text-gray-300 mb-2'>
+              <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>
                 Workspace name
               </label>
               <input
@@ -88,12 +90,12 @@ export default function OnboardingPage() {
                 placeholder='My Brand, Agency Name, etc.'
                 value={form.workspaceName}
                 onChange={(e) => setForm((f) => ({ ...f, workspaceName: e.target.value }))}
-                className='w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-violet-500 transition-colors'
+                className='w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg px-4 py-3 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-violet-500 transition-colors'
               />
             </div>
 
             <div>
-              <label className='block text-sm font-medium text-gray-300 mb-2'>
+              <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>
                 Default platforms
               </label>
               <div className='flex gap-3'>
@@ -105,7 +107,7 @@ export default function OnboardingPage() {
                       'flex-1 py-2.5 rounded-lg border text-sm font-medium capitalize transition-all',
                       form.defaultPlatforms.includes(p)
                         ? 'bg-violet-600 border-violet-500 text-white'
-                        : 'bg-gray-900 border-gray-700 text-gray-400 hover:border-gray-500'
+                        : inactiveBtn
                     )}
                   >
                     {p}
@@ -117,7 +119,7 @@ export default function OnboardingPage() {
             <button
               onClick={() => setStep(2)}
               disabled={!form.workspaceName.trim()}
-              className='w-full bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors py-3 rounded-lg font-semibold'
+              className='w-full bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors py-3 rounded-lg font-semibold text-white'
             >
               Continue
             </button>
@@ -128,11 +130,11 @@ export default function OnboardingPage() {
           <div className='space-y-6'>
             <div>
               <h1 className='text-2xl font-bold mb-1'>AI preferences</h1>
-              <p className='text-gray-400'>How should the AI write for <strong>{form.workspaceName}</strong>?</p>
+              <p className='text-gray-500 dark:text-gray-400'>How should the AI write for <strong>{form.workspaceName}</strong>?</p>
             </div>
 
             <div>
-              <label className='block text-sm font-medium text-gray-300 mb-2'>Brand tone</label>
+              <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>Brand tone</label>
               <div className='grid grid-cols-3 gap-2'>
                 {TONES.map((t) => (
                   <button
@@ -142,7 +144,7 @@ export default function OnboardingPage() {
                       'py-2 rounded-lg border text-sm capitalize transition-all',
                       form.aiTone === t
                         ? 'bg-violet-600 border-violet-500 text-white'
-                        : 'bg-gray-900 border-gray-700 text-gray-400 hover:border-gray-500'
+                        : inactiveBtn
                     )}
                   >
                     {t}
@@ -152,7 +154,7 @@ export default function OnboardingPage() {
             </div>
 
             <div>
-              <label className='block text-sm font-medium text-gray-300 mb-2'>Caption style</label>
+              <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>Caption style</label>
               <div className='flex gap-2'>
                 {CAPTION_STYLES.map((s) => (
                   <button
@@ -162,7 +164,7 @@ export default function OnboardingPage() {
                       'flex-1 py-2 rounded-lg border text-sm capitalize transition-all',
                       form.defaultCaptionStyle === s
                         ? 'bg-violet-600 border-violet-500 text-white'
-                        : 'bg-gray-900 border-gray-700 text-gray-400 hover:border-gray-500'
+                        : inactiveBtn
                     )}
                   >
                     {s}
@@ -174,14 +176,14 @@ export default function OnboardingPage() {
             <div className='flex gap-3'>
               <button
                 onClick={() => setStep(1)}
-                className='flex-1 bg-gray-800 hover:bg-gray-700 transition-colors py-3 rounded-lg font-medium'
+                className='flex-1 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors py-3 rounded-lg font-medium'
               >
                 Back
               </button>
               <button
                 onClick={handleComplete}
                 disabled={loading}
-                className='flex-1 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 transition-colors py-3 rounded-lg font-semibold'
+                className='flex-1 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 transition-colors py-3 rounded-lg font-semibold text-white'
               >
                 {loading ? 'Setting up...' : 'Launch workspace'}
               </button>
