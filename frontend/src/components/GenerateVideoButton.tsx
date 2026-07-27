@@ -8,7 +8,9 @@ import ModelPicker from './ModelPicker';
 import {
   VIDEO_MODELS, DEFAULT_VIDEO_MODEL, VIDEO_MODEL_KEY,
   VIDEO_ASPECT_RATIOS, DEFAULT_VIDEO_ASPECT_RATIO, VIDEO_ASPECT_RATIO_KEY,
-  WAN_MODEL_IDS,
+  VIDEO_DURATIONS, DEFAULT_VIDEO_DURATIONS, VIDEO_DURATION_KEY,
+  ASPECT_RATIO_MODEL_IDS, DURATION_MODEL_IDS,
+  type VideoModelId,
   readPref, writePref,
 } from '../lib/models';
 
@@ -36,8 +38,12 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
   );
   const [videoModel, setVideoModel] = useState(() => readPref(VIDEO_MODEL_KEY, DEFAULT_VIDEO_MODEL));
   const [aspectRatio, setAspectRatio] = useState(() => readPref(VIDEO_ASPECT_RATIO_KEY, DEFAULT_VIDEO_ASPECT_RATIO));
+  const [duration, setDuration] = useState(() => readPref(VIDEO_DURATION_KEY, DEFAULT_VIDEO_DURATIONS[DEFAULT_VIDEO_MODEL]));
 
-  const isWanModel = WAN_MODEL_IDS.includes(videoModel as typeof WAN_MODEL_IDS[number]);
+  const currentModelId = videoModel as VideoModelId;
+  const supportsAspectRatio = ASPECT_RATIO_MODEL_IDS.includes(currentModelId);
+  const supportsDuration = DURATION_MODEL_IDS.includes(currentModelId);
+  const durationOptions = VIDEO_DURATIONS[currentModelId] ?? VIDEO_DURATIONS['google/veo-2'];
 
   async function pollUntilReady(assetId: string): Promise<Asset> {
     const deadline = Date.now() + POLL_TIMEOUT_MS;
@@ -68,7 +74,14 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
       const token = await getToken();
       const res = await api.post<TfResponse<{ assetId: string; predictionId: string; status: string }>>(
         `/api/workspaces/${slug}/generate/video`,
-        { threadId, prompt, messageId: message.id, videoModel, ...(isWanModel && { aspectRatio }) },
+        {
+          threadId,
+          prompt,
+          messageId: message.id,
+          videoModel,
+          ...(supportsAspectRatio && { aspectRatio }),
+          ...(supportsDuration && { duration: Number(duration) }),
+        },
         token ?? undefined
       );
 
@@ -104,16 +117,32 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
             <ModelPicker
               options={VIDEO_MODELS}
               value={videoModel}
-              onChange={(id) => { setVideoModel(id); writePref(VIDEO_MODEL_KEY, id); }}
+              onChange={(id) => {
+                setVideoModel(id);
+                writePref(VIDEO_MODEL_KEY, id);
+                const defaultDur = DEFAULT_VIDEO_DURATIONS[id as VideoModelId] ?? '5';
+                setDuration(defaultDur);
+                writePref(VIDEO_DURATION_KEY, defaultDur);
+              }}
             />
           </div>
-          {isWanModel && (
+          {supportsAspectRatio && (
             <div className='flex items-center gap-1.5'>
               <span className='text-xs text-gray-500'>Size</span>
               <ModelPicker
                 options={VIDEO_ASPECT_RATIOS}
                 value={aspectRatio}
                 onChange={(id) => { setAspectRatio(id); writePref(VIDEO_ASPECT_RATIO_KEY, id); }}
+              />
+            </div>
+          )}
+          {supportsDuration && (
+            <div className='flex items-center gap-1.5'>
+              <span className='text-xs text-gray-500'>Duration</span>
+              <ModelPicker
+                options={durationOptions}
+                value={duration}
+                onChange={(id) => { setDuration(id); writePref(VIDEO_DURATION_KEY, id); }}
               />
             </div>
           )}

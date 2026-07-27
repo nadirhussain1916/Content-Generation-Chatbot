@@ -25,33 +25,81 @@ export const IMAGE_MODEL_KEY = 'tf_image_model';
 // ─── Video generation models ──────────────────────────────────────────────────
 
 export const VIDEO_MODELS = [
-  { id: 'wavespeedai/wan-2.1-t2v-480p', label: 'WAN 2.1 (480p)',   desc: 'Open source · Fast · Default' },
-  { id: 'wavespeedai/wan-2.1-t2v-720p', label: 'WAN 2.1 (720p)',   desc: 'Open source · Best resolution' },
-  { id: 'minimax/video-01',             label: 'MiniMax Video 01', desc: 'Fast · High quality' },
+  { id: 'lightricks/ltx-2.3-fast',  label: 'LTX 2.3 Fast',   desc: 'Portrait · Audio · Up to 20s · $0.37 · Default' },
+  { id: 'lightricks/ltx-2.3-pro',   label: 'LTX 2.3 Pro',    desc: 'Portrait · Audio · High quality · $0.49' },
+  { id: 'bytedance/seedance-2.0',    label: 'Seedance 2.0',   desc: 'Portrait · Audio · 4K · $0.90' },
+  { id: 'google/veo-2',              label: 'Google Veo 2',    desc: 'Fast · Portrait & landscape · $2.50' },
 ] as const;
 
 export type VideoModelId = (typeof VIDEO_MODELS)[number]['id'];
-export const DEFAULT_VIDEO_MODEL: VideoModelId = 'wavespeedai/wan-2.1-t2v-480p';
+export const DEFAULT_VIDEO_MODEL: VideoModelId = 'lightricks/ltx-2.3-fast';
 export const VIDEO_MODEL_KEY = 'tf_video_model';
 
-// ─── Video aspect ratios (WAN models only) ────────────────────────────────────
+// ─── Video aspect ratios ──────────────────────────────────────────────────────
 
 export const VIDEO_ASPECT_RATIOS = [
-  { id: '16:9', label: '16:9', desc: 'Landscape · YouTube / TikTok' },
-  { id: '9:16', label: '9:16', desc: 'Portrait · Reels / Shorts' },
-  { id: '1:1',  label: '1:1',  desc: 'Square · Instagram' },
-  { id: '4:3',  label: '4:3',  desc: 'Classic landscape' },
-  { id: '3:4',  label: '3:4',  desc: 'Classic portrait' },
+  { id: '9:16', label: '9:16', desc: 'Portrait · Reels / Shorts / TikTok' },
+  { id: '16:9', label: '16:9', desc: 'Landscape · YouTube' },
 ] as const;
 
 export type VideoAspectRatio = (typeof VIDEO_ASPECT_RATIOS)[number]['id'];
 export const DEFAULT_VIDEO_ASPECT_RATIO: VideoAspectRatio = '9:16';
 export const VIDEO_ASPECT_RATIO_KEY = 'tf_video_aspect_ratio';
 
-/** Models that support custom aspect_ratio input */
-export const WAN_MODEL_IDS: VideoModelId[] = [
-  'wavespeedai/wan-2.1-t2v-480p',
-  'wavespeedai/wan-2.1-t2v-720p',
+// ─── Video duration ───────────────────────────────────────────────────────────
+// Veo-2: 5–8s | LTX Fast: 6–20s | LTX Pro: 6–10s | Seedance: 5s fixed
+
+export const VIDEO_DURATIONS: Record<VideoModelId, readonly { id: string; label: string; desc: string }[]> = {
+  'google/veo-2': [
+    { id: '5', label: '5s', desc: 'Fastest' },
+    { id: '6', label: '6s', desc: '' },
+    { id: '7', label: '7s', desc: '' },
+    { id: '8', label: '8s', desc: 'Longest' },
+  ],
+  'lightricks/ltx-2.3-fast': [
+    { id: '6',  label: '6s',  desc: 'Default' },
+    { id: '8',  label: '8s',  desc: '' },
+    { id: '10', label: '10s', desc: '' },
+    { id: '12', label: '12s', desc: '' },
+    { id: '14', label: '14s', desc: '' },
+    { id: '16', label: '16s', desc: '' },
+    { id: '18', label: '18s', desc: '' },
+    { id: '20', label: '20s', desc: 'Longest' },
+  ],
+  'lightricks/ltx-2.3-pro': [
+    { id: '6',  label: '6s',  desc: 'Default' },
+    { id: '8',  label: '8s',  desc: '' },
+    { id: '10', label: '10s', desc: 'Longest' },
+  ],
+  'bytedance/seedance-2.0': [
+    { id: '5', label: '5s', desc: 'Fixed' },
+  ],
+};
+
+export const DEFAULT_VIDEO_DURATIONS: Record<VideoModelId, string> = {
+  'google/veo-2':             '5',
+  'lightricks/ltx-2.3-fast':  '6',
+  'lightricks/ltx-2.3-pro':   '6',
+  'bytedance/seedance-2.0':   '5',
+};
+
+export const VIDEO_DURATION_KEY = 'tf_video_duration';
+
+// ─── Model capability flags ───────────────────────────────────────────────────
+
+/** All current models support aspect_ratio */
+export const ASPECT_RATIO_MODEL_IDS: VideoModelId[] = [
+  'google/veo-2',
+  'lightricks/ltx-2.3-fast',
+  'lightricks/ltx-2.3-pro',
+  'bytedance/seedance-2.0',
+];
+
+/** Models where duration picker makes sense (Seedance is fixed at 5s, skip picker) */
+export const DURATION_MODEL_IDS: VideoModelId[] = [
+  'google/veo-2',
+  'lightricks/ltx-2.3-fast',
+  'lightricks/ltx-2.3-pro',
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

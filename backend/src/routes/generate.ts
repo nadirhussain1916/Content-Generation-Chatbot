@@ -101,6 +101,7 @@ generateRouter.post('/video', async (c) => {
       messageId?: string;
       videoModel?: string;
       aspectRatio?: string;
+      duration?: number;
     };
     if (!body.threadId || !body.prompt) {
       return c.json<TfResponse<null>>({ success: false, message: 'threadId and prompt are required' }, 400);
@@ -120,37 +121,46 @@ generateRouter.post('/video', async (c) => {
     // The workflow just polls the prediction ID — it doesn't need to know the model.
     type VideoModelConfig = {
       slug: string;
-      buildInput: (prompt: string, aspectRatio: string) => Record<string, unknown>;
+      buildInput: (prompt: string, aspectRatio: string, duration: number) => Record<string, unknown>;
     };
 
     const VIDEO_MODEL_CONFIGS: Record<string, VideoModelConfig> = {
-      'minimax/video-01': {
-        slug: 'minimax/video-01',
-        buildInput: (prompt) => ({
+      'google/veo-2': {
+        slug: 'google/veo-2',
+        buildInput: (prompt, aspectRatio, duration) => ({
           prompt,
-          prompt_optimizer: true,
+          aspect_ratio: aspectRatio,
+          duration,
         }),
       },
-      'wavespeedai/wan-2.1-t2v-480p': {
-        slug: 'wavespeedai/wan-2.1-t2v-480p',
+      'lightricks/ltx-2.3-fast': {
+        slug: 'lightricks/ltx-2.3-fast',
+        buildInput: (prompt, aspectRatio, duration) => ({
+          prompt,
+          aspect_ratio: aspectRatio,
+          duration,
+        }),
+      },
+      'lightricks/ltx-2.3-pro': {
+        slug: 'lightricks/ltx-2.3-pro',
+        buildInput: (prompt, aspectRatio, duration) => ({
+          prompt,
+          aspect_ratio: aspectRatio,
+          duration,
+        }),
+      },
+      'bytedance/seedance-2.0': {
+        slug: 'bytedance/seedance-2.0',
         buildInput: (prompt, aspectRatio) => ({
           prompt,
           aspect_ratio: aspectRatio,
-          fast_mode: 'Balanced',
-        }),
-      },
-      'wavespeedai/wan-2.1-t2v-720p': {
-        slug: 'wavespeedai/wan-2.1-t2v-720p',
-        buildInput: (prompt, aspectRatio) => ({
-          prompt,
-          aspect_ratio: aspectRatio,
-          fast_mode: 'Balanced',
+          duration: 5,
         }),
       },
     };
 
-    const modelId = body.videoModel ?? 'wavespeedai/wan-2.1-t2v-480p';
-    const modelConfig = VIDEO_MODEL_CONFIGS[modelId] ?? VIDEO_MODEL_CONFIGS['wavespeedai/wan-2.1-t2v-480p'];
+    const modelId = body.videoModel ?? 'lightricks/ltx-2.3-fast';
+    const modelConfig = VIDEO_MODEL_CONFIGS[modelId] ?? VIDEO_MODEL_CONFIGS['lightricks/ltx-2.3-fast'];
 
     // Aspect ratio: prefer explicit body param, fall back to workspace default
     const VALID_ASPECT_RATIOS = new Set(['16:9', '9:16', '1:1', '4:3', '3:4']);
@@ -163,6 +173,9 @@ generateRouter.post('/video', async (c) => {
       videoAspectRatio = videoWidth >= videoHeight ? '16:9' : '9:16';
     }
 
+    const VALID_DURATIONS = new Set([5, 6, 7, 8, 10, 12, 14, 16, 18, 20]);
+    const videoDuration = body.duration && VALID_DURATIONS.has(body.duration) ? body.duration : 5;
+
     // Create the Replicate prediction — no Prefer:wait=5 to avoid Workers connection issues.
     // The Workflow handles all polling durably.
     const replicateRes = await fetch(
@@ -174,7 +187,7 @@ generateRouter.post('/video', async (c) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          input: modelConfig.buildInput(body.prompt, videoAspectRatio),
+          input: modelConfig.buildInput(body.prompt, videoAspectRatio, videoDuration),
         }),
       }
     );
