@@ -34,6 +34,8 @@ export function getOAuthUrl(params: {
     scope: 'instagram_business_basic,instagram_business_content_publish,instagram_business_manage_messages',
     response_type: 'code',
     state: params.state,
+    enable_fb_login: '0',
+    force_reauth: '0',
   });
   return `https://www.instagram.com/oauth/authorize?${p.toString()}`;
 }

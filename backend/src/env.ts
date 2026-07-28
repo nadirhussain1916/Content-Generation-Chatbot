@@ -7,5 +7,8 @@ export type CloudflareBindings = __BaseEnv_Env & {
   MIGRATE_SECRET: string;
   GENERATION_WORKFLOW: Workflow<GenerationParams>;
   PUBLISH_WORKFLOW: Workflow<PublishParams>;
+  ASSETS_PUBLIC_URL: string;
+  INSTAGRAM_APP_ID: string;
+  INSTAGRAM_APP_SECRET: string;
 };
 
