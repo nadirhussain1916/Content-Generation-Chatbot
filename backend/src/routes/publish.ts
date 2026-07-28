@@ -18,9 +18,7 @@ publishRouter.use('*', workspaceMiddleware);
 
 // Helper to build public URL from R2 key
 function assetPublicUrl(env: CloudflareBindings, r2Key: string): string {
-  // ASSETS_PUBLIC_URL should be your r2.dev public bucket URL
-  const base = (env as CloudflareBindings & { ASSETS_PUBLIC_URL?: string }).ASSETS_PUBLIC_URL ?? '';
-  return `${base}/${r2Key}`;
+  return `${env.ASSETS_PUBLIC_URL}/${r2Key}`;
 }
 
 // POST /api/workspaces/:slug/publish/instagram
@@ -208,7 +206,7 @@ publishRouter.get('/status/:recordId', async (c) => {
       const account = await getSocialAccount(c.env.DB, workspace.id, 'instagram');
       if (account) {
         try {
-          const { status_code } = await (await import('../services/instagram')).checkContainerStatus({
+          const { status_code, error_code } = await (await import('../services/instagram')).checkContainerStatus({
             containerId: record.container_id,
             accessToken: account.access_token,
           });
@@ -222,9 +220,10 @@ publishRouter.get('/status/:recordId', async (c) => {
             Logger.log('InstagramReelsPublished', { recordId, postId, containerId: record.container_id });
             return c.json<TfResponse<PublishRecord>>({ success: true, data: { ...record, status: 'published', platform_post_id: postId } });
           } else if (status_code === 'ERROR') {
-            await updatePublishRecord(c.env.DB, recordId, { status: 'failed', error_message: 'Instagram container processing failed' });
-            Logger.log('InstagramReelsContainerError', { recordId, containerId: record.container_id });
-            return c.json<TfResponse<PublishRecord>>({ success: true, data: { ...record, status: 'failed' } });
+            const errMsg = `Instagram container error${error_code ? ` (code ${error_code})` : ''}`;
+            await updatePublishRecord(c.env.DB, recordId, { status: 'failed', error_message: errMsg });
+            Logger.log('InstagramReelsContainerError', { recordId, containerId: record.container_id, error_code });
+            return c.json<TfResponse<PublishRecord>>({ success: true, data: { ...record, status: 'failed', error_message: errMsg } });
           }
         } catch (e) {
           Logger.log('InstagramStatusPollError', { recordId }, e);
