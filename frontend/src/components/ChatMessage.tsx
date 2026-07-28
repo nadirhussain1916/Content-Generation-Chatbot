@@ -4,14 +4,11 @@ import { cn } from '../lib/utils';
 import { ChevronDown, ChevronUp, Copy, Check, Hash, Loader2, Share2, CheckCircle, AlertCircle } from 'lucide-react';
 import GenerateImageButton from './GenerateImageButton';
 import GenerateVideoButton from './GenerateVideoButton';
-import { useAuth } from '@clerk/clerk-react';
-import { api } from '../lib/api';
-import type { TfResponse, PublishRecord } from '../types';
+import { usePublishStatus } from '../hooks/usePublishStatus';
 
 interface ChatMessageProps {
   message: Message;
   onOptionSelect?: (text: string) => void;
-  // image generation state for this specific message
   asset?: Asset;
   assetBlobUrl?: string;
   slug?: string;
@@ -20,30 +17,17 @@ interface ChatMessageProps {
 }
 
 export default function ChatMessage({ message, onOptionSelect, asset, assetBlobUrl, slug, threadId, onAssetGenerated }: ChatMessageProps) {
-  const { getToken } = useAuth();
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState(true);
-  const [publishStatus, setPublishStatus] = useState<Record<string, 'idle' | 'publishing' | 'done' | 'failed'>>({});
+  const { status: publishStatus, publish } = usePublishStatus(slug, asset?.id);
 
   async function handlePublish(platform: 'instagram' | 'tiktok') {
     if (!asset || !slug || !message.post_package) return;
-    setPublishStatus(s => ({ ...s, [platform]: 'publishing' }));
-    try {
-      const pkg = JSON.parse(message.post_package) as ImagePostPackage & VideoPostPackage;
-      const token = await getToken();
-      const body = platform === 'instagram'
-        ? { assetId: asset.id, caption: pkg.caption, hashtags: pkg.hashtags }
-        : { assetId: asset.id, title: pkg.title, description: pkg.description, hashtags: pkg.hashtags };
-
-      const res = await api.post<TfResponse<PublishRecord>>(
-        `/api/workspaces/${slug}/publish/${platform}`,
-        body,
-        token ?? undefined
-      );
-      setPublishStatus(s => ({ ...s, [platform]: res.success ? 'done' : 'failed' }));
-    } catch {
-      setPublishStatus(s => ({ ...s, [platform]: 'failed' }));
-    }
+    const pkg = JSON.parse(message.post_package) as ImagePostPackage & VideoPostPackage;
+    const body = platform === 'instagram'
+      ? { assetId: asset.id, caption: pkg.caption, hashtags: pkg.hashtags }
+      : { assetId: asset.id, title: pkg.title, description: pkg.description, hashtags: pkg.hashtags };
+    await publish(platform, body);
   }
 
   const isUser = message.role === 'user';
@@ -197,21 +181,23 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
                             <button
                               key={platform}
                               onClick={() => handlePublish(platform)}
-                              disabled={s === 'publishing' || s === 'done'}
+                              disabled={s === 'publishing' || s === 'processing' || s === 'done'}
                               className={cn(
                                 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all',
                                 s === 'done' ? 'bg-green-900/30 text-green-400 border border-green-700/30'
                                 : s === 'failed' ? 'bg-red-900/30 text-red-400 border border-red-700/30'
+                                : s === 'processing' ? 'bg-yellow-900/30 text-yellow-400 border border-yellow-700/30'
                                 : platform === 'instagram'
                                 ? 'bg-gradient-to-r from-pink-600 to-orange-500 text-white hover:opacity-90 disabled:opacity-50'
                                 : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50'
                               )}
                             >
-                              {s === 'publishing' ? <Loader2 size={12} className='animate-spin' />
+                              {(s === 'publishing' || s === 'processing') ? <Loader2 size={12} className='animate-spin' />
                                 : s === 'done' ? <CheckCircle size={12} />
                                 : s === 'failed' ? <AlertCircle size={12} />
                                 : <Share2 size={12} />}
-                              {platform === 'instagram' ? 'Instagram' : 'TikTok'}
+                              {s === 'processing' ? 'Processing…'
+                                : platform === 'instagram' ? 'Instagram' : 'TikTok'}
                             </button>
                           );
                         })}
