@@ -40,7 +40,7 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
   const [videoModel, setVideoModel] = useState(() => readPref(VIDEO_MODEL_KEY, DEFAULT_VIDEO_MODEL));
   const [aspectRatio, setAspectRatio] = useState(() => readPref(VIDEO_ASPECT_RATIO_KEY, DEFAULT_VIDEO_ASPECT_RATIO));
   const [duration, setDuration] = useState(() => readPref(VIDEO_DURATION_KEY, DEFAULT_VIDEO_DURATIONS[DEFAULT_VIDEO_MODEL]));
-  const [ltxExtend, setLtxExtend] = useState(() => readPref(LTX_EXTEND_KEY, '0'));
+  const [ltxExtend, setLtxExtend] = useState<string>(() => readPref(LTX_EXTEND_KEY, '0'));
 
   const currentModelId = videoModel as VideoModelId;
   const supportsAspectRatio = ASPECT_RATIO_MODEL_IDS.includes(currentModelId);

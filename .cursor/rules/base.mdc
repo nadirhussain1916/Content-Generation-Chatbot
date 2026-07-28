@@ -5,3 +5,27 @@ alwaysApply: true
 # Git Commits
 
 - Never add `Co-authored-by: Cursor <cursoragent@cursor.com>` or any Cursor/AI co-author trailer to commit messages.
+
+# Pre-Push Checklist
+
+Before every `git push`, run the TypeScript compiler across all packages and fix any errors:
+
+```bash
+# frontend
+cd frontend && node_modules/.bin/tsc --noEmit
+
+# backend
+cd backend && node_modules/.bin/tsc --noEmit
+```
+
+Common pitfall — `useState` infers a **literal type** from its initial value, so the setter won't accept a broader union:
+
+```tsx
+// ❌ infers useState<'0'> — setFoo('1') is a type error
+const [foo, setFoo] = useState(() => readPref(KEY, '0'));
+
+// ✅ explicitly widen to string
+const [foo, setFoo] = useState<string>(() => readPref(KEY, '0'));
+```
+
+Never push code that fails `tsc --noEmit`.
