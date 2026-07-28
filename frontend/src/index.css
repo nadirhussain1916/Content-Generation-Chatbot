@@ -53,6 +53,34 @@ body {
   display: none !important;
 }
 
+/* ── Shared Clerk structural overrides ── */
+/* Input group wrapper — Clerk wraps inputs in a group that can add its own border/shadow */
+.cl-formFieldInputGroup {
+  background: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+/* Action button inside input (e.g. clear, show-password) */
+.cl-formFieldInputShowPasswordButton,
+.cl-formFieldAction {
+  color: #6b7280 !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+.cl-formFieldInputShowPasswordButton:hover,
+.cl-formFieldAction:hover {
+  color: #374151 !important;
+}
+.dark .cl-formFieldInputShowPasswordButton,
+.dark .cl-formFieldAction {
+  color: #9ca3af !important;
+}
+.dark .cl-formFieldInputShowPasswordButton:hover,
+.dark .cl-formFieldAction:hover {
+  color: #d1d5db !important;
+}
+
 /* ── Light mode Clerk overrides ── */
 .cl-socialButtonsBlockButton {
   background: #ffffff !important;
@@ -63,6 +91,7 @@ body {
   font-size: 0.875rem !important;
   font-weight: 500 !important;
   box-shadow: none !important;
+  outline: none !important;
 }
 .cl-socialButtonsBlockButton:hover {
   background: #f9fafb !important;

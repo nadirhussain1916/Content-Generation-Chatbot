@@ -67,8 +67,8 @@ export default function WorkspacePage() {
       <main className='flex-1 flex flex-col items-center justify-center px-4'>
         {/* Greeting */}
         <div className='text-center mb-8'>
-          <div className='w-12 h-12 rounded-2xl bg-violet-900/30 border border-violet-700/30 flex items-center justify-center mx-auto mb-4'>
-            <Zap size={22} className='text-violet-400' />
+          <div className='w-12 h-12 rounded-2xl bg-violet-100 dark:bg-violet-900/30 border border-violet-200 dark:border-violet-700/30 flex items-center justify-center mx-auto mb-4'>
+            <Zap size={22} className='text-violet-600 dark:text-violet-400' />
           </div>
           <h1 className='text-2xl font-semibold text-gray-900 dark:text-white mb-1'>What do you want to create?</h1>
           <p className='text-gray-500 text-sm'>Describe your idea and the AI will guide you through the rest.</p>

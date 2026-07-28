@@ -222,7 +222,7 @@ export default function LandingPage() {
 
         <div className='relative z-10 w-full max-w-lg px-8 xl:px-10'>
           {/* Badge */}
-          <div className='inline-flex items-center gap-2 bg-violet-900/40 border border-violet-700/40 text-violet-300 text-xs px-3 py-1.5 rounded-full mb-8 font-medium'>
+          <div className='inline-flex items-center gap-2 bg-violet-100 dark:bg-violet-900/40 border border-violet-200 dark:border-violet-700/40 text-violet-600 dark:text-violet-300 text-xs px-3 py-1.5 rounded-full mb-8 font-medium'>
             <Sparkles size={11} />
             AI-powered content creation
           </div>
@@ -250,8 +250,8 @@ export default function LandingPage() {
           <ul className='space-y-3.5'>
             {features.map(({ icon: Icon, text }) => (
               <li key={text} className='flex items-center gap-3'>
-                <div className='w-6 h-6 rounded-md bg-violet-900/60 border border-violet-700/30 flex items-center justify-center flex-shrink-0'>
-                  <Icon size={12} className='text-violet-400' />
+                <div className='w-6 h-6 rounded-md bg-violet-100 dark:bg-violet-900/60 border border-violet-200 dark:border-violet-700/30 flex items-center justify-center flex-shrink-0'>
+                  <Icon size={12} className='text-violet-600 dark:text-violet-400' />
                 </div>
                 <span className='text-sm text-gray-600 dark:text-gray-300'>{text}</span>
               </li>
