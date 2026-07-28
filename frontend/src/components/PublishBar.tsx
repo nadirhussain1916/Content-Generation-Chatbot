@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { useAuth } from '@clerk/clerk-react';
 import { api } from '../lib/api';
 import type { TfResponse, PublishRecord, Thread } from '../types';
@@ -18,7 +18,51 @@ export default function PublishBar({ slug, thread, onPublished }: PublishBarProp
   const { getToken } = useAuth();
   const [publishingTo, setPublishingTo] = useState<string | null>(null);
   const [publishStatus, setPublishStatus] = useState<Record<string, 'idle' | 'publishing' | 'processing' | 'done' | 'failed'>>({});
+  const [recordIds, setRecordIds] = useState<Record<string, string>>({});
   const pollTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  // On mount, load existing publish records for this asset and restore status
+  useEffect(() => {
+    if (!thread.active_draft_id) return;
+    let cancelled = false;
+    (async () => {
+      const token = await getToken();
+      const res = await api.get<TfResponse<PublishRecord[]>>(
+        `/api/workspaces/${slug}/publish/history`,
+        token ?? undefined
+      );
+      if (cancelled || !res.success || !res.data) return;
+
+      const assetRecords = res.data.filter((r) => r.asset_id === thread.active_draft_id);
+      // Keep only the latest record per platform
+      const latest: Record<string, PublishRecord> = {};
+      for (const r of assetRecords) {
+        if (!latest[r.platform] || r.created_at > latest[r.platform].created_at) {
+          latest[r.platform] = r;
+        }
+      }
+
+      const ids: Record<string, string> = {};
+      const statuses: Record<string, 'idle' | 'processing' | 'done' | 'failed'> = {};
+      for (const [platform, record] of Object.entries(latest)) {
+        ids[platform] = record.id;
+        if (record.status === 'published') statuses[platform] = 'done';
+        else if (record.status === 'failed') statuses[platform] = 'failed';
+        else if (record.status === 'processing' || record.status === 'pending') statuses[platform] = 'processing';
+      }
+      setRecordIds(ids);
+      setPublishStatus(statuses);
+
+      // Resume polling for any still-processing record
+      for (const [platform, record] of Object.entries(latest)) {
+        if (record.status === 'processing' || record.status === 'pending') {
+          pollUntilDone(platform as 'instagram' | 'tiktok', record.id);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [thread.active_draft_id]);
 
   const canPublish = thread.status === 'ready' && thread.active_draft_id;
 
@@ -65,6 +109,7 @@ export default function PublishBar({ slug, thread, onPublished }: PublishBarProp
       );
 
       if (res.success && res.data) {
+        setRecordIds((r) => ({ ...r, [platform]: res.data!.id }));
         if (res.data.status === 'published') {
           // Image — published synchronously
           setPublishStatus((s) => ({ ...s, [platform]: 'done' }));

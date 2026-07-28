@@ -120,9 +120,13 @@ export interface SocialAccountSafe {
 export interface PublishRecord {
   id: string;
   workspace_id: string;
+  asset_id: string | null;
   platform: 'instagram' | 'tiktok';
+  platform_post_id: string | null;
+  container_id: string | null;
   status: 'pending' | 'processing' | 'published' | 'failed';
   caption: string | null;
+  hashtags: string | null;
   error_message: string | null;
   created_at: number;
 }
