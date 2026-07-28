@@ -93,10 +93,15 @@ Requirements:
 - title: TikTok title (max 150 chars)
 - description: TikTok description (max 2200 chars)
 - hashtags: 10-30 relevant hashtags WITHOUT the # symbol
-- imagePrompt: a detailed, specific prompt that will create a stunning, platform-ready image
-  - Specify composition, lighting, color palette, style (e.g., "photorealistic", "flat illustration", "3D render")
-  - Do NOT include text/words in the image
-  - Do NOT mention aspect ratio in the prompt text itself
+- imagePrompt: A rich, specific visual direction prompt (MINIMUM 60 words) covering ALL of:
+  • COMPOSITION — framing, rule of thirds, subject placement, foreground/background relationship
+  • SUBJECT — what/who appears, pose, expression, wardrobe, key props
+  • SETTING & ENVIRONMENT — location, time of day, indoor/outdoor, background detail
+  • LIGHTING — quality (soft/harsh), direction, color temperature, shadows and highlights
+  • COLOR PALETTE — primary and accent colors, overall mood conveyed through color
+  • STYLE — e.g. "photorealistic DSLR editorial", "flat illustration", "cinematic 35mm still", "3D product render"
+  • MOOD & ATMOSPHERE — emotional tone the image should evoke
+  Do NOT include any text or words in the image. Do NOT mention aspect ratio in the prompt itself.
 - imageSize: choose the best size for the target platform:
   - "1024x1024" → square, best for Instagram feed posts
   - "1024x1792" → portrait 9:16, best for Instagram Stories, TikTok, Reels
@@ -128,7 +133,17 @@ Requirements:
 - script.estimatedDuration: e.g. "30-45 seconds"
 - script.voiceoverNotes: delivery style, pacing, emphasis points
 - script.scenes: array of scenes with description, voiceover text, and duration
-- videoPrompt: Replicate/Runway prompt for the visual style / B-roll concept
+- videoPrompt: A rich, director-ready production brief / Runway / Replicate prompt (MINIMUM 120 words) for the ENTIRE video.
+  You MUST cover every section below — do not skip any:
+  • VISUAL STYLE — overall aesthetic (cinematic, UGC handheld, high-energy montage, documentary, product close-up, animation, etc.), color grading & palette, film grain or clean finish
+  • SCENES (3-5 segments) — one per script section (hook → body → CTA); each scene: setting/location, subjects/talent appearing on screen, and the key action/movement happening
+  • CAMERA — shot types used (extreme close-up, medium, wide, overhead, POV, etc.), camera movement (handheld, dolly in, slow pan, quick cuts, static), and how scenes transition
+  • LIGHTING — setup and mood (golden hour, soft studio, harsh neon backlight, bright airy lifestyle, etc.) and the emotion it creates
+  • SUBJECTS & PROPS — who/what appears on screen, wardrobe, product placement, key props
+  • PACING & RHYTHM — fast-cut montage vs. slow deliberate build; beat-sync moments; any pause-for-impact moments
+  • MOOD & ATMOSPHERE — the precise emotional feeling the visuals must deliver alongside the script
+  • TEXT / MOTION GRAPHICS — any on-screen captions, lower-thirds, or animated elements; describe placement and visual style
+  Write as one or two cohesive paragraphs a production crew could execute from without further clarification.
 - tone: the actual tone applied
 - suggestedPlatforms: platforms this content works best for
 
