@@ -10,6 +10,7 @@ import {
   VIDEO_ASPECT_RATIOS, DEFAULT_VIDEO_ASPECT_RATIO, VIDEO_ASPECT_RATIO_KEY,
   VIDEO_DURATIONS, DEFAULT_VIDEO_DURATIONS, VIDEO_DURATION_KEY,
   ASPECT_RATIO_MODEL_IDS, DURATION_MODEL_IDS,
+  LTX_EXTEND_OPTIONS, LTX_EXTEND_KEY,
   type VideoModelId,
   readPref, writePref,
 } from '../lib/models';
@@ -39,10 +40,14 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
   const [videoModel, setVideoModel] = useState(() => readPref(VIDEO_MODEL_KEY, DEFAULT_VIDEO_MODEL));
   const [aspectRatio, setAspectRatio] = useState(() => readPref(VIDEO_ASPECT_RATIO_KEY, DEFAULT_VIDEO_ASPECT_RATIO));
   const [duration, setDuration] = useState(() => readPref(VIDEO_DURATION_KEY, DEFAULT_VIDEO_DURATIONS[DEFAULT_VIDEO_MODEL]));
+  const [ltxExtend, setLtxExtend] = useState(() => readPref(LTX_EXTEND_KEY, '0'));
 
   const currentModelId = videoModel as VideoModelId;
   const supportsAspectRatio = ASPECT_RATIO_MODEL_IDS.includes(currentModelId);
-  const supportsDuration = DURATION_MODEL_IDS.includes(currentModelId);
+  const isLtxPro = currentModelId === 'lightricks/ltx-2.3-pro';
+  const chainCount = isLtxPro ? Number(ltxExtend) : 0;
+  // Hide the duration picker for LTX Pro when extend is active (initial duration is fixed at 10s)
+  const supportsDuration = DURATION_MODEL_IDS.includes(currentModelId) && !(isLtxPro && chainCount > 0);
   const durationOptions = VIDEO_DURATIONS[currentModelId] ?? VIDEO_DURATIONS['google/veo-2'];
 
   async function pollUntilReady(assetId: string): Promise<Asset> {
@@ -80,7 +85,10 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
           messageId: message.id,
           videoModel,
           ...(supportsAspectRatio && { aspectRatio }),
-          ...(supportsDuration && { duration: Number(duration) }),
+          // When LTX Pro extend is active, fix initial duration at 10s
+          ...(isLtxPro && chainCount > 0
+            ? { duration: 10, chainCount, extendDuration: 20 }
+            : supportsDuration && { duration: Number(duration) }),
         },
         token ?? undefined
       );
@@ -146,6 +154,16 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
               />
             </div>
           )}
+          {isLtxPro && (
+            <div className='flex items-center gap-1.5'>
+              <span className='text-xs text-gray-500'>Extend</span>
+              <ModelPicker
+                options={LTX_EXTEND_OPTIONS}
+                value={ltxExtend}
+                onChange={(id) => { setLtxExtend(id); writePref(LTX_EXTEND_KEY, id); }}
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -180,7 +198,11 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
           {loading ? 'Generating video...' : done ? 'Video generated' : error ? 'Retry' : 'Generate video'}
         </button>
         {loading && (
-          <span className='text-xs text-gray-500'>This may take a few minutes</span>
+          <span className='text-xs text-gray-500'>
+            {isLtxPro && chainCount > 0
+              ? `Extending ${chainCount}× — this may take ${Math.round((chainCount + 1) * 3)} min`
+              : 'This may take a few minutes'}
+          </span>
         )}
       </div>
     </div>

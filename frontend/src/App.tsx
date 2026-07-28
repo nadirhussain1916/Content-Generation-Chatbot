@@ -16,6 +16,7 @@ export default function App() {
       <Routes>
         {/* Public */}
         <Route path='/' element={<LandingPage />} />
+        <Route path='/home' element={<LandingPage noRedirect />} />
         <Route path='/terms' element={<TermsPage />} />
         <Route path='/privacy' element={<PrivacyPage />} />
 

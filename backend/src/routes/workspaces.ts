@@ -93,7 +93,7 @@ const UpdateWorkspaceSchema = z.object({
   agent_instructions: z.string().max(2000).optional().nullable(),
   // Media generation defaults
   default_image_size: z.enum(['1024x1024', '1024x1792', '1792x1024']).optional(),
-  default_video_duration: z.number().int().min(5).max(10).optional(),
+  default_video_duration: z.number().int().min(5).max(300).optional(),
   default_video_dimensions: z.enum(['1280x720', '720x1280']).optional(),
 });
 

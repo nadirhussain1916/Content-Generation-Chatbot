@@ -104,6 +104,9 @@ generateRouter.post('/video', async (c) => {
       videoModel?: string;
       aspectRatio?: string;
       duration?: number;
+      // LTX 2.3 Pro extend chaining — only honoured when videoModel is 'lightricks/ltx-2.3-pro'
+      chainCount?: number;    // number of extend calls to append (1–6); 0 or absent = no chaining
+      extendDuration?: number; // seconds per extend (1–20); defaults to 20
     };
     if (!body.threadId || !body.prompt) {
       return c.json<TfResponse<null>>({ success: false, message: 'threadId and prompt are required' }, 400);
@@ -153,10 +156,36 @@ generateRouter.post('/video', async (c) => {
       },
       'bytedance/seedance-2.0': {
         slug: 'bytedance/seedance-2.0',
-        buildInput: (prompt, aspectRatio) => ({
+        buildInput: (prompt, aspectRatio, duration) => ({
           prompt,
           aspect_ratio: aspectRatio,
-          duration: 5,
+          duration,
+        }),
+      },
+      'bytedance/seedance-2.0-fast': {
+        slug: 'bytedance/seedance-2.0-fast',
+        buildInput: (prompt, aspectRatio, duration) => ({
+          prompt,
+          aspect_ratio: aspectRatio,
+          duration,
+        }),
+      },
+      'wan-video/wan-2.7-t2v': {
+        slug: 'wan-video/wan-2.7-t2v',
+        buildInput: (prompt, aspectRatio, duration) => ({
+          prompt,
+          aspect_ratio: aspectRatio,
+          duration,
+          resolution: '720p',
+        }),
+      },
+      'wan-video/wan-2.7-i2v': {
+        slug: 'wan-video/wan-2.7-i2v',
+        buildInput: (prompt, aspectRatio, duration) => ({
+          prompt,
+          aspect_ratio: aspectRatio,
+          duration,
+          resolution: '720p',
         }),
       },
     };
@@ -175,11 +204,66 @@ generateRouter.post('/video', async (c) => {
       videoAspectRatio = videoWidth >= videoHeight ? '16:9' : '9:16';
     }
 
-    const VALID_DURATIONS = new Set([5, 6, 7, 8, 10, 12, 14, 16, 18, 20]);
+    // Veo-2: 5-8 | LTX Fast: 6,8,10,12,14,16,18,20 | LTX Pro: 6,8,10
+    // Seedance 2.0/Fast: 5,8,10,12,15 | Wan 2.7: 2,3,4,5,8,10,12,15
+    const VALID_DURATIONS = new Set([2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 15, 16, 18, 20]);
     const videoDuration = body.duration && VALID_DURATIONS.has(body.duration) ? body.duration : 5;
 
-    // Create the Replicate prediction — no Prefer:wait=5 to avoid Workers connection issues.
-    // The Workflow handles all polling durably.
+    const assetId = crypto.randomUUID();
+    const r2KeyPrefix = `${workspace.id}/${body.threadId}/${assetId}`;
+
+    // ── LTX 2.3 Pro extend chain ──────────────────────────────────────────────
+    // When chainCount > 0 the Workflow itself creates all Replicate predictions so
+    // it can feed each output URL into the next extend call durably.
+    const isLtxPro = modelId === 'lightricks/ltx-2.3-pro';
+    const chainCount = isLtxPro && body.chainCount && body.chainCount >= 1
+      ? Math.min(Math.round(body.chainCount), 6)
+      : 0;
+
+    if (chainCount > 0) {
+      const extendDuration = body.extendDuration && body.extendDuration >= 1
+        ? Math.min(Math.round(body.extendDuration), 20)
+        : 20;
+
+      await createAsset(c.env.DB, {
+        id: assetId,
+        thread_id: body.threadId,
+        workspace_id: workspace.id,
+        type: 'video',
+        message_id: body.messageId,
+        prompt: body.prompt,
+      });
+
+      await c.env.KV.put(
+        `asset:status:${assetId}`,
+        JSON.stringify({ status: 'generating' }),
+        { expirationTtl: 60 * 60 * 24 }
+      );
+
+      await c.env.GENERATION_WORKFLOW.create({
+        id: assetId,
+        params: {
+          type: 'video_chain',
+          assetId,
+          workspaceId: workspace.id,
+          r2KeyPrefix,
+          prompt: body.prompt,
+          aspectRatio: videoAspectRatio as '16:9' | '9:16',
+          initialDuration: VALID_DURATIONS.has(videoDuration) ? videoDuration : 10,
+          extendDuration,
+          chainCount,
+        },
+      });
+
+      Logger.log('VideoChainDispatched', { assetId, chainCount, extendDuration, prompt: body.prompt });
+
+      return c.json<TfResponse<{ assetId: string; status: string }>>({
+        success: true,
+        data: { assetId, status: 'generating' },
+      }, 202);
+    }
+
+    // ── Single-clip prediction (all other models + LTX Pro without chain) ─────
     const replicateRes = await fetch(
       `https://api.replicate.com/v1/models/${modelConfig.slug}/predictions`,
       {
@@ -209,35 +293,32 @@ generateRouter.post('/video', async (c) => {
 
     Logger.log('ReplicatePredictionCreated', { predictionId: prediction.id, prompt: body.prompt });
 
-    const assetId = crypto.randomUUID();
     await createAsset(c.env.DB, {
       id: assetId,
       thread_id: body.threadId,
       workspace_id: workspace.id,
       type: 'video',
       message_id: body.messageId,
-      prompt: body.prompt,       // store original user prompt
+      prompt: body.prompt,
       prediction_id: prediction.id,
     });
 
-    // Write initial KV status
     await c.env.KV.put(
       `asset:status:${assetId}`,
       JSON.stringify({ status: 'generating' }),
       { expirationTtl: 60 * 60 * 24 }
     );
 
-    // Trigger Workflow — handles polling Replicate + uploading to R2 durably
     await c.env.GENERATION_WORKFLOW.create({
       id: assetId,
-        params: {
+      params: {
         type: 'video',
         assetId,
         workspaceId: workspace.id,
-        r2KeyPrefix: `${workspace.id}/${body.threadId}/${assetId}`,
+        r2KeyPrefix,
         prompt: body.prompt,
         predictionId: prediction.id,
-        aspectRatio: videoAspectRatio,
+        aspectRatio: videoAspectRatio as '16:9' | '9:16',
       },
     });
 

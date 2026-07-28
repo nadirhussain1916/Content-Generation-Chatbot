@@ -1,5 +1,5 @@
 import { SignIn, SignUp } from '@clerk/clerk-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { useAuth } from '@clerk/clerk-react';
 import { api } from '../lib/api';
@@ -101,7 +101,12 @@ const lightAppearance = {
   },
 };
 
-export default function LandingPage() {
+interface LandingPageProps {
+  /** When true the page is shown as-is even if the user is already signed in. */
+  noRedirect?: boolean;
+}
+
+export default function LandingPage({ noRedirect = false }: LandingPageProps) {
   const { isSignedIn, isLoaded, getToken } = useAuth();
   const navigate = useNavigate();
   const { theme } = useTheme();
@@ -112,7 +117,7 @@ export default function LandingPage() {
   const clerkAppearance = theme === 'dark' ? darkAppearance : lightAppearance;
 
   useEffect(() => {
-    if (!isLoaded || !isSignedIn) return;
+    if (noRedirect || !isLoaded || !isSignedIn) return;
 
     setRedirecting(true);
     (async () => {
@@ -132,7 +137,7 @@ export default function LandingPage() {
         navigate('/onboarding', { replace: true });
       }
     })();
-  }, [isLoaded, isSignedIn]);
+  }, [isLoaded, isSignedIn, noRedirect]);
 
   // Blank loading screen — avoids flashing the sign-in form for returning users
   if (redirecting) {
@@ -209,6 +214,23 @@ export default function LandingPage() {
               </>
             )}
           </p>
+
+          {/* Public links */}
+          <div className='mt-8 pt-6 border-t border-gray-200 dark:border-gray-800 flex items-center justify-center gap-4'>
+            <Link
+              to='/privacy'
+              className='text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors'
+            >
+              Privacy Policy
+            </Link>
+            <span className='text-gray-300 dark:text-gray-700 text-xs'>·</span>
+            <Link
+              to='/terms'
+              className='text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors'
+            >
+              Terms of Service
+            </Link>
+          </div>
         </div>
       </div>
 

@@ -22,7 +22,21 @@ export type GenerationParams =
       r2KeyPrefix: string;
       prompt: string;
       predictionId: string;
-      aspectRatio?: '16:9' | '9:16'; // default '16:9'
+      aspectRatio?: '16:9' | '9:16';
+    }
+  | {
+      // LTX 2.3 Pro extend chaining — generates an initial clip then extends it N times.
+      // Each extend call receives the full previous video and appends extendDuration seconds.
+      // The final output is a single coherent video with near-seamless continuity.
+      type: 'video_chain';
+      assetId: string;
+      workspaceId: string;
+      r2KeyPrefix: string;
+      prompt: string;
+      aspectRatio: '16:9' | '9:16';
+      initialDuration: number;  // 6, 8, or 10 — LTX Pro initial clip length
+      extendDuration: number;   // seconds to add per extend call (max 20)
+      chainCount: number;       // number of extend calls after the initial clip (1–6)
     };
 
 const KV_TTL = 60 * 60 * 24; // 24 h — long enough to cover any polling window
@@ -33,6 +47,22 @@ function kvKey(assetId: string) {
 
 async function writeKv(kv: KVNamespace, assetId: string, value: object) {
   await kv.put(kvKey(assetId), JSON.stringify(value), { expirationTtl: KV_TTL });
+}
+
+// Create a Replicate prediction and return its ID.
+async function createReplicatePrediction(
+  token: string,
+  modelSlug: string,
+  input: Record<string, unknown>
+): Promise<string> {
+  const res = await fetch(`https://api.replicate.com/v1/models/${modelSlug}/predictions`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ input }),
+  });
+  if (!res.ok) throw new Error(`Replicate create failed: ${res.status} ${await res.text()}`);
+  const data = await res.json() as { id: string };
+  return data.id;
 }
 
 export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, GenerationParams> {
@@ -134,6 +164,105 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         Logger.log('WorkflowVideoFailed', { assetId: p.assetId }, err);
+        await updateAsset(this.env.DB, p.assetId, { status: 'failed', error_message: msg });
+        await writeKv(this.env.KV, p.assetId, { status: 'failed' });
+      }
+    }
+
+    // ── LTX 2.3 Pro extend chaining ───────────────────────────────────────────
+    if (p.type === 'video_chain') {
+      const token = this.env.REPLICATE_API_TOKEN;
+
+      // Shared poll helper — throws on non-terminal status so step.do retries it.
+      // Returns the output URL on success, returns { ok: false } on permanent failure.
+      const pollPrediction = async (predictionId: string): Promise<{ ok: true; url: string } | { ok: false; reason: string }> => {
+        const res = await fetch(`https://api.replicate.com/v1/predictions/${predictionId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const prediction = await res.json() as { status: string; output?: string | string[]; error?: string };
+
+        if (prediction.status === 'failed' || prediction.status === 'canceled') {
+          return { ok: false, reason: `Prediction ${prediction.status}: ${prediction.error ?? 'unknown'}` };
+        }
+
+        const outputUrl = Array.isArray(prediction.output) ? prediction.output[0] : prediction.output;
+        if (prediction.status !== 'succeeded' || !outputUrl) {
+          throw new Error(`Prediction still ${prediction.status}`);
+        }
+        return { ok: true, url: outputUrl };
+      };
+
+      try {
+        // Step 1 — create and wait for the initial text_to_video clip
+        const initialPredId = await step.do('create-initial-prediction', async () => {
+          return createReplicatePrediction(token, 'lightricks/ltx-2.3-pro', {
+            task: 'text_to_video',
+            prompt: p.prompt,
+            aspect_ratio: p.aspectRatio,
+            duration: p.initialDuration,
+            resolution: '1080p',
+            generate_audio: true,
+          });
+        });
+
+        const initialResult = await step.do('wait-for-initial', {
+          retries: { limit: 60, delay: '15 seconds', backoff: 'constant' },
+          timeout: '20 minutes',
+        }, () => pollPrediction(initialPredId));
+
+        if (!initialResult.ok) {
+          Logger.log('VideoChainInitialFailed', { assetId: p.assetId, reason: initialResult.reason });
+          await updateAsset(this.env.DB, p.assetId, { status: 'failed', error_message: initialResult.reason });
+          await writeKv(this.env.KV, p.assetId, { status: 'failed' });
+          return;
+        }
+
+        // Steps 2..N+1 — sequential extend calls, each receiving the full previous video
+        let currentVideoUrl = initialResult.url;
+
+        for (let i = 0; i < p.chainCount; i++) {
+          const extendPredId = await step.do(`create-extend-${i}`, async () => {
+            return createReplicatePrediction(token, 'lightricks/ltx-2.3-pro', {
+              task: 'extend',
+              video: currentVideoUrl,
+              prompt: p.prompt,
+              duration: p.extendDuration,
+              extend_mode: 'end',
+              resolution: '1080p',
+              generate_audio: true,
+            });
+          });
+
+          const extendResult = await step.do(`wait-for-extend-${i}`, {
+            retries: { limit: 60, delay: '15 seconds', backoff: 'constant' },
+            timeout: '20 minutes',
+          }, () => pollPrediction(extendPredId));
+
+          if (!extendResult.ok) {
+            Logger.log('VideoChainExtendFailed', { assetId: p.assetId, step: i, reason: extendResult.reason });
+            await updateAsset(this.env.DB, p.assetId, { status: 'failed', error_message: extendResult.reason });
+            await writeKv(this.env.KV, p.assetId, { status: 'failed' });
+            return;
+          }
+
+          currentVideoUrl = extendResult.url;
+        }
+
+        // Upload final (fully extended) video to R2
+        const r2Key = await step.do('upload-chain-video', { retries: { limit: 2, delay: '5 seconds' } }, async () => {
+          const key = `${p.r2KeyPrefix}.mp4`;
+          await uploadFromUrl({ bucket: this.env.ASSETS, url: currentVideoUrl, key, contentType: 'video/mp4' });
+          return key;
+        });
+
+        await step.do('finalize-chain-video', async () => {
+          await updateAsset(this.env.DB, p.assetId, { status: 'ready', r2_key: r2Key });
+          await writeKv(this.env.KV, p.assetId, { status: 'ready', r2_key: r2Key });
+        });
+
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        Logger.log('VideoChainFailed', { assetId: p.assetId }, err);
         await updateAsset(this.env.DB, p.assetId, { status: 'failed', error_message: msg });
         await writeKv(this.env.KV, p.assetId, { status: 'failed' });
       }

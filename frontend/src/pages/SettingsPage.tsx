@@ -324,7 +324,7 @@ export default function SettingsPage() {
                           <input
                             type='number'
                             min={1}
-                            max={120}
+                            max={300}
                             step={1}
                             value={form.default_video_duration}
                             onChange={(e) => setForm((f) => ({ ...f, default_video_duration: Number(e.target.value) }))}
@@ -333,7 +333,7 @@ export default function SettingsPage() {
                           <span className='text-xs text-gray-500'>seconds</span>
                         </div>
                       )}
-                      <p className='text-xs text-gray-400 dark:text-gray-600 mt-1.5'>Saved as a preference. Duration is model-dependent — the current WAN 2.1 model generates ~5s clips.</p>
+                      <p className='text-xs text-gray-400 dark:text-gray-600 mt-1.5'>Saved as a preference. Used to guide script length. AI video clip duration is model-dependent (max ~20s per clip).</p>
                     </div>
                   );
                 })()}
