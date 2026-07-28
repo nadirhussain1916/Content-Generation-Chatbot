@@ -71,15 +71,24 @@ publishRouter.post('/instagram', async (c) => {
           container_id: containerId,
         });
       } else {
-        // Video — create Reels container (async, Instagram processes it server-side)
+        // Video — create Reels container then hand off to durable Workflow for polling
         const containerId = await createReelsContainer({
           igUserId: account.account_id,
           videoUrl: publicUrl,
           caption: fullCaption,
           accessToken: account.access_token,
         });
-        // Store containerId and mark as processing — frontend should poll status
         await updatePublishRecord(c.env.DB, recordId, { status: 'processing', container_id: containerId });
+        await c.env.PUBLISH_WORKFLOW.create({
+          params: {
+            platform: 'instagram',
+            recordId,
+            workspaceId: workspace.id,
+            containerId,
+            igUserId: account.account_id,
+            accessToken: account.access_token,
+          },
+        });
       }
     } catch (publishErr) {
       const msg = publishErr instanceof Error ? publishErr.message : String(publishErr);
@@ -135,6 +144,7 @@ publishRouter.post('/tiktok', async (c) => {
       if (asset.type === 'video') {
         // Delegate to PublishWorkflow — TikTok pulls the video from our R2 public URL (PULL_FROM_URL)
         const workflowParams: PublishParams = {
+          platform: 'tiktok',
           recordId,
           workspaceId: workspace.id,
           videoUrl: publicUrl,

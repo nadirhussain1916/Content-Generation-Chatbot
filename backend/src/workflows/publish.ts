@@ -2,16 +2,31 @@ import { WorkflowEntrypoint, WorkflowStep, WorkflowEvent } from 'cloudflare:work
 import type { CloudflareBindings } from '../env';
 import { updatePublishRecord } from '../db/queries';
 import { initVideoUploadByUrl, checkTikTokPublishStatus } from '../services/tiktok';
+import { checkContainerStatus, publishContainer } from '../services/instagram';
 import { Logger } from '../utils/Logger';
 
-export type PublishParams = {
+// ── Param types ───────────────────────────────────────────────────────────────
+
+type TikTokParams = {
+  platform: 'tiktok';
   recordId: string;
   workspaceId: string;
-  videoUrl: string; // Public R2 URL — TikTok pulls from this (PULL_FROM_URL)
+  videoUrl: string;
   accessToken: string;
   title: string;
   description: string;
 };
+
+type InstagramReelsParams = {
+  platform: 'instagram';
+  recordId: string;
+  workspaceId: string;
+  containerId: string;
+  igUserId: string;
+  accessToken: string;
+};
+
+export type PublishParams = TikTokParams | InstagramReelsParams;
 
 export type PublishProgress = {
   phase: 'submitting' | 'processing' | 'published' | 'failed';
@@ -29,19 +44,81 @@ async function writeProgress(kv: KVNamespace, recordId: string, progress: Publis
   await kv.put(publishProgressKey(recordId), JSON.stringify(progress), { expirationTtl: PROGRESS_TTL });
 }
 
+// ── Workflow ──────────────────────────────────────────────────────────────────
+
 export class PublishWorkflow extends WorkflowEntrypoint<CloudflareBindings, PublishParams> {
   async run(event: WorkflowEvent<PublishParams>, step: WorkflowStep) {
     const p = event.payload;
+    Logger.log('PublishWorkflowStarted', { platform: p.platform, recordId: p.recordId });
 
-    Logger.log('PublishWorkflowStarted', { recordId: p.recordId, videoUrl: p.videoUrl, title: p.title });
+    if (p.platform === 'instagram') {
+      await this.runInstagram(p, step);
+    } else {
+      await this.runTikTok(p, step);
+    }
+  }
 
+  // ── Instagram Reels ─────────────────────────────────────────────────────────
+
+  private async runInstagram(p: InstagramReelsParams, step: WorkflowStep) {
     try {
-      // ── Step 1: Submit PULL_FROM_URL to TikTok ────────────────────────────────
-      // TikTok fetches the video from our R2 URL directly — no chunking needed.
+      await writeProgress(this.env.KV, p.recordId, { phase: 'processing', percent: 20 });
+
+      // Poll until FINISHED — 45 retries × 8s = up to 6 minutes
+      const postId = await step.do('poll-and-publish', {
+        retries: { limit: 45, delay: '8 seconds', backoff: 'constant' },
+        timeout: '7 minutes',
+      }, async () => {
+        const { status_code, error_code } = await checkContainerStatus({
+          containerId: p.containerId,
+          accessToken: p.accessToken,
+        });
+        Logger.log('InstagramContainerPoll', { recordId: p.recordId, containerId: p.containerId, status_code, error_code });
+
+        if (status_code === 'ERROR') {
+          throw new Error(`Instagram container error (code ${error_code ?? 'unknown'})`);
+        }
+        if (status_code !== 'FINISHED') {
+          // Not terminal — throw to trigger retry
+          throw new Error(`Instagram container still processing: ${status_code}`);
+        }
+
+        // Container ready — publish immediately in the same step
+        const id = await publishContainer({
+          igUserId: p.igUserId,
+          containerId: p.containerId,
+          accessToken: p.accessToken,
+        });
+        Logger.log('InstagramReelsPublished', { recordId: p.recordId, postId: id, containerId: p.containerId });
+        return id;
+      });
+
+      await step.do('finalize', async () => {
+        await Promise.all([
+          updatePublishRecord(this.env.DB, p.recordId, { status: 'published', platform_post_id: postId }),
+          writeProgress(this.env.KV, p.recordId, { phase: 'published', percent: 100 }),
+        ]);
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // Only mark failed if the error is terminal (container ERROR), not a retry
+      if (msg.includes('Instagram container error')) {
+        Logger.log('InstagramReelsWorkflowFailed', { recordId: p.recordId, error: msg });
+        await Promise.all([
+          updatePublishRecord(this.env.DB, p.recordId, { status: 'failed', error_message: msg }),
+          writeProgress(this.env.KV, p.recordId, { phase: 'failed', percent: 0, error: msg }),
+        ]);
+      }
+    }
+  }
+
+  // ── TikTok ──────────────────────────────────────────────────────────────────
+
+  private async runTikTok(p: TikTokParams, step: WorkflowStep) {
+    try {
       Logger.log('PublishStep1Start', { recordId: p.recordId, step: 'submit-to-tiktok' });
 
       const publishId = await step.do('submit-to-tiktok', { retries: { limit: 2, delay: '5 seconds' } }, async () => {
-        Logger.log('TikTokSubmitStart', { videoUrl: p.videoUrl, title: p.title });
         const result = await initVideoUploadByUrl({
           accessToken: p.accessToken,
           title: p.title,
@@ -60,28 +137,19 @@ export class PublishWorkflow extends WorkflowEntrypoint<CloudflareBindings, Publ
       });
       Logger.log('PublishStep1Done', { recordId: p.recordId, publishId });
 
-      // ── Step 2: Poll for TikTok publish status ────────────────────────────────
-      // TikTok downloads + processes the video server-side; poll until done.
-      // 36 retries × 10s = up to 6 minutes of polling.
-      Logger.log('PublishStep2Start', { recordId: p.recordId, step: 'poll-status', publishId });
-
+      // 36 retries × 10s = up to 6 minutes of polling
       const finalStatus = await step.do('poll-status', {
         retries: { limit: 36, delay: '10 seconds', backoff: 'constant' },
         timeout: '7 minutes',
       }, async () => {
-        const { status } = await checkTikTokPublishStatus({
-          accessToken: p.accessToken,
-          publishId,
-        });
+        const { status } = await checkTikTokPublishStatus({ accessToken: p.accessToken, publishId });
         Logger.log('TikTokPollStatus', { recordId: p.recordId, publishId, status });
         if (status === 'PUBLISH_COMPLETE') return 'published' as const;
         if (status === 'FAILED') return 'failed' as const;
-        // Not terminal — throw to trigger retry with delay
         throw new Error(`TikTok still processing: ${status}`);
       });
       Logger.log('PublishStep2Done', { recordId: p.recordId, finalStatus });
 
-      // ── Step 3: Finalize ──────────────────────────────────────────────────────
       await step.do('finalize', async () => {
         await Promise.all([
           updatePublishRecord(this.env.DB, p.recordId, { status: finalStatus }),
