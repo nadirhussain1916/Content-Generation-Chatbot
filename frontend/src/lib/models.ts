@@ -25,10 +25,10 @@ export const IMAGE_MODEL_KEY = 'tf_image_model';
 // ─── Video generation models ──────────────────────────────────────────────────
 
 export const VIDEO_MODELS = [
-  { id: 'lightricks/ltx-2.3-fast',  label: 'LTX 2.3 Fast',   desc: 'Portrait · Audio · Up to 20s · $0.37 · Default' },
-  { id: 'lightricks/ltx-2.3-pro',   label: 'LTX 2.3 Pro',    desc: 'Portrait · Audio · High quality · $0.49' },
-  { id: 'bytedance/seedance-2.0',    label: 'Seedance 2.0',   desc: 'Portrait · Audio · 4K · $0.90' },
-  { id: 'google/veo-2',              label: 'Google Veo 2',    desc: 'Fast · Portrait & landscape · $2.50' },
+  { id: 'lightricks/ltx-2.3-fast',  label: 'LTX 2.3 Fast',   desc: 'Portrait · Audio · Up to 20s · ~$0.06/s · Default' },
+  { id: 'lightricks/ltx-2.3-pro',   label: 'LTX 2.3 Pro',    desc: 'Portrait · Audio · High quality · ~$0.08/s' },
+  { id: 'bytedance/seedance-2.0',    label: 'Seedance 2.0',   desc: 'Portrait · Audio · 4K · ~$0.18/s' },
+  { id: 'google/veo-2',              label: 'Google Veo 2',    desc: 'Fast · Portrait & landscape · ~$0.50/s' },
 ] as const;
 
 export type VideoModelId = (typeof VIDEO_MODELS)[number]['id'];
