@@ -31,11 +31,10 @@ export function getOAuthUrl(params: {
   const p = new URLSearchParams({
     client_id: params.appId,
     redirect_uri: params.redirectUri,
-    scope: 'instagram_business_basic,instagram_business_content_publish,instagram_business_manage_messages',
     response_type: 'code',
+    scope: 'instagram_business_basic,instagram_business_manage_messages,instagram_business_manage_comments,instagram_business_content_publish,instagram_business_manage_insights',
     state: params.state,
-    enable_fb_login: '0',
-    force_reauth: '0',
+    force_reauth: 'true',
   });
   return `https://www.instagram.com/oauth/authorize?${p.toString()}`;
 }
