@@ -69,14 +69,14 @@ export class PublishWorkflow extends WorkflowEntrypoint<CloudflareBindings, Publ
         retries: { limit: 45, delay: '8 seconds', backoff: 'constant' },
         timeout: '7 minutes',
       }, async () => {
-        const { status_code, error_code } = await checkContainerStatus({
+        const { status_code } = await checkContainerStatus({
           containerId: p.containerId,
           accessToken: p.accessToken,
         });
-        Logger.log('InstagramContainerPoll', { recordId: p.recordId, containerId: p.containerId, status_code, error_code });
+        Logger.log('InstagramContainerPoll', { recordId: p.recordId, containerId: p.containerId, status_code });
 
         if (status_code === 'ERROR') {
-          throw new Error(`Instagram container error (code ${error_code ?? 'unknown'})`);
+          throw new Error('Instagram container error');
         }
         if (status_code !== 'FINISHED') {
           // Not terminal — throw to trigger retry

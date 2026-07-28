@@ -144,9 +144,9 @@ export async function createReelsContainer(params: {
 export async function checkContainerStatus(params: {
   containerId: string;
   accessToken: string;
-}): Promise<{ status_code: string; status: string; error_code?: number }> {
-  return graphRequest<{ status_code: string; status: string; error_code?: number }>(
-    `/${params.containerId}?fields=status_code,status,error_code&access_token=${params.accessToken}`
+}): Promise<{ status_code: string; status: string }> {
+  return graphRequest<{ status_code: string; status: string }>(
+    `/${params.containerId}?fields=status_code,status&access_token=${params.accessToken}`
   );
 }
 
@@ -186,9 +186,9 @@ export async function publishImage(params: {
   // Poll for FINISHED status (max 30s for images)
   for (let attempt = 0; attempt < 10; attempt++) {
     await new Promise((r) => setTimeout(r, 3000));
-    const { status_code, error_code } = await checkContainerStatus({ containerId, accessToken: params.accessToken });
+    const { status_code } = await checkContainerStatus({ containerId, accessToken: params.accessToken });
     if (status_code === 'FINISHED') break;
-    if (status_code === 'ERROR') throw new Error(`Instagram container error${error_code ? ` (code ${error_code})` : ''}`);
+    if (status_code === 'ERROR') throw new Error('Instagram container error');
   }
 
   const platformPostId = await publishContainer({

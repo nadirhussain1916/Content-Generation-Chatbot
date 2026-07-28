@@ -216,7 +216,7 @@ publishRouter.get('/status/:recordId', async (c) => {
       const account = await getSocialAccount(c.env.DB, workspace.id, 'instagram');
       if (account) {
         try {
-          const { status_code, error_code } = await (await import('../services/instagram')).checkContainerStatus({
+          const { status_code } = await (await import('../services/instagram')).checkContainerStatus({
             containerId: record.container_id,
             accessToken: account.access_token,
           });
@@ -230,10 +230,9 @@ publishRouter.get('/status/:recordId', async (c) => {
             Logger.log('InstagramReelsPublished', { recordId, postId, containerId: record.container_id });
             return c.json<TfResponse<PublishRecord>>({ success: true, data: { ...record, status: 'published', platform_post_id: postId } });
           } else if (status_code === 'ERROR') {
-            const errMsg = `Instagram container error${error_code ? ` (code ${error_code})` : ''}`;
-            await updatePublishRecord(c.env.DB, recordId, { status: 'failed', error_message: errMsg });
-            Logger.log('InstagramReelsContainerError', { recordId, containerId: record.container_id, error_code });
-            return c.json<TfResponse<PublishRecord>>({ success: true, data: { ...record, status: 'failed', error_message: errMsg } });
+            await updatePublishRecord(c.env.DB, recordId, { status: 'failed', error_message: 'Instagram container error' });
+            Logger.log('InstagramReelsContainerError', { recordId, containerId: record.container_id });
+            return c.json<TfResponse<PublishRecord>>({ success: true, data: { ...record, status: 'failed', error_message: 'Instagram container error' } });
           }
         } catch (e) {
           Logger.log('InstagramStatusPollError', { recordId }, e);
