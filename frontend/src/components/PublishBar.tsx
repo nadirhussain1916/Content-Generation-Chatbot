@@ -18,7 +18,6 @@ export default function PublishBar({ slug, thread, onPublished }: PublishBarProp
   const { getToken } = useAuth();
   const [publishingTo, setPublishingTo] = useState<string | null>(null);
   const [publishStatus, setPublishStatus] = useState<Record<string, 'idle' | 'publishing' | 'processing' | 'done' | 'failed'>>({});
-  const [recordIds, setRecordIds] = useState<Record<string, string>>({});
   const pollTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   // On mount, load existing publish records for this asset and restore status
@@ -42,15 +41,12 @@ export default function PublishBar({ slug, thread, onPublished }: PublishBarProp
         }
       }
 
-      const ids: Record<string, string> = {};
       const statuses: Record<string, 'idle' | 'processing' | 'done' | 'failed'> = {};
       for (const [platform, record] of Object.entries(latest)) {
-        ids[platform] = record.id;
         if (record.status === 'published') statuses[platform] = 'done';
         else if (record.status === 'failed') statuses[platform] = 'failed';
         else if (record.status === 'processing' || record.status === 'pending') statuses[platform] = 'processing';
       }
-      setRecordIds(ids);
       setPublishStatus(statuses);
 
       // Resume polling for any still-processing record
@@ -109,7 +105,6 @@ export default function PublishBar({ slug, thread, onPublished }: PublishBarProp
       );
 
       if (res.success && res.data) {
-        setRecordIds((r) => ({ ...r, [platform]: res.data!.id }));
         if (res.data.status === 'published') {
           // Image — published synchronously
           setPublishStatus((s) => ({ ...s, [platform]: 'done' }));
