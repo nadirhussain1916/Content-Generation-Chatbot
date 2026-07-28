@@ -14,8 +14,8 @@ import generateRouter from './routes/generate';
 import socialRouter, { socialCallbackRouter } from './routes/social';
 import publishRouter from './routes/publish';
 import adminRouter from './routes/admin/index';
-import { getExpiringTokens, getSocialAccount, upsertSocialAccount } from './db/queries';
-import { refreshLongLivedToken } from './services/instagram';
+import { getExpiringTokens, getProcessingInstagramPublishes, getSocialAccount, upsertSocialAccount, updatePublishRecord } from './db/queries';
+import { refreshLongLivedToken, checkContainerStatus, publishContainer } from './services/instagram';
 import { refreshTikTokToken } from './services/tiktok';
 
 const app = new Hono<{ Bindings: CloudflareBindings; Variables: ContextVariables }>();
@@ -115,12 +115,52 @@ async function refreshTokens(env: CloudflareBindings) {
   }
 }
 
+// ─── Cron: Check pending Instagram Reels containers every 5 minutes ──────────
+
+async function checkInstagramReels(env: CloudflareBindings) {
+  const { results } = await getProcessingInstagramPublishes(env.DB);
+  if (results.length === 0) return;
+
+  Logger.log('InstagramReelsCronStart', { count: results.length });
+
+  for (const row of results) {
+    try {
+      const { status_code } = await checkContainerStatus({
+        containerId: row.container_id,
+        accessToken: row.access_token,
+      });
+      Logger.log('InstagramReelsCronPoll', { recordId: row.record_id, containerId: row.container_id, status_code });
+
+      if (status_code === 'FINISHED') {
+        const postId = await publishContainer({
+          igUserId: row.ig_user_id,
+          containerId: row.container_id,
+          accessToken: row.access_token,
+        });
+        await updatePublishRecord(env.DB, row.record_id, { status: 'published', platform_post_id: postId });
+        Logger.log('InstagramReelsPublishedViaCron', { recordId: row.record_id, postId });
+      } else if (status_code === 'ERROR' || status_code === 'EXPIRED') {
+        await updatePublishRecord(env.DB, row.record_id, { status: 'failed', error_message: `Container ${status_code.toLowerCase()}` });
+        Logger.log('InstagramReelsFailedViaCron', { recordId: row.record_id, status_code });
+      }
+      // IN_PROGRESS → do nothing, next cron tick will check again
+    } catch (err) {
+      Logger.log('InstagramReelsCronError', { recordId: row.record_id }, err);
+    }
+  }
+}
+
 // ─── Worker export ────────────────────────────────────────────────────────────
 
 export default {
   fetch: app.fetch,
 
-  async scheduled(_event: ScheduledEvent, env: CloudflareBindings, ctx: ExecutionContext) {
-    ctx.waitUntil(refreshTokens(env));
+  async scheduled(event: ScheduledEvent, env: CloudflareBindings, ctx: ExecutionContext) {
+    if (event.cron === '*/5 * * * *') {
+      ctx.waitUntil(checkInstagramReels(env));
+    } else {
+      // Every 6 hours: refresh expiring social tokens
+      ctx.waitUntil(refreshTokens(env));
+    }
   },
 };

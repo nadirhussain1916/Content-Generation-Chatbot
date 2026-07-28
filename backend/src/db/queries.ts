@@ -193,6 +193,19 @@ export async function getPublishRecordsByWorkspace(db: D1Database, workspaceId: 
     .bind(workspaceId).all<PublishRecord>();
 }
 
+// ─── Cron helpers ─────────────────────────────────────────────────────────────
+
+export async function getProcessingInstagramPublishes(db: D1Database) {
+  return db.prepare(`
+    SELECT pr.id as record_id, pr.container_id, pr.workspace_id,
+           sa.access_token, sa.account_id as ig_user_id
+    FROM publish_records pr
+    JOIN social_accounts sa ON sa.workspace_id = pr.workspace_id AND sa.platform = 'instagram'
+    WHERE pr.platform = 'instagram' AND pr.status = 'processing' AND pr.container_id IS NOT NULL
+    ORDER BY pr.created_at ASC
+  `).all<{ record_id: string; container_id: string; workspace_id: string; access_token: string; ig_user_id: string }>();
+}
+
 // ─── Token refresh helpers (for cron) ────────────────────────────────────────
 
 export async function getExpiringTokens(db: D1Database, thresholdSecs: number) {

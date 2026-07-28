@@ -2,7 +2,6 @@ import { WorkflowEntrypoint, WorkflowStep, WorkflowEvent } from 'cloudflare:work
 import type { CloudflareBindings } from '../env';
 import { updatePublishRecord } from '../db/queries';
 import { initVideoUploadByUrl, checkTikTokPublishStatus } from '../services/tiktok';
-import { checkContainerStatus, publishContainer } from '../services/instagram';
 import { Logger } from '../utils/Logger';
 
 // ── Param types ───────────────────────────────────────────────────────────────
@@ -59,54 +58,14 @@ export class PublishWorkflow extends WorkflowEntrypoint<CloudflareBindings, Publ
   }
 
   // ── Instagram Reels ─────────────────────────────────────────────────────────
+  // Container is created in the route handler and stored as `processing`.
+  // A cron job (*/5 * * * *) checks all pending containers and publishes
+  // them when Instagram reports FINISHED — no polling needed here.
 
-  private async runInstagram(p: InstagramReelsParams, step: WorkflowStep) {
-    try {
-      await writeProgress(this.env.KV, p.recordId, { phase: 'processing', percent: 20 });
-
-      // Poll until FINISHED — 30 retries × 30s = up to 15 minutes
-      const postId = await step.do('poll-and-publish', {
-        retries: { limit: 30, delay: '30 seconds', backoff: 'constant' },
-        timeout: '16 minutes',
-      }, async () => {
-        const { status_code } = await checkContainerStatus({
-          containerId: p.containerId,
-          accessToken: p.accessToken,
-        });
-        Logger.log('InstagramContainerPoll', { recordId: p.recordId, containerId: p.containerId, status_code });
-
-        if (status_code === 'ERROR') {
-          throw new Error('Instagram container error');
-        }
-        if (status_code !== 'FINISHED') {
-          // Not terminal — throw to trigger retry
-          throw new Error(`Instagram container still processing: ${status_code}`);
-        }
-
-        // Container ready — publish immediately in the same step
-        const id = await publishContainer({
-          igUserId: p.igUserId,
-          containerId: p.containerId,
-          accessToken: p.accessToken,
-        });
-        Logger.log('InstagramReelsPublished', { recordId: p.recordId, postId: id, containerId: p.containerId });
-        return id;
-      });
-
-      await step.do('finalize', async () => {
-        await Promise.all([
-          updatePublishRecord(this.env.DB, p.recordId, { status: 'published', platform_post_id: postId }),
-          writeProgress(this.env.KV, p.recordId, { phase: 'published', percent: 100 }),
-        ]);
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      Logger.log('InstagramReelsWorkflowFailed', { recordId: p.recordId, error: msg });
-      await Promise.all([
-        updatePublishRecord(this.env.DB, p.recordId, { status: 'failed', error_message: msg }),
-        writeProgress(this.env.KV, p.recordId, { phase: 'failed', percent: 0, error: msg }),
-      ]);
-    }
+  private async runInstagram(p: InstagramReelsParams, _step: WorkflowStep) {
+    // Just log that the container is queued; cron takes it from here.
+    Logger.log('InstagramReelsQueued', { recordId: p.recordId, containerId: p.containerId });
+    await writeProgress(this.env.KV, p.recordId, { phase: 'processing', percent: 10 });
   }
 
   // ── TikTok ──────────────────────────────────────────────────────────────────
