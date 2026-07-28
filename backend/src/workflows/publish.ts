@@ -64,9 +64,9 @@ export class PublishWorkflow extends WorkflowEntrypoint<CloudflareBindings, Publ
     try {
       await writeProgress(this.env.KV, p.recordId, { phase: 'processing', percent: 20 });
 
-      // Poll until FINISHED — 90 retries × 10s = up to 15 minutes
+      // Poll until FINISHED — 30 retries × 30s = up to 15 minutes
       const postId = await step.do('poll-and-publish', {
-        retries: { limit: 90, delay: '10 seconds', backoff: 'constant' },
+        retries: { limit: 30, delay: '30 seconds', backoff: 'constant' },
         timeout: '16 minutes',
       }, async () => {
         const { status_code } = await checkContainerStatus({
