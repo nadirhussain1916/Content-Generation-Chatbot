@@ -40,6 +40,12 @@ export default function ThreadPage() {
 
   async function fetchBlobForAsset(asset: Asset, token: string) {
     if (!asset.message_id || asset.status !== 'ready') return;
+    // Use public URL directly — no Worker proxy needed
+    if (asset.public_url) {
+      setBlobUrlsByMessageId((p) => ({ ...p, [asset.message_id!]: asset.public_url! }));
+      return;
+    }
+    // Fallback: stream through Worker for assets created before public bucket
     try {
       const res = await fetch(
         `${BACKEND}/api/workspaces/${slug}/generate/assets/${asset.id}/file`,

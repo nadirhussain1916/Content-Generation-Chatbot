@@ -67,3 +67,16 @@ export async function getPresignedUrl(params: {
 export function getPublicUrl(publicBaseUrl: string, key: string): string {
   return `${publicBaseUrl.replace(/\/$/, '')}/${key}`;
 }
+
+/**
+ * Fills in `public_url` from `r2_key` at read time for assets that were
+ * created before the bucket was made public (i.e. public_url is null but
+ * r2_key exists and ASSETS_PUBLIC_URL is configured).
+ */
+export function withPublicUrl<T extends { r2_key: string | null; public_url: string | null }>(
+  asset: T,
+  publicBaseUrl: string | undefined
+): T {
+  if (!asset.r2_key || asset.public_url || !publicBaseUrl) return asset;
+  return { ...asset, public_url: getPublicUrl(publicBaseUrl, asset.r2_key) };
+}

@@ -8,6 +8,7 @@ import type { Asset } from '../types';
 import type { CloudflareBindings } from '../env';
 import type { ContextVariables, TfResponse, Thread, Message } from '../types';
 import { Logger } from '../utils/Logger';
+import { withPublicUrl } from '../services/r2';
 
 type Env = { Bindings: CloudflareBindings; Variables: ContextVariables };
 
@@ -110,7 +111,8 @@ threadsRouter.get('/:threadId/assets', async (c) => {
       return c.json<TfResponse<null>>({ success: false, message: 'Thread not found' }, 404);
     }
     const result = await getAssetsByThread(c.env.DB, threadId);
-    return c.json<TfResponse<Asset[]>>({ success: true, data: result.results });
+    const enriched = result.results.map((a) => withPublicUrl(a, c.env.ASSETS_PUBLIC_URL));
+    return c.json<TfResponse<Asset[]>>({ success: true, data: enriched });
   } catch (error) {
     Logger.log('GetThreadAssetsError', { threadId }, error);
     return c.json<TfResponse<null>>({ success: false, message: 'Internal server error' }, 500);

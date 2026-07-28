@@ -21,6 +21,7 @@ export default function GenerationsPage() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // Legacy blob URLs for assets that predate public bucket (no public_url in DB)
   const [blobUrls, setBlobUrls] = useState<Record<string, string>>({});
   const [loadingImages, setLoadingImages] = useState<Record<string, boolean>>({});
   const [filter, setFilter] = useState<'all' | 'image' | 'video'>('all');
@@ -54,6 +55,12 @@ export default function GenerationsPage() {
 
   async function loadBlobUrl(asset: Asset) {
     if (asset.status !== 'ready') return;
+    // Use public URL directly — no Worker proxy needed
+    if (asset.public_url) {
+      setBlobUrls((p) => ({ ...p, [asset.id]: asset.public_url! }));
+      return;
+    }
+    // Fallback: stream through Worker for assets created before public bucket
     if (blobUrls[asset.id] || loadingImages[asset.id] || !asset.r2_key) return;
     setLoadingImages((p) => ({ ...p, [asset.id]: true }));
     try {

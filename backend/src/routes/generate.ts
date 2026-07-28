@@ -4,6 +4,7 @@ import { getThread, createAsset, updateAsset, getAsset, getAssetsByWorkspace } f
 import type { CloudflareBindings } from '../env';
 import type { ContextVariables, TfResponse, Asset } from '../types';
 import { Logger } from '../utils/Logger';
+import { withPublicUrl } from '../services/r2';
 import { kvRateLimiter } from '../middleware/rateLimiter';
 
 type Env = { Bindings: CloudflareBindings; Variables: ContextVariables };
@@ -20,7 +21,8 @@ generateRouter.get('/assets', async (c) => {
   const workspace = c.get('workspace');
   try {
     const result = await getAssetsByWorkspace(c.env.DB, workspace.id);
-    return c.json<TfResponse<Asset[]>>({ success: true, data: result.results });
+    const enriched = result.results.map((a) => withPublicUrl(a, c.env.ASSETS_PUBLIC_URL));
+    return c.json<TfResponse<Asset[]>>({ success: true, data: enriched });
   } catch (error) {
     Logger.log('ListAssetsError', { workspaceId: workspace.id }, error);
     return c.json<TfResponse<null>>({ success: false, message: 'Internal server error' }, 500);
@@ -296,7 +298,7 @@ generateRouter.get('/assets/:assetId/status', async (c) => {
         // Fetch full asset from D1 for a complete response
         const asset = await getAsset(c.env.DB, assetId);
         if (asset && asset.workspace_id === workspace.id) {
-          return c.json<TfResponse<Asset>>({ success: true, data: asset });
+          return c.json<TfResponse<Asset>>({ success: true, data: withPublicUrl(asset, c.env.ASSETS_PUBLIC_URL) });
         }
       }
       // Still generating — return lightweight status without a D1 hit
@@ -304,7 +306,7 @@ generateRouter.get('/assets/:assetId/status', async (c) => {
       if (!asset || asset.workspace_id !== workspace.id) {
         return c.json<TfResponse<null>>({ success: false, message: 'Asset not found' }, 404);
       }
-      return c.json<TfResponse<Asset>>({ success: true, data: { ...asset, status: kvData.status as Asset['status'] } });
+      return c.json<TfResponse<Asset>>({ success: true, data: withPublicUrl({ ...asset, status: kvData.status as Asset['status'] }, c.env.ASSETS_PUBLIC_URL) });
     }
 
     // Fallback: no KV entry yet (e.g. Workflow hasn't started) — read D1
@@ -312,7 +314,7 @@ generateRouter.get('/assets/:assetId/status', async (c) => {
     if (!asset || asset.workspace_id !== workspace.id) {
       return c.json<TfResponse<null>>({ success: false, message: 'Asset not found' }, 404);
     }
-    return c.json<TfResponse<Asset>>({ success: true, data: asset });
+    return c.json<TfResponse<Asset>>({ success: true, data: withPublicUrl(asset, c.env.ASSETS_PUBLIC_URL) });
   } catch (error) {
     Logger.log('AssetStatusError', { assetId }, error);
     return c.json<TfResponse<null>>({ success: false, message: 'Internal server error' }, 500);
