@@ -64,10 +64,10 @@ export class PublishWorkflow extends WorkflowEntrypoint<CloudflareBindings, Publ
     try {
       await writeProgress(this.env.KV, p.recordId, { phase: 'processing', percent: 20 });
 
-      // Poll until FINISHED — 45 retries × 8s = up to 6 minutes
+      // Poll until FINISHED — 90 retries × 10s = up to 15 minutes
       const postId = await step.do('poll-and-publish', {
-        retries: { limit: 45, delay: '8 seconds', backoff: 'constant' },
-        timeout: '7 minutes',
+        retries: { limit: 90, delay: '10 seconds', backoff: 'constant' },
+        timeout: '16 minutes',
       }, async () => {
         const { status_code } = await checkContainerStatus({
           containerId: p.containerId,
@@ -101,14 +101,11 @@ export class PublishWorkflow extends WorkflowEntrypoint<CloudflareBindings, Publ
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      // Only mark failed if the error is terminal (container ERROR), not a retry
-      if (msg.includes('Instagram container error')) {
-        Logger.log('InstagramReelsWorkflowFailed', { recordId: p.recordId, error: msg });
-        await Promise.all([
-          updatePublishRecord(this.env.DB, p.recordId, { status: 'failed', error_message: msg }),
-          writeProgress(this.env.KV, p.recordId, { phase: 'failed', percent: 0, error: msg }),
-        ]);
-      }
+      Logger.log('InstagramReelsWorkflowFailed', { recordId: p.recordId, error: msg });
+      await Promise.all([
+        updatePublishRecord(this.env.DB, p.recordId, { status: 'failed', error_message: msg }),
+        writeProgress(this.env.KV, p.recordId, { phase: 'failed', percent: 0, error: msg }),
+      ]);
     }
   }
 
