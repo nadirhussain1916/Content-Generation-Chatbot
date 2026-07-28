@@ -96,7 +96,7 @@ export default function PrivacyPage() {
           (Clerk) to maintain your session. We do not use tracking or advertising cookies.
         </Section>
 
-        <Section title='11. Children's Privacy'>
+        <Section title="11. Children's Privacy">
           The Service is not intended for users under the age of 13. We do not knowingly collect
           personal information from children under 13.
         </Section>
