@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@clerk/clerk-react';
 import { api } from '../lib/api';
 import type { TfResponse, Asset, Message, ImagePostPackage, VideoPostPackage } from '../types';
+import { usePublishStatus } from '../hooks/usePublishStatus';
 import Sidebar from '../components/Sidebar';
 import {
   ImageIcon, VideoIcon, Loader2, AlertCircle, X,
@@ -301,7 +302,7 @@ function DetailsModal({
   const [pkg, setPkg] = useState<(ImagePostPackage & VideoPostPackage) | null>(null);
   const [loadingPkg, setLoadingPkg] = useState(true);
   const [copied, setCopied] = useState(false);
-  const [publishStatus, setPublishStatus] = useState<Record<string, 'idle' | 'publishing' | 'done' | 'failed'>>({});
+  const { status: publishStatus, publish: publishAsset } = usePublishStatus(slug, asset.id);
 
   useEffect(() => {
     if (!asset.message_id) { setLoadingPkg(false); return; }
@@ -327,23 +328,11 @@ function DetailsModal({
     setTimeout(() => setCopied(false), 2000);
   }
 
-  async function publish(platform: 'instagram' | 'tiktok') {
-    setPublishStatus((s) => ({ ...s, [platform]: 'publishing' }));
-    const token = await getToken();
-    try {
-      const body = platform === 'instagram'
-        ? { assetId: asset.id, caption: pkg?.caption ?? '', hashtags: pkg?.hashtags ?? [] }
-        : { assetId: asset.id, title: pkg?.title ?? '', description: pkg?.description ?? '', hashtags: pkg?.hashtags ?? [] };
-
-      const res = await api.post<TfResponse<unknown>>(
-        `/api/workspaces/${slug}/publish/${platform}`,
-        body,
-        token ?? undefined
-      );
-      setPublishStatus((s) => ({ ...s, [platform]: res.success ? 'done' : 'failed' }));
-    } catch {
-      setPublishStatus((s) => ({ ...s, [platform]: 'failed' }));
-    }
+  function publish(platform: 'instagram' | 'tiktok') {
+    const body = platform === 'instagram'
+      ? { assetId: asset.id, caption: pkg?.caption ?? '', hashtags: pkg?.hashtags ?? [] }
+      : { assetId: asset.id, title: pkg?.title ?? '', description: pkg?.description ?? '', hashtags: pkg?.hashtags ?? [] };
+    publishAsset(platform, body);
   }
 
   const isVideo = asset.type === 'video';
@@ -429,21 +418,23 @@ function DetailsModal({
               <button
                 key={platform}
                 onClick={() => publish(platform)}
-                disabled={s === 'publishing' || s === 'done'}
+                disabled={s === 'publishing' || s === 'processing' || s === 'done'}
                 className={cn(
                   'flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium transition-all',
                   s === 'done' ? 'bg-green-900/30 text-green-400 border border-green-700/30'
                   : s === 'failed' ? 'bg-red-900/30 text-red-400 border border-red-700/30'
+                  : s === 'processing' ? 'bg-yellow-900/30 text-yellow-400 border border-yellow-700/30'
                   : platform === 'instagram'
                   ? 'bg-gradient-to-r from-pink-600 to-orange-500 text-white hover:opacity-90 disabled:opacity-50'
                   : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50'
                 )}
               >
-                {s === 'publishing' ? <Loader2 size={13} className='animate-spin' />
+                {(s === 'publishing' || s === 'processing') ? <Loader2 size={13} className='animate-spin' />
                   : s === 'done' ? <CheckCircle size={13} />
                   : s === 'failed' ? <AlertCircle size={13} />
                   : <Share2 size={13} />}
-                {platform === 'instagram' ? 'Instagram' : 'TikTok'}
+                {s === 'processing' ? 'Processing…'
+                  : platform === 'instagram' ? 'Instagram' : 'TikTok'}
               </button>
             );
           })}
