@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useAuth } from '@clerk/clerk-react';
 import { api } from '../lib/api';
 import type { TfResponse, PublishRecord, Thread } from '../types';
@@ -11,12 +11,44 @@ interface PublishBarProps {
   onPublished?: () => void;
 }
 
+const POLL_INTERVAL_MS = 4000;
+const POLL_MAX_ATTEMPTS = 30; // 30 × 4s = 2 min max
+
 export default function PublishBar({ slug, thread, onPublished }: PublishBarProps) {
   const { getToken } = useAuth();
   const [publishingTo, setPublishingTo] = useState<string | null>(null);
-  const [publishStatus, setPublishStatus] = useState<Record<string, 'idle' | 'publishing' | 'done' | 'failed'>>({});
+  const [publishStatus, setPublishStatus] = useState<Record<string, 'idle' | 'publishing' | 'processing' | 'done' | 'failed'>>({});
+  const pollTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   const canPublish = thread.status === 'ready' && thread.active_draft_id;
+
+  async function pollUntilDone(platform: 'instagram' | 'tiktok', recordId: string, attempt = 0) {
+    if (attempt >= POLL_MAX_ATTEMPTS) {
+      setPublishStatus((s) => ({ ...s, [platform]: 'failed' }));
+      return;
+    }
+    const token = await getToken();
+    const res = await api.get<TfResponse<PublishRecord>>(
+      `/api/workspaces/${slug}/publish/status/${recordId}`,
+      token ?? undefined
+    );
+    if (res.success && res.data) {
+      if (res.data.status === 'published') {
+        setPublishStatus((s) => ({ ...s, [platform]: 'done' }));
+        onPublished?.();
+        return;
+      }
+      if (res.data.status === 'failed') {
+        setPublishStatus((s) => ({ ...s, [platform]: 'failed' }));
+        return;
+      }
+    }
+    // Still processing — schedule next poll
+    pollTimers.current[platform] = setTimeout(
+      () => pollUntilDone(platform, recordId, attempt + 1),
+      POLL_INTERVAL_MS
+    );
+  }
 
   async function handlePublish(platform: 'instagram' | 'tiktok') {
     if (!canPublish) return;
@@ -32,9 +64,18 @@ export default function PublishBar({ slug, thread, onPublished }: PublishBarProp
         token ?? undefined
       );
 
-      if (res.success) {
-        setPublishStatus((s) => ({ ...s, [platform]: 'done' }));
-        onPublished?.();
+      if (res.success && res.data) {
+        if (res.data.status === 'published') {
+          // Image — published synchronously
+          setPublishStatus((s) => ({ ...s, [platform]: 'done' }));
+          onPublished?.();
+        } else if (res.data.status === 'processing') {
+          // Video — container created, needs polling
+          setPublishStatus((s) => ({ ...s, [platform]: 'processing' }));
+          pollUntilDone(platform, res.data.id);
+        } else {
+          setPublishStatus((s) => ({ ...s, [platform]: 'failed' }));
+        }
       } else {
         setPublishStatus((s) => ({ ...s, [platform]: 'failed' }));
       }
@@ -50,9 +91,16 @@ export default function PublishBar({ slug, thread, onPublished }: PublishBarProp
   const statusIcon = (p: string) => {
     const s = publishStatus[p] ?? 'idle';
     if (s === 'publishing') return <Loader2 size={14} className='animate-spin' />;
+    if (s === 'processing') return <Loader2 size={14} className='animate-spin' />;
     if (s === 'done') return <CheckCircle size={14} className='text-green-400' />;
     if (s === 'failed') return <AlertCircle size={14} className='text-red-400' />;
     return <Share2 size={14} />;
+  };
+
+  const statusLabel = (p: 'instagram' | 'tiktok') => {
+    const s = publishStatus[p] ?? 'idle';
+    if (s === 'processing') return 'Processing…';
+    return p === 'instagram' ? 'Instagram' : 'TikTok';
   };
 
   return (
@@ -71,20 +119,22 @@ export default function PublishBar({ slug, thread, onPublished }: PublishBarProp
           <button
             key={platform}
             onClick={() => handlePublish(platform)}
-            disabled={!!publishingTo || publishStatus[platform] === 'done'}
+            disabled={!!publishingTo || publishStatus[platform] === 'done' || publishStatus[platform] === 'processing'}
             className={cn(
               'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all',
               publishStatus[platform] === 'done'
                 ? 'bg-green-900/30 text-green-400 border border-green-700/30'
                 : publishStatus[platform] === 'failed'
                 ? 'bg-red-900/30 text-red-400 border border-red-700/30'
+                : publishStatus[platform] === 'processing'
+                ? 'bg-yellow-900/30 text-yellow-400 border border-yellow-700/30'
                 : platform === 'instagram'
                 ? 'bg-gradient-to-r from-pink-600 to-orange-500 text-white hover:opacity-90 disabled:opacity-50'
                 : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50'
             )}
           >
             {statusIcon(platform)}
-            {platform === 'instagram' ? 'Instagram' : 'TikTok'}
+            {statusLabel(platform)}
           </button>
         ))}
       </div>

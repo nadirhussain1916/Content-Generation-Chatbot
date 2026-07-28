@@ -219,9 +219,11 @@ publishRouter.get('/status/:recordId', async (c) => {
               accessToken: account.access_token,
             });
             await updatePublishRecord(c.env.DB, recordId, { status: 'published', platform_post_id: postId });
+            Logger.log('InstagramReelsPublished', { recordId, postId, containerId: record.container_id });
             return c.json<TfResponse<PublishRecord>>({ success: true, data: { ...record, status: 'published', platform_post_id: postId } });
           } else if (status_code === 'ERROR') {
             await updatePublishRecord(c.env.DB, recordId, { status: 'failed', error_message: 'Instagram container processing failed' });
+            Logger.log('InstagramReelsContainerError', { recordId, containerId: record.container_id });
             return c.json<TfResponse<PublishRecord>>({ success: true, data: { ...record, status: 'failed' } });
           }
         } catch (e) {
