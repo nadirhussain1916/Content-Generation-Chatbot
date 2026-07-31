@@ -51,40 +51,40 @@ export default function Sidebar({ onNewThread, refreshKey = 0 }: SidebarProps) {
   }
 
   return (
-    <aside className='w-64 flex-shrink-0 bg-gray-50 dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 flex flex-col h-screen'>
+    <aside className='w-64 flex-shrink-0 bg-surface/70 backdrop-blur-xl border-r border-border-soft/60 flex flex-col h-full'>
       {/* Workspace selector */}
-      <div className='p-4 border-b border-gray-200 dark:border-gray-800'>
+      <div className='p-4 border-b border-border-soft'>
         <button
           onClick={() => setShowWsDropdown((p) => !p)}
-          className='w-full flex items-center gap-2 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors'
+          className='w-full flex items-center gap-2 p-2 rounded-xl hover:bg-surface-card transition-colors'
         >
-          <div className='w-7 h-7 rounded-md bg-violet-600 flex items-center justify-center flex-shrink-0'>
-            <Zap size={13} className='text-white' />
+          <div className='w-7 h-7 rounded-lg bg-ink flex items-center justify-center flex-shrink-0'>
+            <Zap size={13} className='text-on-ink' />
           </div>
-          <span className='text-sm font-medium text-gray-900 dark:text-white truncate flex-1 text-left'>
+          <span className='text-message font-medium text-text-primary truncate flex-1 text-left'>
             {activeWorkspace?.name ?? 'Loading...'}
           </span>
-          <ChevronDown size={14} className='text-gray-500 dark:text-gray-400' />
+          <ChevronDown size={14} className='text-text-muted' />
         </button>
 
         {showWsDropdown && (
-          <div className='mt-1 py-1 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-xl'>
+          <div className='mt-1 py-1 bg-surface-white rounded-xl border border-border-soft shadow-[0_10px_40px_rgba(0,0,0,0.08)]'>
             {workspaces.map((ws) => (
               <button
                 key={ws.id}
                 onClick={() => { navigate(`/workspaces/${ws.slug}`); setShowWsDropdown(false); }}
                 className={cn(
-                  'w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors',
-                  ws.slug === slug ? 'text-violet-600 dark:text-violet-400' : 'text-gray-700 dark:text-gray-300'
+                  'w-full text-left px-3 py-2 text-message transition-colors',
+                  ws.slug === slug ? 'text-text-primary font-medium' : 'text-text-secondary hover:bg-surface-card'
                 )}
               >
                 {ws.name}
               </button>
             ))}
-            <div className='border-t border-gray-200 dark:border-gray-700 mt-1 pt-1'>
+            <div className='border-t border-border-soft mt-1 pt-1'>
               <button
                 onClick={() => { navigate('/onboarding'); setShowWsDropdown(false); }}
-                className='w-full text-left px-3 py-2 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2'
+                className='w-full text-left px-3 py-2 text-message text-text-secondary hover:text-text-primary hover:bg-surface-card transition-colors flex items-center gap-2'
               >
                 <Plus size={13} /> New workspace
               </button>
@@ -97,7 +97,7 @@ export default function Sidebar({ onNewThread, refreshKey = 0 }: SidebarProps) {
       <div className='p-3'>
         <button
           onClick={onNewThread}
-          className='w-full flex items-center gap-2 px-3 py-2 bg-violet-600 hover:bg-violet-500 transition-colors rounded-lg text-sm font-medium text-white'
+          className='w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-brand hover:bg-brand-hover transition-colors rounded-lg text-message font-medium text-on-brand shadow-[0_4px_14px_rgba(58,122,114,0.25)]'
         >
           <Plus size={15} />
           New thread
@@ -108,12 +108,12 @@ export default function Sidebar({ onNewThread, refreshKey = 0 }: SidebarProps) {
       <div className='flex-1 overflow-y-auto px-2'>
         {loading ? (
           <div className='flex justify-center py-8'>
-            <Loader2 size={18} className='animate-spin text-gray-400 dark:text-gray-500' />
+            <Loader2 size={18} className='animate-spin text-text-muted' />
           </div>
         ) : threads.length === 0 ? (
           <div className='text-center py-8 px-4'>
-            <MessageSquare size={24} className='text-gray-400 dark:text-gray-600 mx-auto mb-2' />
-            <p className='text-xs text-gray-500'>No threads yet. Start your first!</p>
+            <MessageSquare size={24} className='text-text-muted mx-auto mb-2' />
+            <p className='text-meta text-text-secondary'>No threads yet. Start your first!</p>
           </div>
         ) : (
           <div className='space-y-0.5'>
@@ -122,18 +122,18 @@ export default function Sidebar({ onNewThread, refreshKey = 0 }: SidebarProps) {
                 key={thread.id}
                 to={`/workspaces/${slug}/threads/${thread.id}`}
                 className={cn(
-                  'flex items-start gap-2.5 px-2.5 py-2 rounded-lg transition-colors group',
+                  'flex items-start gap-2.5 px-2.5 py-2 rounded-xl transition-colors group',
                   thread.id === threadId
-                    ? 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white'
-                    : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100/50 dark:hover:bg-gray-800/50 hover:text-gray-700 dark:hover:text-gray-200'
+                    ? 'bg-surface-card text-text-primary'
+                    : 'text-text-secondary hover:bg-surface-card/60 hover:text-text-primary'
                 )}
               >
                 <div className={cn('w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0', statusDot(thread.status))} />
                 <div className='min-w-0'>
-                  <p className='text-xs font-medium truncate leading-tight'>
+                  <p className='text-message font-medium truncate leading-tight'>
                     {thread.title ?? 'Untitled thread'}
                   </p>
-                  <p className='text-xs text-gray-400 dark:text-gray-500 mt-0.5'>{formatRelativeTime(thread.updated_at)}</p>
+                  <p className='text-meta text-text-muted mt-0.5'>{formatRelativeTime(thread.updated_at)}</p>
                 </div>
               </Link>
             ))}
@@ -142,7 +142,7 @@ export default function Sidebar({ onNewThread, refreshKey = 0 }: SidebarProps) {
       </div>
 
       {/* Footer */}
-      <div className='p-3 border-t border-gray-200 dark:border-gray-800 flex items-center justify-between'>
+      <div className='p-3 border-t border-border-soft flex items-center justify-between'>
         <UserButton
           userProfileProps={{
             appearance: {
@@ -157,14 +157,14 @@ export default function Sidebar({ onNewThread, refreshKey = 0 }: SidebarProps) {
           <ThemeToggle />
           <Link
             to={`/workspaces/${slug}/generations`}
-            className='p-2 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors'
+            className='p-2 text-text-muted hover:text-text-primary hover:bg-surface-card rounded-full transition-colors'
             title='Generations'
           >
             <Image size={16} />
           </Link>
           <Link
             to={`/workspaces/${slug}/settings`}
-            className='p-2 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors'
+            className='p-2 text-text-muted hover:text-text-primary hover:bg-surface-card rounded-full transition-colors'
             title='Settings'
           >
             <Settings size={16} />

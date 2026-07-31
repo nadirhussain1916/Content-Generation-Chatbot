@@ -121,7 +121,7 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
       {!done && (
         <div className='flex items-center gap-3 flex-wrap'>
           <div className='flex items-center gap-1.5'>
-            <span className='text-xs text-gray-500'>Model</span>
+            <span className='text-meta text-text-secondary'>Model</span>
             <ModelPicker
               options={VIDEO_MODELS}
               value={videoModel}
@@ -136,7 +136,7 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
           </div>
           {supportsAspectRatio && (
             <div className='flex items-center gap-1.5'>
-              <span className='text-xs text-gray-500'>Size</span>
+              <span className='text-meta text-text-secondary'>Size</span>
               <ModelPicker
                 options={VIDEO_ASPECT_RATIOS}
                 value={aspectRatio}
@@ -146,7 +146,7 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
           )}
           {supportsDuration && (
             <div className='flex items-center gap-1.5'>
-              <span className='text-xs text-gray-500'>Duration</span>
+              <span className='text-meta text-text-secondary'>Duration</span>
               <ModelPicker
                 options={durationOptions}
                 value={duration}
@@ -156,7 +156,7 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
           )}
           {isLtxPro && (
             <div className='flex items-center gap-1.5'>
-              <span className='text-xs text-gray-500'>Extend</span>
+              <span className='text-meta text-text-secondary'>Extend</span>
               <ModelPicker
                 options={LTX_EXTEND_OPTIONS}
                 value={ltxExtend}
@@ -169,9 +169,9 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
 
       {/* Error banner */}
       {error && !loading && (
-        <div className='flex items-start gap-1.5 bg-red-950/40 border border-red-700/40 rounded-lg px-3 py-2'>
-          <AlertCircle size={12} className='text-red-400 mt-0.5 flex-shrink-0' />
-          <p className='text-xs text-red-300 leading-snug'>{error}</p>
+        <div className='flex items-start gap-1.5 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-700/40 rounded-lg px-3 py-2'>
+          <AlertCircle size={12} className='text-red-500 dark:text-red-400 mt-0.5 flex-shrink-0' />
+          <p className='text-meta text-red-600 dark:text-red-300 leading-snug'>{error}</p>
         </div>
       )}
 
@@ -180,10 +180,10 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
           onClick={handleGenerate}
           disabled={loading || done}
           className={cn(
-            'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white rounded-lg transition-all disabled:opacity-60 disabled:cursor-not-allowed',
+            'flex items-center gap-1.5 px-3 py-1.5 text-meta font-medium rounded-lg transition-all disabled:opacity-60 disabled:cursor-not-allowed',
             error && !done
-              ? 'bg-red-600 hover:bg-red-500'
-              : 'bg-purple-600 hover:bg-purple-500'
+              ? 'bg-red-600 hover:bg-red-500 text-white'
+              : 'bg-brand hover:bg-brand-hover text-on-brand'
           )}
         >
           {loading ? (
@@ -198,7 +198,7 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
           {loading ? 'Generating video...' : done ? 'Video generated' : error ? 'Retry' : 'Generate video'}
         </button>
         {loading && (
-          <span className='text-xs text-gray-500'>
+          <span className='text-meta text-text-secondary'>
             {isLtxPro && chainCount > 0
               ? `Extending ${chainCount}× — this may take ${Math.round((chainCount + 1) * 3)} min`
               : 'This may take a few minutes'}

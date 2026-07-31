@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@clerk/clerk-react';
 import { api } from '../lib/api';
 import type { TfResponse, Thread, Message, Asset } from '../types';
+import AppShell from '../components/AppShell';
 import Sidebar from '../components/Sidebar';
 import ChatMessage from '../components/ChatMessage';
 import PublishBar from '../components/PublishBar';
@@ -262,25 +263,25 @@ export default function ThreadPage() {
   };
 
   return (
-    <div className='flex h-screen bg-white dark:bg-gray-950 text-gray-900 dark:text-white'>
+    <AppShell>
       <Sidebar onNewThread={handleNewThread} refreshKey={sidebarRefreshKey} />
 
-      <main className='flex-1 flex flex-col min-w-0'>
+      <main className='flex-1 flex flex-col min-w-0 bg-surface-chat/40 backdrop-blur-xl'>
         {/* Thread header */}
-        <header className='flex items-center gap-3 px-4 py-3 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50'>
+        <header className='flex items-center gap-3 px-5 py-4 border-b border-border-soft/60 bg-surface/50 backdrop-blur-xl'>
           <button
             onClick={() => navigate(`/workspaces/${slug}`)}
-            className='text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white lg:hidden'
+            className='text-text-secondary hover:text-text-primary lg:hidden'
           >
             <ArrowLeft size={18} />
           </button>
           <div className='flex-1 min-w-0'>
-            <p className='text-sm font-medium truncate'>
+            <p className='text-chat-title text-text-primary truncate'>
               {thread?.title ?? 'New thread'}
             </p>
           </div>
           {thread && (
-            <span className={cn('text-xs px-2 py-0.5 rounded-full border', statusColors[thread.status])}>
+            <span className={cn('text-meta px-2.5 py-1 rounded-full border', statusColors[thread.status])}>
               {statusLabels[thread.status]}
             </span>
           )}
@@ -290,12 +291,12 @@ export default function ThreadPage() {
         <div className='flex-1 overflow-y-auto px-4 py-6'>
           {loading ? (
             <div className='flex justify-center py-12'>
-              <Loader2 size={20} className='animate-spin text-gray-400 dark:text-gray-500' />
+              <Loader2 size={20} className='animate-spin text-text-muted' />
             </div>
           ) : messages.length === 0 ? (
             <div className='flex flex-col items-center justify-center h-full gap-3 text-center'>
-              <p className='text-gray-500 text-sm'>Describe what you want to create.</p>
-              <p className='text-gray-400 dark:text-gray-600 text-xs max-w-xs'>
+              <p className='text-text-secondary text-message'>Describe what you want to create.</p>
+              <p className='text-text-muted text-meta max-w-xs'>
                 The AI will ask a few questions to understand your idea, then generate a complete post.
               </p>
             </div>
@@ -315,8 +316,8 @@ export default function ThreadPage() {
               ))}
               {sending && (
                 <div className='flex justify-start'>
-                  <div className='bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl rounded-tl-sm px-4 py-2.5'>
-                    <Loader2 size={14} className='animate-spin text-gray-400' />
+                  <div className='bg-ink rounded-2xl rounded-tl-md px-4 py-3'>
+                    <Loader2 size={14} className='animate-spin text-on-ink' />
                   </div>
                 </div>
               )}
@@ -336,10 +337,10 @@ export default function ThreadPage() {
         )}
 
         {/* Input */}
-        <div className='border-t border-gray-200 dark:border-gray-800 p-4'>
+        <div className='border-t border-border-soft/60 bg-surface/50 backdrop-blur-xl p-4'>
           <div className='max-w-3xl mx-auto'>
-            <div className='bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-xl focus-within:border-violet-500 transition-colors'>
-              <div className='flex gap-3 items-end px-4 pt-3 pb-2'>
+            <div className='bg-surface-white rounded-3xl shadow-[0_3px_15px_rgba(0,0,0,0.04)] border border-black/[0.04] dark:border-white/[0.06] focus-within:shadow-[0_4px_20px_rgba(0,0,0,0.08)] transition-shadow'>
+              <div className='flex gap-3 items-end pl-5 pr-2 pt-3 pb-2'>
                 <textarea
                   ref={inputRef}
                   rows={1}
@@ -351,7 +352,7 @@ export default function ThreadPage() {
                       ? 'Describe what you want to create...'
                       : 'Ask for changes, refinements, or say "looks good"...'
                   }
-                  className='flex-1 bg-transparent text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 resize-none focus:outline-none max-h-32 overflow-y-auto'
+                  className='flex-1 bg-transparent text-message text-text-primary placeholder-text-muted resize-none focus:outline-none max-h-32 overflow-y-auto py-2'
                   style={{ height: 'auto' }}
                   onInput={(e) => {
                     const el = e.currentTarget;
@@ -363,18 +364,18 @@ export default function ThreadPage() {
                 <button
                   onClick={() => sendMessage(input)}
                   disabled={!input.trim() || sending || thread?.status === 'published'}
-                  className='flex-shrink-0 p-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg transition-all'
+                  className='flex-shrink-0 w-10 h-10 flex items-center justify-center bg-ink hover:bg-ink-hover disabled:opacity-30 disabled:cursor-not-allowed rounded-full transition-all hover:scale-[1.04]'
                 >
                   {sending ? (
-                    <Loader2 size={16} className='animate-spin' />
+                    <Loader2 size={16} className='animate-spin text-on-ink' />
                   ) : (
-                    <Send size={16} />
+                    <Send size={16} className='text-on-ink' />
                   )}
                 </button>
               </div>
               {/* Model selector row */}
-              <div className='px-3 pb-2 flex items-center gap-1'>
-                <span className='text-xs text-gray-400 dark:text-gray-600'>Model</span>
+              <div className='px-4 pb-2.5 flex items-center gap-1'>
+                <span className='text-meta text-text-muted'>Model</span>
                 <ModelPicker
                   options={TEXT_MODELS}
                   value={textModel}
@@ -382,12 +383,12 @@ export default function ThreadPage() {
                 />
               </div>
             </div>
-            <p className='text-xs text-gray-400 dark:text-gray-600 mt-2 text-center'>
+            <p className='text-meta text-text-muted mt-2.5 text-center'>
               Press Enter to send • Shift+Enter for new line
             </p>
           </div>
         </div>
       </main>
-    </div>
+    </AppShell>
   );
 }

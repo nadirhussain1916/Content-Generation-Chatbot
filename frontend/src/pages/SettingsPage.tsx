@@ -3,6 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@clerk/clerk-react';
 import { api } from '../lib/api';
 import type { TfResponse, Workspace, SocialAccountSafe } from '../types';
+import AppShell from '../components/AppShell';
 import Sidebar from '../components/Sidebar';
 import { useNavigate } from 'react-router-dom';
 import { CheckCircle, XCircle, Link2, Unlink, Loader2, Settings } from 'lucide-react';
@@ -115,31 +116,26 @@ export default function SettingsPage() {
   const igAccount = accounts.find((a) => a.platform === 'instagram');
   const ttAccount = accounts.find((a) => a.platform === 'tiktok');
 
-  const inputClass = 'w-full bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-violet-500 transition-colors';
-  const sectionClass = 'bg-gray-50 dark:bg-gray-900 rounded-xl p-5 space-y-4';
-  const sectionHeadingClass = 'font-semibold text-sm uppercase tracking-wide text-gray-500 dark:text-gray-400';
-  const labelClass = 'block text-sm font-medium text-gray-700 dark:text-gray-300';
-  const inactiveButtonClass = 'bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-gray-400 dark:hover:border-gray-500';
+  const inputClass = 'w-full bg-surface-white border border-border-soft rounded-xl px-3 py-2 text-message text-text-primary placeholder-text-muted focus:outline-none focus:border-ink transition-colors';
+  const sectionClass = 'bg-surface-card rounded-xl p-5 space-y-4';
+  const sectionHeadingClass = 'font-semibold text-meta uppercase tracking-wide text-text-secondary';
+  const labelClass = 'block text-message font-medium text-text-primary';
+  const inactiveButtonClass = 'bg-surface-white border-border-soft text-text-secondary hover:border-ink/30 hover:text-text-primary';
 
   return (
-    <div className='flex h-screen bg-white dark:bg-gray-950 text-gray-900 dark:text-white'>
+    <AppShell>
       <Sidebar onNewThread={handleNewThread} />
 
-      <main className='flex-1 overflow-y-auto relative bg-gradient-to-br from-white via-white to-violet-50/25 dark:from-gray-950 dark:via-gray-950 dark:to-violet-950/25'>
-        {/* Ambient glows */}
-        <div className='pointer-events-none absolute inset-0 z-0'>
-          <div className='absolute -top-32 right-0 w-[600px] h-[600px] bg-violet-600/5 rounded-full blur-3xl' />
-          <div className='absolute bottom-0 left-1/4 w-96 h-96 bg-violet-800/5 rounded-full blur-3xl' />
-        </div>
-        <div className='relative z-10 max-w-2xl mx-auto px-6 py-8'>
+      <main className='flex-1 overflow-y-auto bg-surface-chat/40 backdrop-blur-xl'>
+        <div className='max-w-2xl mx-auto px-6 py-8'>
           <div className='flex items-center gap-2 mb-8'>
-            <Settings size={20} className='text-gray-500 dark:text-gray-400' />
-            <h1 className='text-xl font-semibold'>Workspace settings</h1>
+            <Settings size={20} className='text-text-secondary' />
+            <h1 className='text-heading text-text-primary'>Workspace settings</h1>
           </div>
 
           {loading ? (
             <div className='flex justify-center py-12'>
-              <Loader2 size={20} className='animate-spin text-gray-400 dark:text-gray-500' />
+              <Loader2 size={20} className='animate-spin text-text-muted' />
             </div>
           ) : (
             <div className='space-y-8'>
@@ -155,9 +151,9 @@ export default function SettingsPage() {
                         key={t}
                         onClick={() => setForm((f) => ({ ...f, ai_tone: t }))}
                         className={cn(
-                          'px-3 py-1.5 rounded-lg border text-sm capitalize transition-all',
+                          'px-3 py-1.5 rounded-full border text-message capitalize transition-all',
                           form.ai_tone === t
-                            ? 'bg-violet-600 border-violet-500 text-white'
+                            ? 'bg-ink border-ink text-on-ink'
                             : inactiveButtonClass
                         )}
                       >
@@ -175,9 +171,9 @@ export default function SettingsPage() {
                         key={s}
                         onClick={() => setForm((f) => ({ ...f, default_caption_style: s }))}
                         className={cn(
-                          'flex-1 py-2 rounded-lg border text-sm capitalize transition-all',
+                          'flex-1 py-2 rounded-full border text-message capitalize transition-all',
                           form.default_caption_style === s
-                            ? 'bg-violet-600 border-violet-500 text-white'
+                            ? 'bg-ink border-ink text-on-ink'
                             : inactiveButtonClass
                         )}
                       >
@@ -190,7 +186,7 @@ export default function SettingsPage() {
                 <button
                   onClick={saveSettings}
                   disabled={saving}
-                  className='px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors text-white'
+                  className='px-4 py-2 bg-brand hover:bg-brand-hover disabled:opacity-50 rounded-lg text-message font-medium transition-colors text-on-brand'
                 >
                   {saving ? 'Saving...' : 'Save settings'}
                 </button>
@@ -200,7 +196,7 @@ export default function SettingsPage() {
               <section className={sectionClass}>
                 <div>
                   <h2 className={sectionHeadingClass}>Media Defaults</h2>
-                  <p className='text-xs text-gray-500 mt-1'>Set the default dimensions and duration used when generating images and videos for this workspace. The AI will always respect these unless you ask otherwise.</p>
+                  <p className='text-meta text-text-secondary mt-1'>Set the default dimensions and duration used when generating images and videos for this workspace. The AI will always respect these unless you ask otherwise.</p>
                 </div>
 
                 {/* Default image size */}
@@ -208,7 +204,7 @@ export default function SettingsPage() {
                   const imgPresets = ['1024x1024', '1024x1792', '1792x1024'];
                   const isCustomImg = !imgPresets.includes(form.default_image_size);
                   const [imgW, imgH] = form.default_image_size.split('x').map(Number);
-                  const inactiveImgBtn = 'bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-blue-500 hover:text-blue-600 dark:hover:text-white';
+                  const inactiveImgBtn = 'bg-surface-white border-border-soft text-text-secondary hover:border-ink/30 hover:text-text-primary';
                   return (
                     <div>
                       <label className={cn(labelClass, 'mb-2')}>Default image size</label>
@@ -222,14 +218,14 @@ export default function SettingsPage() {
                             key={opt.value}
                             onClick={() => setForm((f) => ({ ...f, default_image_size: opt.value }))}
                             className={cn(
-                              'flex flex-col items-center gap-0.5 px-2 py-3 rounded-xl border text-sm transition-all',
+                              'flex flex-col items-center gap-0.5 px-2 py-3 rounded-xl border text-message transition-all',
                               form.default_image_size === opt.value
-                                ? 'bg-blue-600 border-blue-500 text-white'
+                                ? 'bg-ink border-ink text-on-ink'
                                 : inactiveImgBtn
                             )}
                           >
                             <span className='font-mono font-semibold'>{opt.label}</span>
-                            <span className='text-[10px] opacity-70 text-center leading-tight'>{opt.sub}</span>
+                            <span className='text-meta opacity-70 text-center leading-tight'>{opt.sub}</span>
                           </button>
                         ))}
                         {/* Custom tile */}
@@ -238,14 +234,14 @@ export default function SettingsPage() {
                             if (!isCustomImg) setForm((f) => ({ ...f, default_image_size: '512x512' }));
                           }}
                           className={cn(
-                            'flex flex-col items-center gap-0.5 px-2 py-3 rounded-xl border text-sm transition-all',
+                            'flex flex-col items-center gap-0.5 px-2 py-3 rounded-xl border text-message transition-all',
                             isCustomImg
-                              ? 'bg-blue-600 border-blue-500 text-white'
+                              ? 'bg-ink border-ink text-on-ink'
                               : inactiveImgBtn
                           )}
                         >
                           <span className='font-mono font-semibold'>✎</span>
-                          <span className='text-[10px] opacity-70 text-center leading-tight'>Custom</span>
+                          <span className='text-meta opacity-70 text-center leading-tight'>Custom</span>
                         </button>
                       </div>
                       {/* Custom dimension inputs */}
@@ -259,9 +255,9 @@ export default function SettingsPage() {
                             value={imgW || ''}
                             onChange={(e) => setForm((f) => ({ ...f, default_image_size: `${e.target.value}x${imgH || 512}` }))}
                             placeholder='Width'
-                            className='w-24 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 transition-colors font-mono'
+                            className='w-24 bg-surface-white border border-border-soft rounded-lg px-2.5 py-1.5 text-message text-text-primary placeholder-text-muted focus:outline-none focus:border-ink transition-colors font-mono'
                           />
-                          <span className='text-gray-500 text-sm'>×</span>
+                          <span className='text-text-secondary text-message'>×</span>
                           <input
                             type='number'
                             min={64}
@@ -270,12 +266,12 @@ export default function SettingsPage() {
                             value={imgH || ''}
                             onChange={(e) => setForm((f) => ({ ...f, default_image_size: `${imgW || 512}x${e.target.value}` }))}
                             placeholder='Height'
-                            className='w-24 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 transition-colors font-mono'
+                            className='w-24 bg-surface-white border border-border-soft rounded-lg px-2.5 py-1.5 text-message text-text-primary placeholder-text-muted focus:outline-none focus:border-ink transition-colors font-mono'
                           />
-                          <span className='text-xs text-gray-500'>px</span>
+                          <span className='text-meta text-text-secondary'>px</span>
                         </div>
                       )}
-                      <p className='text-xs text-gray-400 dark:text-gray-600 mt-1.5'>Current: <span className='font-mono text-gray-500 dark:text-gray-400'>{form.default_image_size}</span></p>
+                      <p className='text-meta text-text-muted mt-1.5'>Current: <span className='font-mono text-text-secondary'>{form.default_image_size}</span></p>
                     </div>
                   );
                 })()}
@@ -284,7 +280,7 @@ export default function SettingsPage() {
                 {(() => {
                   const durationPresets = [5, 10];
                   const isCustomDuration = !durationPresets.includes(form.default_video_duration);
-                  const inactiveVidBtn = 'bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-purple-500 hover:text-purple-600 dark:hover:text-white';
+                  const inactiveVidBtn = 'bg-surface-white border-border-soft text-text-secondary hover:border-ink/30 hover:text-text-primary';
                   return (
                     <div>
                       <label className={cn(labelClass, 'mb-2')}>Default video duration</label>
@@ -294,9 +290,9 @@ export default function SettingsPage() {
                             key={d}
                             onClick={() => setForm((f) => ({ ...f, default_video_duration: d }))}
                             className={cn(
-                              'flex-1 py-2 rounded-lg border text-sm font-medium transition-all',
+                              'flex-1 py-2 rounded-full border text-message font-medium transition-all',
                               form.default_video_duration === d
-                                ? 'bg-purple-600 border-purple-500 text-white'
+                                ? 'bg-ink border-ink text-on-ink'
                                 : inactiveVidBtn
                             )}
                           >
@@ -309,9 +305,9 @@ export default function SettingsPage() {
                             if (!isCustomDuration) setForm((f) => ({ ...f, default_video_duration: 15 }));
                           }}
                           className={cn(
-                            'flex-1 py-2 rounded-lg border text-sm font-medium transition-all',
+                            'flex-1 py-2 rounded-full border text-message font-medium transition-all',
                             isCustomDuration
-                              ? 'bg-purple-600 border-purple-500 text-white'
+                              ? 'bg-ink border-ink text-on-ink'
                               : inactiveVidBtn
                           )}
                         >
@@ -328,12 +324,12 @@ export default function SettingsPage() {
                             step={1}
                             value={form.default_video_duration}
                             onChange={(e) => setForm((f) => ({ ...f, default_video_duration: Number(e.target.value) }))}
-                            className='w-24 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-purple-500 transition-colors font-mono'
+                            className='w-24 bg-surface-white border border-border-soft rounded-lg px-2.5 py-1.5 text-message text-text-primary focus:outline-none focus:border-ink transition-colors font-mono'
                           />
-                          <span className='text-xs text-gray-500'>seconds</span>
+                          <span className='text-meta text-text-secondary'>seconds</span>
                         </div>
                       )}
-                      <p className='text-xs text-gray-400 dark:text-gray-600 mt-1.5'>Saved as a preference. Used to guide script length. AI video clip duration is model-dependent (max ~20s per clip).</p>
+                      <p className='text-meta text-text-muted mt-1.5'>Saved as a preference. Used to guide script length. AI video clip duration is model-dependent (max ~20s per clip).</p>
                     </div>
                   );
                 })()}
@@ -343,7 +339,7 @@ export default function SettingsPage() {
                   const vidPresets = ['1280x720', '720x1280'];
                   const isCustomVid = !vidPresets.includes(form.default_video_dimensions);
                   const [vidW, vidH] = form.default_video_dimensions.split('x').map(Number);
-                  const inactiveVidDimBtn = 'bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-purple-500 hover:text-purple-600 dark:hover:text-white';
+                  const inactiveVidDimBtn = 'bg-surface-white border-border-soft text-text-secondary hover:border-ink/30 hover:text-text-primary';
                   return (
                     <div>
                       <label className={cn(labelClass, 'mb-2')}>Default video dimensions</label>
@@ -356,14 +352,14 @@ export default function SettingsPage() {
                             key={opt.value}
                             onClick={() => setForm((f) => ({ ...f, default_video_dimensions: opt.value }))}
                             className={cn(
-                              'flex flex-col items-center gap-0.5 px-3 py-3 rounded-xl border text-sm transition-all',
+                              'flex flex-col items-center gap-0.5 px-3 py-3 rounded-xl border text-message transition-all',
                               form.default_video_dimensions === opt.value
-                                ? 'bg-purple-600 border-purple-500 text-white'
+                                ? 'bg-ink border-ink text-on-ink'
                                 : inactiveVidDimBtn
                             )}
                           >
                             <span className='font-mono font-semibold'>{opt.label}</span>
-                            <span className='text-[10px] opacity-70 text-center leading-tight'>{opt.sub}</span>
+                            <span className='text-meta opacity-70 text-center leading-tight'>{opt.sub}</span>
                           </button>
                         ))}
                         {/* Custom tile */}
@@ -372,14 +368,14 @@ export default function SettingsPage() {
                             if (!isCustomVid) setForm((f) => ({ ...f, default_video_dimensions: '1080x1080' }));
                           }}
                           className={cn(
-                            'flex flex-col items-center gap-0.5 px-3 py-3 rounded-xl border text-sm transition-all',
+                            'flex flex-col items-center gap-0.5 px-3 py-3 rounded-xl border text-message transition-all',
                             isCustomVid
-                              ? 'bg-purple-600 border-purple-500 text-white'
+                              ? 'bg-ink border-ink text-on-ink'
                               : inactiveVidDimBtn
                           )}
                         >
                           <span className='font-mono font-semibold'>✎</span>
-                          <span className='text-[10px] opacity-70 text-center leading-tight'>Custom</span>
+                          <span className='text-meta opacity-70 text-center leading-tight'>Custom</span>
                         </button>
                       </div>
                       {/* Custom dimension inputs */}
@@ -393,9 +389,9 @@ export default function SettingsPage() {
                             value={vidW || ''}
                             onChange={(e) => setForm((f) => ({ ...f, default_video_dimensions: `${e.target.value}x${vidH || 720}` }))}
                             placeholder='Width'
-                            className='w-24 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-purple-500 transition-colors font-mono'
+                            className='w-24 bg-surface-white border border-border-soft rounded-lg px-2.5 py-1.5 text-message text-text-primary placeholder-text-muted focus:outline-none focus:border-ink transition-colors font-mono'
                           />
-                          <span className='text-gray-500 text-sm'>×</span>
+                          <span className='text-text-secondary text-message'>×</span>
                           <input
                             type='number'
                             min={64}
@@ -404,9 +400,9 @@ export default function SettingsPage() {
                             value={vidH || ''}
                             onChange={(e) => setForm((f) => ({ ...f, default_video_dimensions: `${vidW || 1280}x${e.target.value}` }))}
                             placeholder='Height'
-                            className='w-24 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-purple-500 transition-colors font-mono'
+                            className='w-24 bg-surface-white border border-border-soft rounded-lg px-2.5 py-1.5 text-message text-text-primary placeholder-text-muted focus:outline-none focus:border-ink transition-colors font-mono'
                           />
-                          <span className='text-xs text-gray-500'>px</span>
+                          <span className='text-meta text-text-secondary'>px</span>
                         </div>
                       )}
                     </div>
@@ -416,7 +412,7 @@ export default function SettingsPage() {
                 <button
                   onClick={saveSettings}
                   disabled={saving}
-                  className='px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors text-white'
+                  className='px-4 py-2 bg-brand hover:bg-brand-hover disabled:opacity-50 rounded-lg text-message font-medium transition-colors text-on-brand'
                 >
                   {saving ? 'Saving...' : 'Save'}
                 </button>
@@ -426,7 +422,7 @@ export default function SettingsPage() {
               <section className={sectionClass}>
                 <div>
                   <h2 className={sectionHeadingClass}>Brand Context</h2>
-                  <p className='text-xs text-gray-500 mt-1'>Help the AI understand your brand so every post feels consistent.</p>
+                  <p className='text-meta text-text-secondary mt-1'>Help the AI understand your brand so every post feels consistent.</p>
                 </div>
 
                 <div>
@@ -476,7 +472,7 @@ export default function SettingsPage() {
                 <button
                   onClick={saveSettings}
                   disabled={saving}
-                  className='px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors text-white'
+                  className='px-4 py-2 bg-brand hover:bg-brand-hover disabled:opacity-50 rounded-lg text-message font-medium transition-colors text-on-brand'
                 >
                   {saving ? 'Saving...' : 'Save'}
                 </button>
@@ -486,7 +482,7 @@ export default function SettingsPage() {
               <section className={sectionClass}>
                 <div>
                   <h2 className={sectionHeadingClass}>Agent Instructions</h2>
-                  <p className='text-xs text-gray-500 mt-1'>Custom rules the AI will always follow when creating content for this workspace.</p>
+                  <p className='text-meta text-text-secondary mt-1'>Custom rules the AI will always follow when creating content for this workspace.</p>
                 </div>
 
                 <div>
@@ -497,13 +493,13 @@ export default function SettingsPage() {
                     onChange={(e) => setForm((f) => ({ ...f, agent_instructions: e.target.value }))}
                     className={cn(inputClass, 'resize-none font-mono')}
                   />
-                  <p className='text-xs text-gray-400 dark:text-gray-600 mt-1.5'>Each line is a separate instruction. Be specific and direct.</p>
+                  <p className='text-meta text-text-muted mt-1.5'>Each line is a separate instruction. Be specific and direct.</p>
                 </div>
 
                 <button
                   onClick={saveSettings}
                   disabled={saving}
-                  className='px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors text-white'
+                  className='px-4 py-2 bg-brand hover:bg-brand-hover disabled:opacity-50 rounded-lg text-message font-medium transition-colors text-on-brand'
                 >
                   {saving ? 'Saving...' : 'Save'}
                 </button>
@@ -514,14 +510,14 @@ export default function SettingsPage() {
                 <h2 className={sectionHeadingClass}>Social Accounts</h2>
 
                 {/* Instagram */}
-                <div className='flex items-center justify-between py-3 border-b border-gray-200 dark:border-gray-800'>
+                <div className='flex items-center justify-between py-3 border-b border-border-soft'>
                   <div className='flex items-center gap-3'>
                     <div className='w-9 h-9 rounded-lg bg-gradient-to-br from-pink-500 to-orange-500 flex items-center justify-center'>
                       <span className='text-white font-bold text-sm'>IG</span>
                     </div>
                     <div>
-                      <p className='text-sm font-medium'>Instagram</p>
-                      <p className='text-xs text-gray-500 dark:text-gray-400'>
+                      <p className='text-message font-medium text-text-primary'>Instagram</p>
+                      <p className='text-meta text-text-secondary'>
                         {igAccount ? `@${igAccount.username ?? igAccount.account_id}` : 'Not connected'}
                       </p>
                     </div>
@@ -529,14 +525,14 @@ export default function SettingsPage() {
                   {igAccount ? (
                     <button
                       onClick={() => disconnect('instagram')}
-                      className='flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors'
+                      className='flex items-center gap-1.5 text-meta text-text-secondary hover:text-red-500 dark:hover:text-red-400 transition-colors'
                     >
                       <Unlink size={13} /> Disconnect
                     </button>
                   ) : (
                     <button
                       onClick={() => connectPlatform('instagram')}
-                      className='flex items-center gap-1.5 text-xs bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white px-3 py-1.5 rounded-lg transition-colors'
+                      className='flex items-center gap-1.5 text-meta bg-surface-white hover:bg-surface-card border border-border-soft text-text-primary px-3 py-1.5 rounded-full transition-colors'
                     >
                       <Link2 size={13} /> Connect
                     </button>
@@ -546,12 +542,12 @@ export default function SettingsPage() {
                 {/* TikTok */}
                 <div className='flex items-center justify-between py-3'>
                   <div className='flex items-center gap-3'>
-                    <div className='w-9 h-9 rounded-lg bg-gray-200 dark:bg-gray-800 flex items-center justify-center'>
-                      <span className='text-gray-900 dark:text-white font-bold text-sm'>TT</span>
+                    <div className='w-9 h-9 rounded-lg bg-surface-white border border-border-soft flex items-center justify-center'>
+                      <span className='text-text-primary font-bold text-sm'>TT</span>
                     </div>
                     <div>
-                      <p className='text-sm font-medium'>TikTok</p>
-                      <p className='text-xs text-gray-500 dark:text-gray-400'>
+                      <p className='text-message font-medium text-text-primary'>TikTok</p>
+                      <p className='text-meta text-text-secondary'>
                         {ttAccount ? `@${ttAccount.username ?? ttAccount.account_id}` : 'Not connected'}
                       </p>
                     </div>
@@ -559,14 +555,14 @@ export default function SettingsPage() {
                   {ttAccount ? (
                     <button
                       onClick={() => disconnect('tiktok')}
-                      className='flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors'
+                      className='flex items-center gap-1.5 text-meta text-text-secondary hover:text-red-500 dark:hover:text-red-400 transition-colors'
                     >
                       <Unlink size={13} /> Disconnect
                     </button>
                   ) : (
                     <button
                       onClick={() => connectPlatform('tiktok')}
-                      className='flex items-center gap-1.5 text-xs bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white px-3 py-1.5 rounded-lg transition-colors'
+                      className='flex items-center gap-1.5 text-meta bg-surface-white hover:bg-surface-card border border-border-soft text-text-primary px-3 py-1.5 rounded-full transition-colors'
                     >
                       <Link2 size={13} /> Connect
                     </button>
@@ -582,14 +578,16 @@ export default function SettingsPage() {
       {toast && (
         <div
           className={cn(
-            'fixed bottom-6 right-6 flex items-center gap-2 px-4 py-3 rounded-xl shadow-xl text-sm font-medium z-50',
-            toast.ok ? 'bg-green-900 text-green-200 border border-green-700' : 'bg-red-900 text-red-200 border border-red-700'
+            'fixed bottom-6 right-6 flex items-center gap-2 px-4 py-3 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.12)] text-message font-medium z-50 border',
+            toast.ok
+              ? 'bg-success/10 text-success border-success/30'
+              : 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-200 dark:border-red-700/30'
           )}
         >
           {toast.ok ? <CheckCircle size={15} /> : <XCircle size={15} />}
           {toast.msg}
         </div>
       )}
-    </div>
+    </AppShell>
   );
 }

@@ -3,44 +3,44 @@ import { ArrowLeft } from 'lucide-react';
 
 export default function PrivacyPage() {
   return (
-    <div className='min-h-screen bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-200 transition-colors'>
+    <div className='min-h-screen bg-surface text-text-primary transition-colors'>
       {/* Ambient glow */}
       <div className='pointer-events-none fixed inset-0 z-0 overflow-hidden'>
-        <div className='absolute -top-40 right-0 w-[600px] h-[600px] bg-violet-500/5 dark:bg-violet-600/5 rounded-full blur-3xl' />
-        <div className='absolute bottom-0 left-1/4 w-96 h-96 bg-violet-500/5 dark:bg-violet-800/5 rounded-full blur-3xl' />
+        <div className='absolute -top-40 right-0 w-[600px] h-[600px] bg-ink/[0.03] rounded-full blur-3xl' />
+        <div className='absolute bottom-0 left-1/4 w-96 h-96 bg-ink/[0.03] rounded-full blur-3xl' />
       </div>
 
       <div className='relative z-10 max-w-3xl mx-auto px-6 py-12'>
         {/* Back nav */}
         <Link
           to='/'
-          className='inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-violet-600 dark:hover:text-violet-400 transition-colors mb-10'
+          className='inline-flex items-center gap-1.5 text-sm text-text-secondary hover:text-ink transition-colors mb-10'
         >
           <ArrowLeft size={14} />
           Back to home
         </Link>
 
-        <h1 className='text-3xl font-bold text-gray-900 dark:text-white mb-2'>Privacy Policy</h1>
-        <p className='text-sm text-gray-400 dark:text-gray-500 mb-10'>Last updated: July 25, 2026</p>
+        <h1 className='text-heading text-text-primary mb-2'>Privacy Policy</h1>
+        <p className='text-meta text-text-muted mb-10'>Last updated: July 25, 2026</p>
 
         <Section title='1. Introduction'>
-          CreatorOS ("we", "our", or "us") is committed to protecting your privacy. This Privacy
+          We are committed to protecting your privacy. This Privacy
           Policy explains how we collect, use, and protect your information when you use our Service.
         </Section>
 
         <Section title='2. Information We Collect'>
-          <strong className='text-gray-700 dark:text-gray-300'>Account information:</strong> When you sign up, we
+          <strong className='text-text-primary'>Account information:</strong> When you sign up, we
           collect your email address and profile information through Clerk, our authentication
           provider.
           <br /><br />
-          <strong className='text-gray-700 dark:text-gray-300'>Workspace data:</strong> Content you create, including
+          <strong className='text-text-primary'>Workspace data:</strong> Content you create, including
           prompts, captions, scripts, brand settings, and generated assets stored in your workspace.
           <br /><br />
-          <strong className='text-gray-700 dark:text-gray-300'>Social account tokens:</strong> When you connect
+          <strong className='text-text-primary'>Social account tokens:</strong> When you connect
           Instagram or TikTok, we store OAuth access tokens to enable publishing on your behalf.
           These tokens are encrypted and never shared with third parties.
           <br /><br />
-          <strong className='text-gray-700 dark:text-gray-300'>Usage data:</strong> Basic usage logs and error
+          <strong className='text-text-primary'>Usage data:</strong> Basic usage logs and error
           information to monitor and improve the Service.
         </Section>
 
@@ -131,9 +131,9 @@ export default function PrivacyPage() {
         </Section>
 
         {/* Footer links */}
-        <div className='mt-12 pt-8 border-t border-gray-200 dark:border-gray-800 flex gap-6 text-xs text-gray-400 dark:text-gray-500'>
-          <Link to='/terms' className='hover:text-violet-600 dark:hover:text-violet-400 transition-colors'>Terms of Service</Link>
-          <Link to='/' className='hover:text-violet-600 dark:hover:text-violet-400 transition-colors'>Home</Link>
+        <div className='mt-12 pt-8 border-t border-border-soft flex gap-6 text-meta text-text-muted'>
+          <Link to='/terms' className='hover:text-ink transition-colors'>Terms of Service</Link>
+          <Link to='/' className='hover:text-ink transition-colors'>Home</Link>
         </div>
       </div>
     </div>
@@ -143,8 +143,8 @@ export default function PrivacyPage() {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className='mb-8'>
-      <h2 className='text-base font-semibold text-gray-900 dark:text-white mb-3'>{title}</h2>
-      <div className='text-gray-500 dark:text-gray-400 leading-relaxed text-sm'>{children}</div>
+      <h2 className='text-chat-title text-text-primary mb-3'>{title}</h2>
+      <div className='text-message text-text-secondary'>{children}</div>
     </div>
   );
 }

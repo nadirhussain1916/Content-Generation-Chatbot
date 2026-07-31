@@ -1,0 +1,123 @@
+/**
+ * Single source of truth for the app's visual language: color palette,
+ * typography scale, and corner-radius scale. Everything here is registered
+ * inside an `@theme` block, so each token below is *also* a real Tailwind
+ * utility class (e.g. `--color-ink` → `bg-ink` / `text-ink` / `border-ink`,
+ * `--text-heading` → `text-heading`, `--radius-2xl` → `rounded-2xl`).
+ *
+ * Do not hardcode hex colors, font sizes, or one-off radii in components —
+ * add or reuse a token here instead, so the whole app stays in sync.
+ *
+ * Light values live in the `@theme` block (the defaults). Dark-mode
+ * counterparts override the same CSS custom properties under `.dark`, so
+ * every utility generated below automatically resolves to the right value
+ * in both themes without any `dark:` variant needed at the call site.
+ */
+
+@theme {
+  /* ── Typography ───────────────────────────────────────────────── */
+  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  /* Semantic type scale (spec: heading 24/600, chat-title 18/600, message 14/400, meta 11/400) */
+  --text-heading: 24px;
+  --text-heading--line-height: 1.25;
+  --text-heading--letter-spacing: -0.03em;
+  --text-heading--font-weight: 600;
+
+  --text-chat-title: 18px;
+  --text-chat-title--line-height: 1.3;
+  --text-chat-title--letter-spacing: -0.02em;
+  --text-chat-title--font-weight: 600;
+
+  --text-message: 14px;
+  --text-message--line-height: 1.55;
+  --text-message--font-weight: 400;
+
+  --text-meta: 11px;
+  --text-meta--line-height: 1.4;
+  --text-meta--font-weight: 400;
+
+  --text-input-placeholder: 13px;
+
+  /* ── Radius scale — pushed rounder app-wide per the reference
+     (small controls ~10px, cards ~16px, bubbles ~22px, pill inputs ~30px) ── */
+  --radius-lg: 10px;
+  --radius-xl: 16px;
+  --radius-2xl: 22px;
+  --radius-3xl: 30px;
+
+  /* ── Color palette ────────────────────────────────────────────── */
+  /* Ink: the black CTA / AI-bubble color. Inverts in dark mode (see .dark below)
+     so it always reads as "black + white contrast" rather than disappearing. */
+  --color-ink: #050505;
+  --color-on-ink: #ffffff;
+  --color-ink-hover: #1a1a1a;
+
+  /* Atmospheric background gradient stops (soft mint/seafoam, never saturated) */
+  --color-atmo-a: #91b1bf;
+  --color-atmo-b: #a4c4c0;
+  --color-atmo-c: #b5d2c8;
+
+  /* Brand teal — the standard CTA button color for text-labeled action buttons
+     (primary filled + secondary outline pair), drawn from the same
+     seafoam/teal family as --color-atmo-* and --color-glass-*, just deepened
+     for button-strength contrast. Icon-only circular controls (send,
+     avatars) stay on --color-ink instead: a separate, intentional pattern. */
+  --color-brand: #3a7a72;
+  --color-brand-hover: #2e6259;
+  --color-on-brand: #ffffff;
+
+  /* App-wide "glass" background — light greenish, glows from the bottom-left
+     corner and fades toward warm white. Sidebar/main panels sit on top of
+     this as translucent, blurred glass (see bg-surface/NN + backdrop-blur
+     usage in Sidebar/ThreadPage/etc). */
+  --color-glass-a: #a9dfbc;
+  --color-glass-b: #cdeacf;
+  --color-glass-c: #eef6ee;
+
+  /* Surfaces */
+  --color-surface: #f7f6f0;
+  --color-surface-chat: #eef5f2;
+  --color-surface-card: #f1f5f1;
+  --color-surface-white: #ffffff;
+
+  /* Text */
+  --color-text-primary: #111111;
+  --color-text-secondary: #777777;
+  --color-text-muted: #a0a0a0;
+
+  /* Border + status */
+  --color-border-soft: #e1e8e4;
+  --color-success: #75c94a;
+}
+
+/* Dark counterparts — same token names, overridden via the .dark cascade. */
+.dark {
+  --color-ink: #f5f4ef;
+  --color-on-ink: #0a0a0a;
+  --color-ink-hover: #ffffff;
+
+  --color-atmo-a: #0a1412;
+  --color-atmo-b: #0d1d19;
+  --color-atmo-c: #0b1e1a;
+
+  --color-brand: #4e9389;
+  --color-brand-hover: #5fa79c;
+  --color-on-brand: #ffffff;
+
+  --color-glass-a: #1f4536;
+  --color-glass-b: #16302a;
+  --color-glass-c: #121e1a;
+
+  --color-surface: #101816;
+  --color-surface-chat: #101816;
+  --color-surface-card: #232d2a;
+  --color-surface-white: #3d4b46;
+
+  --color-text-primary: #f5f7f5;
+  --color-text-secondary: #d7dedb;
+  --color-text-muted: #b7c1bd;
+
+  --color-border-soft: #647469;
+  --color-success: #8ed966;
+}

@@ -1,9 +1,7 @@
 @import "tailwindcss";
-@variant dark (&:is(.dark *));
+@import "./styles/theme.css";
 
-:root {
-  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
-}
+@variant dark (&:is(.dark *));
 
 body {
   font-family: var(--font-sans);
@@ -20,11 +18,11 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #d1d5db;
+  background: var(--color-border-soft);
   border-radius: 4px;
 }
 .dark ::-webkit-scrollbar-thumb {
-  background: #374151;
+  background: #2d3f3b;
 }
 
 /* ── Clerk inline form overrides (landing page) ── */
@@ -63,30 +61,22 @@ body {
 /* Action button inside input (e.g. clear, show-password) */
 .cl-formFieldInputShowPasswordButton,
 .cl-formFieldAction {
-  color: #6b7280 !important;
+  color: var(--color-text-secondary) !important;
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
 }
 .cl-formFieldInputShowPasswordButton:hover,
 .cl-formFieldAction:hover {
-  color: #374151 !important;
-}
-.dark .cl-formFieldInputShowPasswordButton,
-.dark .cl-formFieldAction {
-  color: #9ca3af !important;
-}
-.dark .cl-formFieldInputShowPasswordButton:hover,
-.dark .cl-formFieldAction:hover {
-  color: #d1d5db !important;
+  color: var(--color-text-primary) !important;
 }
 
-/* ── Light mode Clerk overrides ── */
+/* ── Clerk overrides — theme-token driven, so a single ruleset covers both modes ── */
 .cl-socialButtonsBlockButton {
-  background: #ffffff !important;
-  border: 1px solid #d1d5db !important;
-  border-radius: 0.75rem !important;
-  color: #111827 !important;
+  background: var(--color-surface-white) !important;
+  border: 1px solid var(--color-border-soft) !important;
+  border-radius: var(--radius-lg) !important;
+  color: var(--color-text-primary) !important;
   height: 2.5rem !important;
   font-size: 0.875rem !important;
   font-weight: 500 !important;
@@ -94,55 +84,55 @@ body {
   outline: none !important;
 }
 .cl-socialButtonsBlockButton:hover {
-  background: #f9fafb !important;
-  border-color: #9ca3af !important;
+  background: var(--color-surface-card) !important;
+  border-color: var(--color-text-muted) !important;
 }
 .cl-formFieldInput {
-  background: #ffffff !important;
-  border: 1px solid #d1d5db !important;
-  border-radius: 0.75rem !important;
-  color: #111827 !important;
+  background: var(--color-surface-white) !important;
+  border: 1px solid var(--color-border-soft) !important;
+  border-radius: var(--radius-lg) !important;
+  color: var(--color-text-primary) !important;
   height: 2.5rem !important;
   font-size: 0.875rem !important;
   box-shadow: none !important;
 }
 .cl-formFieldInput:focus {
-  border-color: #7c3aed !important;
+  border-color: var(--color-ink) !important;
   outline: none !important;
   box-shadow: none !important;
 }
 .cl-formButtonPrimary {
-  background: #7c3aed !important;
+  background: var(--color-ink) !important;
   border: none !important;
-  border-radius: 0.75rem !important;
-  color: #fff !important;
+  border-radius: var(--radius-lg) !important;
+  color: var(--color-on-ink) !important;
   height: 2.5rem !important;
   font-size: 0.875rem !important;
   font-weight: 600 !important;
-  box-shadow: 0 4px 14px rgba(124, 58, 237, 0.3) !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12) !important;
 }
 .cl-formButtonPrimary:hover {
-  background: #6d28d9 !important;
+  background: var(--color-ink-hover) !important;
 }
 .cl-dividerLine {
-  background: #e5e7eb !important;
+  background: var(--color-border-soft) !important;
 }
 .cl-dividerText {
-  color: #6b7280 !important;
+  color: var(--color-text-secondary) !important;
   font-size: 0.75rem !important;
 }
 .cl-formFieldLabel {
-  color: #374151 !important;
+  color: var(--color-text-secondary) !important;
   font-size: 0.875rem !important;
   font-weight: 500 !important;
 }
 .cl-alternativeMethodsBlockButton,
 .cl-footerActionLink {
-  color: #7c3aed !important;
+  color: var(--color-text-primary) !important;
 }
 .cl-alternativeMethodsBlockButton:hover,
 .cl-footerActionLink:hover {
-  color: #6d28d9 !important;
+  color: var(--color-ink) !important;
 }
 /* Internal footer "don't have account" row - hide since we show our own */
 .cl-footerAction {
@@ -151,43 +141,10 @@ body {
 .cl-alert {
   background: rgba(254, 242, 242, 0.8) !important;
   border: 1px solid rgba(252, 165, 165, 0.6) !important;
-  border-radius: 0.75rem !important;
+  border-radius: var(--radius-lg) !important;
 }
 .cl-alertText {
   color: #dc2626 !important;
-}
-
-/* ── Dark mode Clerk overrides ── */
-.dark .cl-socialButtonsBlockButton {
-  background: #111827 !important;
-  border: 1px solid #374151 !important;
-  color: #f9fafb !important;
-}
-.dark .cl-socialButtonsBlockButton:hover {
-  background: #1f2937 !important;
-  border-color: #4b5563 !important;
-}
-.dark .cl-formFieldInput {
-  background: #111827 !important;
-  border: 1px solid #374151 !important;
-  color: #fff !important;
-}
-.dark .cl-formFieldInput:focus {
-  border-color: #7c3aed !important;
-}
-.dark .cl-dividerLine {
-  background: #1f2937 !important;
-}
-.dark .cl-formFieldLabel {
-  color: #d1d5db !important;
-}
-.dark .cl-alternativeMethodsBlockButton,
-.dark .cl-footerActionLink {
-  color: #a78bfa !important;
-}
-.dark .cl-alternativeMethodsBlockButton:hover,
-.dark .cl-footerActionLink:hover {
-  color: #c4b5fd !important;
 }
 .dark .cl-alert {
   background: rgba(127, 29, 29, 0.3) !important;
@@ -199,18 +156,12 @@ body {
 
 /* Prose for message content */
 .prose-content {
-  color: #374151;
+  color: var(--color-text-secondary);
   line-height: 1.7;
 }
-.dark .prose-content {
-  color: #e5e7eb;
-}
 .prose-content code {
-  background: #f3f4f6;
+  background: var(--color-surface-card);
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 0.875em;
-}
-.dark .prose-content code {
-  background: #1f2937;
 }

@@ -107,7 +107,7 @@ export default function GenerateImageButton({ slug, threadId, message, existingA
         <div className='space-y-2'>
           {/* Aspect ratio */}
           <div>
-            <p className='text-xs text-gray-500 mb-1.5'>Aspect ratio</p>
+            <p className='text-meta text-text-secondary mb-1.5'>Aspect ratio</p>
             <div className='flex gap-1.5'>
               {SIZE_OPTIONS.map((opt) => (
                 <button
@@ -116,24 +116,24 @@ export default function GenerateImageButton({ slug, threadId, message, existingA
                   disabled={loading}
                   title={opt.desc}
                   className={cn(
-                    'px-2.5 py-1 text-xs font-mono rounded-lg border transition-all',
+                    'px-2.5 py-1 text-meta font-mono rounded-full border transition-all',
                     size === opt.value
-                      ? 'bg-blue-600 border-blue-500 text-white'
-                      : 'bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-blue-500 hover:text-blue-600 dark:hover:text-white',
+                      ? 'bg-ink border-ink text-on-ink'
+                      : 'bg-surface-card border-border-soft text-text-secondary hover:border-ink/40 hover:text-text-primary',
                     loading && 'cursor-not-allowed opacity-50'
                   )}
                 >
                   {opt.label}
                 </button>
               ))}
-              <span className='text-xs text-gray-400 dark:text-gray-600 self-center ml-1'>
+              <span className='text-meta text-text-muted self-center ml-1'>
                 {SIZE_OPTIONS.find(o => o.value === size)?.desc}
               </span>
             </div>
           </div>
           {/* Image model */}
           <div className='flex items-center gap-1.5'>
-            <span className='text-xs text-gray-500'>Model</span>
+            <span className='text-meta text-text-secondary'>Model</span>
             <ModelPicker
               options={IMAGE_MODELS}
               value={imageModel}
@@ -145,9 +145,9 @@ export default function GenerateImageButton({ slug, threadId, message, existingA
 
       {/* Error banner */}
       {error && !loading && (
-        <div className='flex items-start gap-1.5 bg-red-950/40 border border-red-700/40 rounded-lg px-3 py-2'>
-          <AlertCircle size={12} className='text-red-400 mt-0.5 flex-shrink-0' />
-          <p className='text-xs text-red-300 leading-snug'>{error}</p>
+        <div className='flex items-start gap-1.5 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-700/40 rounded-lg px-3 py-2'>
+          <AlertCircle size={12} className='text-red-500 dark:text-red-400 mt-0.5 flex-shrink-0' />
+          <p className='text-meta text-red-600 dark:text-red-300 leading-snug'>{error}</p>
         </div>
       )}
 
@@ -157,10 +157,10 @@ export default function GenerateImageButton({ slug, threadId, message, existingA
           onClick={handleGenerate}
           disabled={loading || done}
           className={cn(
-            'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white rounded-lg transition-all disabled:opacity-60 disabled:cursor-not-allowed',
+            'flex items-center gap-1.5 px-3 py-1.5 text-meta font-medium rounded-lg transition-all disabled:opacity-60 disabled:cursor-not-allowed',
             error && !done
-              ? 'bg-red-600 hover:bg-red-500'
-              : 'bg-blue-600 hover:bg-blue-500'
+              ? 'bg-red-600 hover:bg-red-500 text-white'
+              : 'bg-brand hover:bg-brand-hover text-on-brand'
           )}
         >
           {loading ? (

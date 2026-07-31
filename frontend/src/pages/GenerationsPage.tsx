@@ -4,6 +4,7 @@ import { useAuth } from '@clerk/clerk-react';
 import { api } from '../lib/api';
 import type { TfResponse, Asset, Message, ImagePostPackage, VideoPostPackage } from '../types';
 import { usePublishStatus } from '../hooks/usePublishStatus';
+import AppShell from '../components/AppShell';
 import Sidebar from '../components/Sidebar';
 import {
   ImageIcon, VideoIcon, Loader2, AlertCircle, X,
@@ -83,25 +84,19 @@ export default function GenerationsPage() {
   const inProgressCount = assets.filter((a) => a.status === 'generating' || a.status === 'pending').length;
 
   return (
-    <div className='flex h-screen bg-white dark:bg-gray-950 text-gray-900 dark:text-white'>
+    <AppShell>
       <Sidebar onNewThread={() => navigate(`/workspaces/${slug}`)} />
 
-      <main className='flex-1 flex flex-col min-w-0 overflow-hidden relative bg-gradient-to-br from-white via-white to-violet-50/25 dark:from-gray-950 dark:via-gray-950 dark:to-violet-950/25'>
-        {/* Ambient glows */}
-        <div className='pointer-events-none absolute inset-0 z-0'>
-          <div className='absolute -top-32 right-0 w-[600px] h-[600px] bg-violet-600/5 rounded-full blur-3xl' />
-          <div className='absolute bottom-0 left-1/4 w-96 h-96 bg-violet-800/5 rounded-full blur-3xl' />
-        </div>
-
+      <main className='flex-1 flex flex-col min-w-0 bg-surface-chat/40 backdrop-blur-xl'>
         {/* Header */}
-        <header className='relative z-10 flex items-center justify-between px-6 py-4 border-b border-gray-200/60 dark:border-gray-800/60 bg-white/60 dark:bg-gray-950/60 backdrop-blur-sm flex-shrink-0'>
+        <header className='flex items-center justify-between px-6 py-4 border-b border-border-soft/60 bg-surface/50 backdrop-blur-xl flex-shrink-0'>
           <div className='flex items-center gap-3'>
             <div>
-              <h1 className='text-base font-semibold'>Generations</h1>
-              <p className='text-xs text-gray-500 mt-0.5'>All generated images and videos</p>
+              <h1 className='text-heading text-text-primary'>Generations</h1>
+              <p className='text-meta text-text-secondary mt-0.5'>All generated images and videos</p>
             </div>
             {inProgressCount > 0 && (
-              <span className='flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-amber-900/40 border border-amber-700/40 text-amber-300'>
+              <span className='flex items-center gap-1.5 text-meta font-medium px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700/30 text-amber-600 dark:text-amber-400'>
                 <Loader2 size={10} className='animate-spin' />
                 {inProgressCount} generating…
               </span>
@@ -112,18 +107,18 @@ export default function GenerationsPage() {
               onClick={() => load(true)}
               disabled={refreshing}
               title='Refresh'
-              className='p-1.5 text-gray-400 dark:text-gray-500 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors disabled:opacity-50'
+              className='p-1.5 text-text-muted hover:text-text-primary hover:bg-surface-card rounded-lg transition-colors disabled:opacity-50'
             >
               <RefreshCw size={14} className={cn(refreshing && 'animate-spin')} />
             </button>
-            <div className='flex items-center gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1'>
+            <div className='flex items-center gap-1 bg-surface-card rounded-full p-1'>
               {(['all', 'image', 'video'] as const).map((f) => (
                 <button
                   key={f}
                   onClick={() => setFilter(f)}
                   className={cn(
-                    'px-3 py-1 text-xs font-medium rounded-md transition-all capitalize',
-                    filter === f ? 'bg-violet-600 text-white' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                    'px-3 py-1 text-meta font-medium rounded-full transition-all capitalize',
+                    filter === f ? 'bg-ink text-on-ink' : 'text-text-secondary hover:text-text-primary'
                   )}
                 >
                   {f}
@@ -134,18 +129,18 @@ export default function GenerationsPage() {
         </header>
 
         {/* Grid */}
-        <div className='relative z-10 flex-1 overflow-y-auto p-6'>
+        <div className='flex-1 overflow-y-auto p-6'>
           {loading ? (
             <div className='flex justify-center py-16'>
-              <Loader2 size={22} className='animate-spin text-gray-400 dark:text-gray-500' />
+              <Loader2 size={22} className='animate-spin text-text-muted' />
             </div>
           ) : filtered.length === 0 ? (
             <div className='flex flex-col items-center justify-center py-24 gap-3 text-center'>
-              <div className='w-12 h-12 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center'>
-                <ImageIcon size={22} className='text-gray-400 dark:text-gray-600' />
+              <div className='w-12 h-12 rounded-full bg-surface-card flex items-center justify-center'>
+                <ImageIcon size={22} className='text-text-muted' />
               </div>
-              <p className='text-sm text-gray-500 dark:text-gray-400'>No generations yet</p>
-              <p className='text-xs text-gray-400 dark:text-gray-600 max-w-xs'>
+              <p className='text-message text-text-secondary'>No generations yet</p>
+              <p className='text-meta text-text-muted max-w-xs'>
                 Generated images and videos appear here after you create content in a thread.
               </p>
             </div>
@@ -177,7 +172,7 @@ export default function GenerationsPage() {
           onOpenThread={() => navigate(`/workspaces/${slug}/threads/${detailAsset.thread_id}`)}
         />
       )}
-    </div>
+    </AppShell>
   );
 }
 
@@ -198,29 +193,29 @@ function AssetCard({
 
   return (
     <div className={cn(
-      'group relative bg-gray-50 dark:bg-gray-900 border rounded-xl overflow-hidden flex flex-col transition-colors',
-      isGenerating ? 'border-amber-700/40 hover:border-amber-600/60'
-      : isFailed ? 'border-red-800/40 hover:border-red-700/60'
-      : 'border-gray-200 dark:border-gray-800 hover:border-violet-700/50'
+      'group relative bg-surface-card border rounded-xl overflow-hidden flex flex-col transition-colors',
+      isGenerating ? 'border-amber-300/60 dark:border-amber-700/40 hover:border-amber-400 dark:hover:border-amber-600/60'
+      : isFailed ? 'border-red-300/60 dark:border-red-800/40 hover:border-red-400 dark:hover:border-red-700/60'
+      : 'border-border-soft hover:border-ink/30'
     )}>
       {/* Thumbnail */}
-      <div className='aspect-square bg-gray-100 dark:bg-gray-950 flex items-center justify-center relative'>
+      <div className='aspect-square bg-surface-white flex items-center justify-center relative'>
         {isGenerating ? (
           <div className='flex flex-col items-center gap-2'>
             <Loader2 size={22} className='animate-spin text-amber-500' />
-            <span className='text-[10px] text-amber-400/80 font-medium'>Generating…</span>
+            <span className='text-meta text-amber-600 dark:text-amber-400/80 font-medium'>Generating…</span>
           </div>
         ) : isFailed ? (
           <div className='flex flex-col items-center gap-2 px-3 text-center'>
-            <AlertCircle size={20} className='text-red-400' />
-            <span className='text-[10px] text-red-400/80 leading-tight'>
+            <AlertCircle size={20} className='text-red-500 dark:text-red-400' />
+            <span className='text-meta text-red-600 dark:text-red-400/80 leading-tight'>
               {asset.error_message
                 ? asset.error_message.slice(0, 60) + (asset.error_message.length > 60 ? '…' : '')
                 : 'Generation failed'}
             </span>
           </div>
         ) : isLoadingBlob ? (
-          <Loader2 size={18} className='animate-spin text-gray-400 dark:text-gray-600' />
+          <Loader2 size={18} className='animate-spin text-text-muted' />
         ) : blobUrl ? (
           isImage ? (
             <img src={blobUrl} alt={asset.prompt ?? ''} className='w-full h-full object-cover' />
@@ -228,31 +223,31 @@ function AssetCard({
             <video src={blobUrl} className='w-full h-full object-cover' muted playsInline />
           )
         ) : (
-          <AlertCircle size={18} className='text-gray-400 dark:text-gray-600' />
+          <AlertCircle size={18} className='text-text-muted' />
         )}
 
         {/* Animated shimmer overlay for generating */}
         {isGenerating && (
-          <div className='absolute inset-0 bg-gradient-to-r from-transparent via-amber-900/10 to-transparent animate-pulse' />
+          <div className='absolute inset-0 bg-gradient-to-r from-transparent via-amber-100/20 dark:via-amber-900/10 to-transparent animate-pulse' />
         )}
       </div>
 
       {/* Type + status badge */}
       <div className='absolute top-2 left-2 flex items-center gap-1'>
         <span className={cn(
-          'flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full',
-          isImage ? 'bg-blue-900/80 text-blue-300' : 'bg-purple-900/80 text-purple-300'
+          'flex items-center gap-1 text-meta font-medium px-1.5 py-0.5 rounded-full',
+          isImage ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300' : 'bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-300'
         )}>
           {isImage ? <ImageIcon size={9} /> : <VideoIcon size={9} />}
           {asset.type}
         </span>
         {isGenerating && (
-          <span className='text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-900/80 text-amber-300'>
+          <span className='text-meta font-medium px-1.5 py-0.5 rounded-full bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-300'>
             in progress
           </span>
         )}
         {isFailed && (
-          <span className='text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-red-900/80 text-red-300'>
+          <span className='text-meta font-medium px-1.5 py-0.5 rounded-full bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-300'>
             failed
           </span>
         )}
@@ -264,13 +259,13 @@ function AssetCard({
           <>
             <button
               onClick={onDetails}
-              className='flex-1 py-1.5 text-xs font-medium bg-violet-600 hover:bg-violet-500 text-white rounded-lg transition-colors'
+              className='flex-1 py-1.5 text-meta font-medium bg-brand hover:bg-brand-hover text-on-brand rounded-lg transition-colors'
             >
               Details
             </button>
             <button
               onClick={() => navigate(`/workspaces/${slug}/threads/${asset.thread_id}`)}
-              className='flex-1 py-1.5 text-xs font-medium bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg transition-colors flex items-center justify-center gap-1'
+              className='flex-1 py-1.5 text-meta font-medium bg-surface-white border-2 border-brand text-brand hover:bg-brand/5 rounded-lg transition-colors flex items-center justify-center gap-1'
             >
               <ExternalLink size={10} />
               Thread
@@ -279,7 +274,7 @@ function AssetCard({
         ) : (
           <button
             onClick={() => navigate(`/workspaces/${slug}/threads/${asset.thread_id}`)}
-            className='flex-1 py-1.5 text-xs font-medium bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg transition-colors flex items-center justify-center gap-1'
+            className='flex-1 py-1.5 text-meta font-medium bg-surface-white hover:bg-surface border border-border-soft text-text-secondary hover:text-text-primary rounded-lg transition-colors flex items-center justify-center gap-1'
           >
             <ExternalLink size={10} />
             View thread
@@ -339,24 +334,24 @@ function DetailsModal({
 
   return (
     <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4'>
-      <div className='bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden'>
+      <div className='bg-surface-white border border-border-soft rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden'>
         {/* Modal header */}
-        <div className='flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-800'>
+        <div className='flex items-center justify-between px-5 py-4 border-b border-border-soft'>
           <div className='flex items-center gap-2'>
-            <div className='w-2 h-2 rounded-full bg-violet-500' />
-            <span className='text-sm font-semibold text-gray-900 dark:text-white'>
+            <div className='w-2 h-2 rounded-full bg-ink' />
+            <span className='text-message font-semibold text-text-primary'>
               {isVideo ? 'Video' : 'Image'} details
             </span>
           </div>
           <div className='flex items-center gap-2'>
             <button
               onClick={onOpenThread}
-              className='flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors'
+              className='flex items-center gap-1.5 px-3 py-1.5 text-meta text-text-secondary hover:text-text-primary bg-surface-card hover:bg-surface rounded-lg transition-colors'
             >
               <ExternalLink size={12} />
               Open thread
             </button>
-            <button onClick={onClose} className='p-1.5 text-gray-400 dark:text-gray-500 hover:text-gray-900 dark:hover:text-white rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors'>
+            <button onClick={onClose} className='p-1.5 text-text-muted hover:text-text-primary rounded-lg hover:bg-surface-card transition-colors'>
               <X size={16} />
             </button>
           </div>
@@ -365,7 +360,7 @@ function DetailsModal({
         <div className='overflow-y-auto flex-1 p-5 space-y-5'>
           {/* Preview */}
           {blobUrl && (
-            <div className='rounded-xl overflow-hidden bg-gray-100 dark:bg-gray-950'>
+            <div className='rounded-xl overflow-hidden bg-surface-card'>
               {isVideo ? (
                 <video src={blobUrl} controls className='w-full max-h-64 object-contain' />
               ) : (
@@ -382,7 +377,7 @@ function DetailsModal({
           {/* Post package */}
           {loadingPkg ? (
             <div className='flex justify-center py-6'>
-              <Loader2 size={16} className='animate-spin text-gray-400 dark:text-gray-500' />
+              <Loader2 size={16} className='animate-spin text-text-muted' />
             </div>
           ) : pkg ? (
             <>
@@ -393,10 +388,10 @@ function DetailsModal({
               )}
               {pkg.hashtags?.length > 0 && (
                 <div>
-                  <p className='text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2'>Hashtags</p>
+                  <p className='text-meta font-semibold text-text-muted uppercase tracking-wide mb-2'>Hashtags</p>
                   <div className='flex flex-wrap gap-1.5'>
                     {pkg.hashtags.map((h) => (
-                      <span key={h} className='inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-gray-100 dark:bg-gray-800 text-violet-600 dark:text-violet-300 rounded-full'>
+                      <span key={h} className='inline-flex items-center gap-1 text-meta px-2 py-0.5 bg-surface-card text-text-secondary rounded-full'>
                         <Hash size={9} />{h}
                       </span>
                     ))}
@@ -405,13 +400,13 @@ function DetailsModal({
               )}
             </>
           ) : (
-            <p className='text-xs text-gray-500 text-center py-4'>No post data available</p>
+            <p className='text-meta text-text-muted text-center py-4'>No post data available</p>
           )}
         </div>
 
         {/* Publish footer */}
-        <div className='px-5 py-4 border-t border-gray-200 dark:border-gray-800 flex items-center gap-3'>
-          <span className='text-xs text-gray-500 flex-1'>Publish to</span>
+        <div className='px-5 py-4 border-t border-border-soft flex items-center gap-3'>
+          <span className='text-meta text-text-secondary flex-1'>Publish to</span>
           {(['instagram', 'tiktok'] as const).map((platform) => {
             const s = publishStatus[platform] ?? 'idle';
             return (
@@ -420,13 +415,13 @@ function DetailsModal({
                 onClick={() => publish(platform)}
                 disabled={s === 'publishing' || s === 'processing' || s === 'done'}
                 className={cn(
-                  'flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium transition-all',
-                  s === 'done' ? 'bg-green-900/30 text-green-400 border border-green-700/30'
-                  : s === 'failed' ? 'bg-red-900/30 text-red-400 border border-red-700/30'
-                  : s === 'processing' ? 'bg-yellow-900/30 text-yellow-400 border border-yellow-700/30'
+                  'flex items-center gap-1.5 px-4 py-2 rounded-full text-meta font-medium transition-all',
+                  s === 'done' ? 'bg-green-900/10 text-green-700 dark:text-green-400 border border-green-700/20'
+                  : s === 'failed' ? 'bg-red-900/10 text-red-700 dark:text-red-400 border border-red-700/20'
+                  : s === 'processing' ? 'bg-yellow-900/10 text-yellow-700 dark:text-yellow-400 border border-yellow-700/20'
                   : platform === 'instagram'
                   ? 'bg-gradient-to-r from-pink-600 to-orange-500 text-white hover:opacity-90 disabled:opacity-50'
-                  : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50'
+                  : 'bg-brand text-on-brand hover:bg-brand-hover disabled:opacity-50'
                 )}
               >
                 {(s === 'publishing' || s === 'processing') ? <Loader2 size={13} className='animate-spin' />
@@ -452,13 +447,13 @@ function Field({ label, value, onCopy, copied, mono = false }: {
   return (
     <div>
       <div className='flex items-center justify-between mb-1.5'>
-        <p className='text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide'>{label}</p>
-        <button onClick={onCopy} className='text-xs text-gray-400 dark:text-gray-500 hover:text-gray-900 dark:hover:text-white flex items-center gap-1 transition-colors'>
+        <p className='text-meta font-semibold text-text-muted uppercase tracking-wide'>{label}</p>
+        <button onClick={onCopy} className='text-meta text-text-muted hover:text-text-primary flex items-center gap-1 transition-colors'>
           {copied ? <Check size={11} /> : <Copy size={11} />}
           {copied ? 'Copied' : 'Copy'}
         </button>
       </div>
-      <p className={cn('text-sm text-gray-700 dark:text-gray-300 leading-relaxed', mono && 'font-mono text-xs bg-gray-100 dark:bg-gray-800/60 p-2 rounded-lg')}>
+      <p className={cn('text-message text-text-secondary leading-relaxed', mono && 'font-mono text-meta bg-surface-card p-2 rounded-lg')}>
         {value}
       </p>
     </div>

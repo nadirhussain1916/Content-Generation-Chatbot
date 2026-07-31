@@ -3,33 +3,33 @@ import { ArrowLeft } from 'lucide-react';
 
 export default function TermsPage() {
   return (
-    <div className='min-h-screen bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-200 transition-colors'>
+    <div className='min-h-screen bg-surface text-text-primary transition-colors'>
       {/* Ambient glow */}
       <div className='pointer-events-none fixed inset-0 z-0 overflow-hidden'>
-        <div className='absolute -top-40 right-0 w-[600px] h-[600px] bg-violet-500/5 dark:bg-violet-600/5 rounded-full blur-3xl' />
-        <div className='absolute bottom-0 left-1/4 w-96 h-96 bg-violet-500/5 dark:bg-violet-800/5 rounded-full blur-3xl' />
+        <div className='absolute -top-40 right-0 w-[600px] h-[600px] bg-ink/[0.03] rounded-full blur-3xl' />
+        <div className='absolute bottom-0 left-1/4 w-96 h-96 bg-ink/[0.03] rounded-full blur-3xl' />
       </div>
 
       <div className='relative z-10 max-w-3xl mx-auto px-6 py-12'>
         {/* Back nav */}
         <Link
           to='/'
-          className='inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-violet-600 dark:hover:text-violet-400 transition-colors mb-10'
+          className='inline-flex items-center gap-1.5 text-sm text-text-secondary hover:text-ink transition-colors mb-10'
         >
           <ArrowLeft size={14} />
           Back to home
         </Link>
 
-        <h1 className='text-3xl font-bold text-gray-900 dark:text-white mb-2'>Terms of Service</h1>
-        <p className='text-sm text-gray-400 dark:text-gray-500 mb-10'>Last updated: July 25, 2026</p>
+        <h1 className='text-heading text-text-primary mb-2'>Terms of Service</h1>
+        <p className='text-meta text-text-muted mb-10'>Last updated: July 25, 2026</p>
 
         <Section title='1. Acceptance of Terms'>
-          By accessing or using CreatorOS ("the Service"), you agree to be bound by these Terms of
+          By accessing or using this platform ("the Service"), you agree to be bound by these Terms of
           Service. If you do not agree, do not use the Service.
         </Section>
 
         <Section title='2. Description of Service'>
-          CreatorOS is an AI-powered content creation platform that helps creators generate, manage,
+          The Service is an AI-powered content creation platform that helps creators generate, manage,
           and publish content to social media platforms including Instagram and TikTok. The Service
           uses third-party AI models to generate images, videos, and written content based on your
           inputs.
@@ -43,7 +43,7 @@ export default function TermsPage() {
 
         <Section title='4. Connected Social Accounts'>
           The Service allows you to connect your Instagram and TikTok accounts via OAuth. By
-          connecting these accounts, you grant CreatorOS permission to publish content on your
+          connecting these accounts, you grant us permission to publish content on your
           behalf. You may disconnect your social accounts at any time from the Settings page. We
           store only the access tokens necessary to perform publishing actions.
         </Section>
@@ -52,7 +52,7 @@ export default function TermsPage() {
           You are solely responsible for the content you publish through the Service, including
           AI-generated content. You must ensure that all published content complies with the terms
           and community guidelines of the respective social media platforms (Instagram, TikTok) and
-          all applicable laws. CreatorOS does not review content before it is published.
+          all applicable laws. We do not review content before it is published.
         </Section>
 
         <Section title='6. Acceptable Use'>
@@ -70,14 +70,14 @@ export default function TermsPage() {
         <Section title='7. Intellectual Property'>
           You retain ownership of all content you create and publish through the Service.
           AI-generated content produced by the Service based on your prompts is provided to you for
-          use subject to these terms. CreatorOS retains all rights to the Service itself, including
+          use subject to these terms. We retain all rights to the Service itself, including
           its software, design, and branding.
         </Section>
 
         <Section title='8. Third-Party Services'>
           The Service integrates with third-party platforms and APIs including OpenAI, Replicate,
           Clerk, Instagram, and TikTok. Your use of those platforms is governed by their respective
-          terms of service. CreatorOS is not responsible for the availability or behavior of
+          terms of service. We are not responsible for the availability or behavior of
           third-party services.
         </Section>
 
@@ -89,7 +89,7 @@ export default function TermsPage() {
         </Section>
 
         <Section title='10. Limitation of Liability'>
-          To the maximum extent permitted by law, CreatorOS shall not be liable for any indirect,
+          To the maximum extent permitted by law, we shall not be liable for any indirect,
           incidental, special, consequential, or punitive damages arising from your use of the
           Service.
         </Section>
@@ -106,9 +106,9 @@ export default function TermsPage() {
         </Section>
 
         {/* Footer links */}
-        <div className='mt-12 pt-8 border-t border-gray-200 dark:border-gray-800 flex gap-6 text-xs text-gray-400 dark:text-gray-500'>
-          <Link to='/privacy' className='hover:text-violet-600 dark:hover:text-violet-400 transition-colors'>Privacy Policy</Link>
-          <Link to='/' className='hover:text-violet-600 dark:hover:text-violet-400 transition-colors'>Home</Link>
+        <div className='mt-12 pt-8 border-t border-border-soft flex gap-6 text-meta text-text-muted'>
+          <Link to='/privacy' className='hover:text-ink transition-colors'>Privacy Policy</Link>
+          <Link to='/' className='hover:text-ink transition-colors'>Home</Link>
         </div>
       </div>
     </div>
@@ -118,8 +118,8 @@ export default function TermsPage() {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className='mb-8'>
-      <h2 className='text-base font-semibold text-gray-900 dark:text-white mb-3'>{title}</h2>
-      <div className='text-gray-500 dark:text-gray-400 leading-relaxed text-sm'>{children}</div>
+      <h2 className='text-chat-title text-text-primary mb-3'>{title}</h2>
+      <div className='text-message text-text-secondary'>{children}</div>
     </div>
   );
 }

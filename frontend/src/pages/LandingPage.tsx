@@ -4,27 +4,34 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@clerk/clerk-react';
 import { api } from '../lib/api';
 import type { TfResponse, Workspace } from '../types';
-import { Zap, MessageSquare, Image, Video, Share2, Sparkles } from 'lucide-react';
+import { Zap, MessageSquare, Target, ClipboardCheck, Type, Image as ImageIcon, Video, Heart, Smartphone } from 'lucide-react';
 import { useTheme } from '../lib/theme';
+import { GRAIN_TEXTURE } from '../lib/textures';
+import TypewriterText from '../components/TypewriterText';
 
-const features = [
-  { icon: MessageSquare, text: 'Describe your idea in chat — AI handles the rest.' },
-  { icon: Image, text: 'Auto-generate on-brand images with DALL·E 3.' },
-  { icon: Video, text: 'Get full video scripts and scene breakdowns.' },
-  { icon: Share2, text: 'Publish to Instagram & TikTok in one click.' },
-  { icon: Sparkles, text: 'Brand voice training that persists across every thread.' },
+const ASSISTANT_LINES = [
+  'Your smart assistant, always thinking.',
+  'Enhancing your productivity, every day.',
+  'Your personal planning partner.',
+  'Content generation expert, on demand.',
+  'Turning ideas into finished posts.',
+  'Your creative co-pilot, always on.',
+  'Thinking ahead, so you don’t have to.',
+  'Built to understand you, not just prompts.',
+  'Your brand voice, amplified.',
+  'One assistant. Every platform.',
 ];
 
 const darkAppearance = {
   variables: {
     colorBackground: 'transparent',
-    colorInputBackground: '#111827',
-    colorInputText: '#ffffff',
-    colorText: '#f9fafb',
-    colorTextSecondary: '#9ca3af',
-    colorPrimary: '#7c3aed',
-    colorNeutral: '#374151',
-    borderRadius: '0.75rem',
+    colorInputBackground: '#182220',
+    colorInputText: '#f2f5f2',
+    colorText: '#f2f5f2',
+    colorTextSecondary: '#9aa5a1',
+    colorPrimary: '#4e9389',
+    colorNeutral: '#243330',
+    borderRadius: '0.625rem',
     fontFamily: 'inherit',
     fontSize: '0.875rem',
   },
@@ -35,39 +42,39 @@ const darkAppearance = {
     headerTitle: '!hidden',
     headerSubtitle: '!hidden',
     socialButtonsBlockButton:
-      '!bg-gray-900 !border !border-gray-700 !text-white hover:!bg-gray-800 hover:!border-gray-600 !rounded-xl !h-10 !text-sm !font-medium !transition-colors !shadow-none',
-    socialButtonsBlockButtonText: '!text-white !font-medium',
-    dividerLine: '!bg-gray-800',
-    dividerText: '!text-gray-500 !text-xs',
-    formFieldLabel: '!text-gray-300 !text-sm !font-medium',
+      '!bg-[#182220] !border !border-[#243330] !text-[#f2f5f2] hover:!bg-[#1e2b28] hover:!border-[#2d3f3b] !rounded-xl !h-10 !text-sm !font-medium !transition-colors !shadow-none',
+    socialButtonsBlockButtonText: '!text-[#f2f5f2] !font-medium',
+    dividerLine: '!bg-[#243330]',
+    dividerText: '!text-[#9aa5a1] !text-xs',
+    formFieldLabel: '!text-[#9aa5a1] !text-sm !font-medium',
     formFieldInput:
-      '!bg-gray-900 !border !border-gray-700 !text-white !rounded-xl !h-10 !text-sm placeholder:!text-gray-600 focus:!border-violet-500 !transition-colors !shadow-none',
+      '!bg-[#182220] !border !border-[#243330] !text-[#f2f5f2] !rounded-xl !h-10 !text-sm placeholder:!text-[#6b7570] focus:!border-[#4e9389] !transition-colors !shadow-none',
     formButtonPrimary:
-      '!bg-violet-600 hover:!bg-violet-500 !text-white !rounded-xl !h-10 !text-sm !font-semibold !transition-colors !shadow-lg !border-none',
+      '!bg-[#4e9389] hover:!bg-[#5fa79c] !text-white !rounded-lg !h-10 !text-sm !font-semibold !transition-colors !shadow-lg !border-none',
     footerAction: '!hidden',
     footer: '!hidden',
-    identityPreviewText: '!text-gray-300',
-    identityPreviewEditButton: '!text-violet-400',
-    formFieldSuccessText: '!text-green-400',
+    identityPreviewText: '!text-[#9aa5a1]',
+    identityPreviewEditButton: '!text-[#5fa79c]',
+    formFieldSuccessText: '!text-[#8ed966]',
     formFieldErrorText: '!text-red-400',
     alert: '!bg-red-950/40 !border !border-red-800/50 !rounded-xl',
     alertText: '!text-red-400',
-    formResendCodeLink: '!text-violet-400',
-    otpCodeFieldInput: '!bg-gray-900 !border !border-gray-700 !text-white !rounded-xl',
-    alternativeMethodsBlockButton: '!text-violet-400',
+    formResendCodeLink: '!text-[#5fa79c]',
+    otpCodeFieldInput: '!bg-[#182220] !border !border-[#243330] !text-[#f2f5f2] !rounded-xl',
+    alternativeMethodsBlockButton: '!text-[#5fa79c]',
   },
 };
 
 const lightAppearance = {
   variables: {
     colorBackground: 'transparent',
-    colorInputBackground: '#f9fafb',
-    colorInputText: '#111827',
-    colorText: '#111827',
-    colorTextSecondary: '#6b7280',
-    colorPrimary: '#7c3aed',
-    colorNeutral: '#d1d5db',
-    borderRadius: '0.75rem',
+    colorInputBackground: '#ffffff',
+    colorInputText: '#111111',
+    colorText: '#111111',
+    colorTextSecondary: '#777777',
+    colorPrimary: '#3a7a72',
+    colorNeutral: '#e1e8e4',
+    borderRadius: '0.625rem',
     fontFamily: 'inherit',
     fontSize: '0.875rem',
   },
@@ -78,26 +85,26 @@ const lightAppearance = {
     headerTitle: '!hidden',
     headerSubtitle: '!hidden',
     socialButtonsBlockButton:
-      '!bg-white !border !border-gray-300 !text-gray-900 hover:!bg-gray-50 hover:!border-gray-400 !rounded-xl !h-10 !text-sm !font-medium !transition-colors !shadow-none',
-    socialButtonsBlockButtonText: '!text-gray-900 !font-medium',
-    dividerLine: '!bg-gray-200',
-    dividerText: '!text-gray-500 !text-xs',
-    formFieldLabel: '!text-gray-700 !text-sm !font-medium',
+      '!bg-white !border !border-[#e1e8e4] !text-[#111111] hover:!bg-[#f1f5f1] hover:!border-[#a0a0a0] !rounded-xl !h-10 !text-sm !font-medium !transition-colors !shadow-none',
+    socialButtonsBlockButtonText: '!text-[#111111] !font-medium',
+    dividerLine: '!bg-[#e1e8e4]',
+    dividerText: '!text-[#777777] !text-xs',
+    formFieldLabel: '!text-[#777777] !text-sm !font-medium',
     formFieldInput:
-      '!bg-white !border !border-gray-300 !text-gray-900 !rounded-xl !h-10 !text-sm placeholder:!text-gray-400 focus:!border-violet-500 !transition-colors !shadow-none',
+      '!bg-white !border !border-[#e1e8e4] !text-[#111111] !rounded-xl !h-10 !text-sm placeholder:!text-[#a0a0a0] focus:!border-[#3a7a72] !transition-colors !shadow-none',
     formButtonPrimary:
-      '!bg-violet-600 hover:!bg-violet-500 !text-white !rounded-xl !h-10 !text-sm !font-semibold !transition-colors !shadow-lg !border-none',
+      '!bg-[#3a7a72] hover:!bg-[#2e6259] !text-white !rounded-lg !h-10 !text-sm !font-semibold !transition-colors !shadow-lg !border-none',
     footerAction: '!hidden',
     footer: '!hidden',
-    identityPreviewText: '!text-gray-700',
-    identityPreviewEditButton: '!text-violet-600',
-    formFieldSuccessText: '!text-green-600',
+    identityPreviewText: '!text-[#777777]',
+    identityPreviewEditButton: '!text-[#3a7a72]',
+    formFieldSuccessText: '!text-[#75c94a]',
     formFieldErrorText: '!text-red-600',
     alert: '!bg-red-50 !border !border-red-200 !rounded-xl',
     alertText: '!text-red-600',
-    formResendCodeLink: '!text-violet-600',
-    otpCodeFieldInput: '!bg-white !border !border-gray-300 !text-gray-900 !rounded-xl',
-    alternativeMethodsBlockButton: '!text-violet-600',
+    formResendCodeLink: '!text-[#3a7a72]',
+    otpCodeFieldInput: '!bg-white !border !border-[#e1e8e4] !text-[#111111] !rounded-xl',
+    alternativeMethodsBlockButton: '!text-[#3a7a72]',
   },
 };
 
@@ -142,33 +149,44 @@ export default function LandingPage({ noRedirect = false }: LandingPageProps) {
   // Blank loading screen — avoids flashing the sign-in form for returning users
   if (redirecting) {
     return (
-      <div className='h-screen bg-white dark:bg-gray-950 flex items-center justify-center'>
-        <div className='animate-spin h-8 w-8 rounded-full border-2 border-violet-500 border-t-transparent' />
+      <div className='h-screen bg-surface-white flex items-center justify-center'>
+        <div className='animate-spin h-8 w-8 rounded-full border-2 border-brand border-t-transparent' />
       </div>
     );
   }
 
   return (
-    <div className='h-screen bg-white dark:bg-gray-950 text-gray-900 dark:text-white flex overflow-hidden'>
+    <div
+      className='h-screen text-text-primary relative overflow-hidden'
+      style={{
+        background: 'radial-gradient(140% 130% at 0% 100%, var(--color-glass-a) 0%, var(--color-glass-b) 55%, var(--color-glass-c) 100%)',
+      }}
+    >
+      {/* Frosted-glass grain, tiled over the gradient */}
+      <div
+        className='absolute inset-0 opacity-[0.05] dark:opacity-[0.08] mix-blend-overlay dark:mix-blend-soft-light pointer-events-none'
+        style={{ backgroundImage: GRAIN_TEXTURE, backgroundSize: '180px 180px' }}
+      />
 
-      {/* ── Left panel: auth ── */}
-      <div className='w-full lg:w-[44%] h-full flex items-center justify-center border-r border-gray-200/60 dark:border-gray-800/60 overflow-y-auto'>
+      <div className='relative h-full flex overflow-hidden'>
+
+      {/* ── Left panel: auth — solid white for maximum readability; the center border is the one constant divider between columns ── */}
+      <div className='w-full lg:w-[44%] h-full flex items-center justify-center border-r border-border-soft bg-surface-white overflow-y-auto'>
         <div className='w-full max-w-[360px] px-6 py-16 mx-auto'>
 
           {/* Logo */}
-          <div className='flex items-center gap-2.5 mb-10'>
-            <div className='w-9 h-9 rounded-xl bg-violet-600 flex items-center justify-center shadow-lg shadow-violet-900/40'>
-              <Zap size={17} className='text-white' />
+          <div className='mb-10'>
+            <div className='w-9 h-9 rounded-xl bg-brand flex items-center justify-center'>
+              <Zap size={17} className='text-on-brand' />
             </div>
-            <span className='font-bold text-xl tracking-tight'>CreatorOS</span>
           </div>
 
           {/* Heading */}
           <div className='mb-7'>
-            <h1 className='text-2xl font-semibold text-gray-900 dark:text-white mb-1'>
+            <h1 className='text-heading text-text-primary mb-1'>
               {mode === 'sign-in' ? 'Welcome back' : 'Create your account'}
             </h1>
-            <p className='text-sm text-gray-500'>
+            <p className='text-message text-text-secondary'>
               {mode === 'sign-in'
                 ? 'Sign in to continue building your content engine.'
                 : 'Start turning ideas into published content today.'}
@@ -191,13 +209,13 @@ export default function LandingPage({ noRedirect = false }: LandingPageProps) {
           )}
 
           {/* Toggle */}
-          <p className='mt-6 text-sm text-gray-500 text-center'>
+          <p className='mt-6 text-message text-text-secondary text-center'>
             {mode === 'sign-in' ? (
               <>
                 Don't have an account?{' '}
                 <button
                   onClick={() => setMode('sign-up')}
-                  className='text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300 font-medium transition-colors'
+                  className='text-text-primary hover:text-brand font-medium underline underline-offset-2 transition-colors'
                 >
                   Sign up
                 </button>
@@ -207,7 +225,7 @@ export default function LandingPage({ noRedirect = false }: LandingPageProps) {
                 Already have an account?{' '}
                 <button
                   onClick={() => setMode('sign-in')}
-                  className='text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300 font-medium transition-colors'
+                  className='text-text-primary hover:text-brand font-medium underline underline-offset-2 transition-colors'
                 >
                   Sign in
                 </button>
@@ -216,17 +234,17 @@ export default function LandingPage({ noRedirect = false }: LandingPageProps) {
           </p>
 
           {/* Public links */}
-          <div className='mt-8 pt-6 border-t border-gray-200 dark:border-gray-800 flex items-center justify-center gap-4'>
+          <div className='mt-8 pt-6 border-t border-border-soft flex items-center justify-center gap-4'>
             <Link
               to='/privacy'
-              className='text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors'
+              className='text-meta text-text-muted hover:text-text-secondary transition-colors'
             >
               Privacy Policy
             </Link>
-            <span className='text-gray-300 dark:text-gray-700 text-xs'>·</span>
+            <span className='text-text-muted text-meta'>·</span>
             <Link
               to='/terms'
-              className='text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors'
+              className='text-meta text-text-muted hover:text-text-secondary transition-colors'
             >
               Terms of Service
             </Link>
@@ -234,54 +252,117 @@ export default function LandingPage({ noRedirect = false }: LandingPageProps) {
         </div>
       </div>
 
-      {/* ── Right panel: app info ── */}
-      <div className='hidden lg:flex flex-1 h-full items-center justify-center overflow-hidden bg-gradient-to-br from-white via-violet-50/20 to-white dark:from-gray-950 dark:via-violet-950/20 dark:to-gray-950 relative'>
-        {/* Background glows */}
-        <div className='absolute inset-0 pointer-events-none'>
-          <div className='absolute top-1/3 left-1/3 w-80 h-80 bg-violet-600/10 rounded-full blur-3xl' />
-          <div className='absolute bottom-1/4 right-1/4 w-56 h-56 bg-violet-800/8 rounded-full blur-3xl' />
-        </div>
-
-        <div className='relative z-10 w-full max-w-lg px-8 xl:px-10'>
-          {/* Badge */}
-          <div className='inline-flex items-center gap-2 bg-violet-100 dark:bg-violet-900/40 border border-violet-200 dark:border-violet-700/40 text-violet-600 dark:text-violet-300 text-xs px-3 py-1.5 rounded-full mb-8 font-medium'>
-            <Sparkles size={11} />
-            AI-powered content creation
-          </div>
-
+      {/* ── Right panel: app info — sits on the shared page-wide glass gradient ── */}
+      <div className='hidden lg:flex flex-1 h-full items-center justify-center overflow-hidden relative'>
+        <div className='relative z-10 w-full max-w-5xl px-8 xl:px-10'>
           {/* Headline */}
-          <h2 className='text-3xl xl:text-4xl font-bold leading-[1.2] tracking-tight mb-4 text-gray-900 dark:text-white'>
-            Say goodbye to{' '}
-            <span className='bg-gradient-to-r from-violet-500 to-violet-300 bg-clip-text text-transparent'>
-              manual content.
-            </span>
+          <h2 className='text-4xl xl:text-5xl font-semibold leading-[1.15] tracking-tight mb-5 text-text-primary max-w-xl'>
+            Your personal AI assistant,
             <br />
-            Let{' '}
-            <span className='bg-gradient-to-r from-violet-500 to-violet-300 bg-clip-text text-transparent'>
-              CreatorOS
-            </span>{' '}
-            do the heavy lifting.
+            built around <span className='text-brand font-bold'>you</span>.
           </h2>
 
-          <p className='text-gray-500 dark:text-gray-400 text-sm leading-relaxed mb-8'>
-            Chat with AI to instantly produce captions, images, and video scripts —
-            then publish straight to your social accounts.
-          </p>
+          <div className='min-h-[3.5rem] mb-10 max-w-xl'>
+            <TypewriterText
+              lines={ASSISTANT_LINES}
+              className='text-lg xl:text-xl text-brand font-medium leading-relaxed'
+            />
+          </div>
 
-          {/* Feature list */}
-          <ul className='space-y-3.5'>
-            {features.map(({ icon: Icon, text }) => (
-              <li key={text} className='flex items-center gap-3'>
-                <div className='w-6 h-6 rounded-md bg-violet-100 dark:bg-violet-900/60 border border-violet-200 dark:border-violet-700/30 flex items-center justify-center flex-shrink-0'>
-                  <Icon size={12} className='text-violet-600 dark:text-violet-400' />
+          {/* Process steps — static, self-explanatory cards, strung together by an
+              always-on animated wire (no hover interaction). */}
+          <div className='relative pt-8'>
+            <svg
+              className='absolute left-0 right-0 top-0 w-full h-16 pointer-events-none'
+              viewBox='0 0 1000 100'
+              preserveAspectRatio='none'
+              fill='none'
+              aria-hidden='true'
+            >
+              <defs>
+                <linearGradient id='stepWireGradient' x1='0' y1='0' x2='1' y2='0'>
+                  <stop offset='0%' stopColor='var(--color-brand)' stopOpacity='0' />
+                  <stop offset='50%' stopColor='var(--color-brand)' stopOpacity='0.35' />
+                  <stop offset='100%' stopColor='var(--color-brand)' stopOpacity='0' />
+                </linearGradient>
+              </defs>
+              <line x1='90' y1='55' x2='910' y2='55' stroke='url(#stepWireGradient)' strokeWidth='1.5' />
+              <circle cx='90' cy='55' r='3' fill='var(--color-brand)' fillOpacity='0.45' className='animate-pulse' />
+              <circle cx='500' cy='55' r='3' fill='var(--color-brand)' fillOpacity='0.45' className='animate-pulse' style={{ animationDelay: '0.6s' }} />
+              <circle cx='910' cy='55' r='3' fill='var(--color-brand)' fillOpacity='0.45' className='animate-pulse' style={{ animationDelay: '1.2s' }} />
+            </svg>
+
+            <div className='relative grid grid-cols-1 sm:grid-cols-3 gap-6 items-stretch'>
+
+            {/* 1 — Strategize & Plan: a mini flow of idea → goal → plan */}
+            <div className='relative bg-surface-white rounded-3xl p-7 text-left border border-border-soft/70 shadow-[0_10px_30px_rgba(0,0,0,0.06)]'>
+              <div className='flex items-center gap-2.5 h-11 mb-5'>
+                <div className='w-11 h-11 rounded-full bg-brand/10 flex items-center justify-center flex-shrink-0'>
+                  <MessageSquare size={18} strokeWidth={1.8} className='text-brand' />
                 </div>
-                <span className='text-sm text-gray-600 dark:text-gray-300'>{text}</span>
-              </li>
-            ))}
-          </ul>
+                <div className='w-6 h-[2px] bg-brand/30 rounded-full flex-shrink-0' />
+                <div className='w-11 h-11 rounded-full bg-brand/10 flex items-center justify-center flex-shrink-0'>
+                  <Target size={18} strokeWidth={1.8} className='text-brand' />
+                </div>
+                <div className='w-6 h-[2px] bg-brand/30 rounded-full flex-shrink-0' />
+                <div className='w-11 h-11 rounded-full bg-brand/10 flex items-center justify-center flex-shrink-0'>
+                  <ClipboardCheck size={18} strokeWidth={1.8} className='text-brand' />
+                </div>
+              </div>
+              <p className='text-heading text-text-primary mb-1.5'>Strategize &amp; Plan</p>
+              <p className='text-message text-text-secondary leading-relaxed'>
+                Chat with AI to shape your idea into a clear content strategy.
+              </p>
+              <p className='text-meta text-brand font-medium leading-relaxed mt-2.5'>
+                Answer a few quick questions — AI turns your idea into a full plan in seconds.
+              </p>
+            </div>
+
+            {/* 2 — Generate Content: a fanned hand of Text / Image / Video tiles */}
+            <div className='relative bg-surface-white rounded-3xl p-7 text-left border border-border-soft/70 shadow-[0_10px_30px_rgba(0,0,0,0.06)]'>
+              <div className='relative h-11 w-24 mb-5'>
+                <div className='absolute left-0 top-1 w-11 h-11 rounded-xl bg-brand/10 border border-brand/15 flex items-center justify-center rotate-[-8deg]'>
+                  <Type size={16} strokeWidth={1.8} className='text-brand' />
+                </div>
+                <div className='absolute left-6 top-0 w-11 h-11 rounded-xl bg-brand/15 border border-brand/20 flex items-center justify-center z-10'>
+                  <ImageIcon size={16} strokeWidth={1.8} className='text-brand' />
+                </div>
+                <div className='absolute left-12 top-1 w-11 h-11 rounded-xl bg-brand/10 border border-brand/15 flex items-center justify-center rotate-[8deg]'>
+                  <Video size={16} strokeWidth={1.8} className='text-brand' />
+                </div>
+              </div>
+              <p className='text-heading text-text-primary mb-1.5'>Generate Content</p>
+              <p className='text-message text-text-secondary leading-relaxed'>
+                Produce captions, on-brand images, and full video scripts.
+              </p>
+              <p className='text-meta text-brand font-medium leading-relaxed mt-2.5'>
+                One prompt, three formats — text, image, and video, all matched to your brand.
+              </p>
+            </div>
+
+            {/* 3 — Integrate & Publish: content landing on a phone, ready to be loved */}
+            <div className='relative bg-surface-white rounded-3xl p-7 text-left border border-border-soft/70 shadow-[0_10px_30px_rgba(0,0,0,0.06)]'>
+              <div className='relative h-11 mb-5'>
+                <div className='w-11 h-11 rounded-2xl bg-brand/10 border border-brand/15 flex items-center justify-center'>
+                  <Smartphone size={18} strokeWidth={1.8} className='text-brand' />
+                </div>
+                <Heart size={12} strokeWidth={0} className='absolute -top-1 left-8 text-brand fill-brand' />
+              </div>
+              <p className='text-heading text-text-primary mb-1.5'>Integrate &amp; Publish</p>
+              <p className='text-message text-text-secondary leading-relaxed'>
+                Connect Instagram and TikTok, publish with a single click.
+              </p>
+              <p className='text-meta text-brand font-medium leading-relaxed mt-2.5'>
+                No more app-switching — your content goes live right where your people are waiting.
+              </p>
+            </div>
+
+            </div>
+          </div>
         </div>
       </div>
 
+      </div>
     </div>
   );
 }

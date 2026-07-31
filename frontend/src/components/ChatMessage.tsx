@@ -58,7 +58,7 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
   if (isUser) {
     return (
       <div className='flex justify-end'>
-        <div className='max-w-[75%] bg-violet-600 text-white rounded-2xl rounded-tr-sm px-4 py-2.5 text-sm'>
+        <div className='max-w-[75%] bg-surface-white border border-black/[0.04] dark:border-white/[0.06] text-text-primary rounded-2xl rounded-br-[4px] px-4 py-2.5 text-message shadow-[0_2px_10px_rgba(0,0,0,0.03)]'>
           {message.content}
         </div>
       </div>
@@ -70,7 +70,7 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
     return (
       <div className='flex justify-start'>
         <div className='max-w-[85%] space-y-3'>
-          <div className='bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl rounded-tl-sm px-4 py-3 text-sm text-gray-800 dark:text-gray-200 leading-relaxed'>
+          <div className='bg-ink text-on-ink rounded-2xl rounded-tl-none px-4 py-3 text-message leading-relaxed'>
             {plannerData.reply}
           </div>
           {plannerData.questions && plannerData.questions.length > 0 && (
@@ -92,16 +92,16 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
 
     return (
       <div className='flex justify-start'>
-        <div className='max-w-[90%] w-full bg-gray-50 dark:bg-gray-900 border border-violet-700/50 rounded-2xl overflow-hidden'>
+        <div className='max-w-[90%] w-full bg-surface-card border border-border-soft rounded-2xl overflow-hidden'>
           {/* Header */}
-          <div className='flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800'>
+          <div className='flex items-center justify-between px-4 py-3 border-b border-border-soft'>
             <div className='flex items-center gap-2'>
-              <div className='w-2 h-2 rounded-full bg-violet-500' />
-              <span className='text-sm font-semibold text-violet-600 dark:text-violet-300'>
+              <div className='w-2 h-2 rounded-full bg-ink' />
+              <span className='text-message font-semibold text-text-primary'>
                 {isVideo ? 'Video Script' : 'Image Post'} Draft
               </span>
             </div>
-            <button onClick={() => setExpanded((p) => !p)} className='text-gray-400 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'>
+            <button onClick={() => setExpanded((p) => !p)} className='text-text-muted hover:text-text-primary'>
               {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
             </button>
           </div>
@@ -119,12 +119,12 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
               {/* Video script */}
               {isVideo && pkg.script && (
                 <div className='space-y-2'>
-                  <p className='text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide'>Script</p>
-                  <div className='bg-gray-100 dark:bg-gray-800/50 rounded-lg p-3 space-y-2 text-sm text-gray-700 dark:text-gray-300'>
+                  <p className='text-meta font-semibold text-text-muted uppercase tracking-wide'>Script</p>
+                  <div className='bg-surface-white rounded-xl p-3 space-y-2 text-message text-text-secondary'>
                     <div><span className='text-yellow-600 dark:text-yellow-400 font-medium'>Hook: </span>{pkg.script.hook}</div>
                     <div><span className='text-blue-600 dark:text-blue-400 font-medium'>Body: </span>{pkg.script.body}</div>
                     <div><span className='text-green-600 dark:text-green-400 font-medium'>CTA: </span>{pkg.script.callToAction}</div>
-                    <div className='text-gray-400 dark:text-gray-500 text-xs'>⏱ {pkg.script.estimatedDuration}</div>
+                    <div className='text-text-muted text-meta'>⏱ {pkg.script.estimatedDuration}</div>
                   </div>
                 </div>
               )}
@@ -153,28 +153,28 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
 
               {/* Generate media inline */}
               {slug && threadId && (
-                <div className='border-t border-gray-200 dark:border-gray-800 pt-3'>
+                <div className='border-t border-border-soft pt-3'>
                   {assetBlobUrl ? (
                     <div className='space-y-3'>
-                      <p className='text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide'>
+                      <p className='text-meta font-semibold text-text-muted uppercase tracking-wide'>
                         {isVideo ? 'Generated Video' : 'Generated Image'}
                       </p>
                       {isVideo ? (
                         <video
                           src={assetBlobUrl}
                           controls
-                          className='w-full rounded-lg max-h-[480px] bg-gray-100 dark:bg-gray-950'
+                          className='w-full rounded-xl max-h-[480px] bg-surface-white'
                         />
                       ) : (
                         <img
                           src={assetBlobUrl}
                           alt='Generated post image'
-                          className='w-full rounded-lg object-contain max-h-[480px] bg-gray-100 dark:bg-gray-950'
+                          className='w-full rounded-xl object-contain max-h-[480px] bg-surface-white'
                         />
                       )}
                       {/* Publish buttons */}
                       <div className='flex items-center gap-2 pt-1'>
-                        <span className='text-xs text-gray-500'>Publish to</span>
+                        <span className='text-meta text-text-secondary'>Publish to</span>
                         {(['instagram', 'tiktok'] as const).map((platform) => {
                           const s = publishStatus[platform] ?? 'idle';
                           return (
@@ -183,13 +183,13 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
                               onClick={() => handlePublish(platform)}
                               disabled={s === 'publishing' || s === 'processing' || s === 'done'}
                               className={cn(
-                                'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all',
-                                s === 'done' ? 'bg-green-900/30 text-green-400 border border-green-700/30'
-                                : s === 'failed' ? 'bg-red-900/30 text-red-400 border border-red-700/30'
-                                : s === 'processing' ? 'bg-yellow-900/30 text-yellow-400 border border-yellow-700/30'
+                                'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-meta font-medium transition-all',
+                                s === 'done' ? 'bg-green-900/10 text-green-700 dark:text-green-400 border border-green-700/20'
+                                : s === 'failed' ? 'bg-red-900/10 text-red-700 dark:text-red-400 border border-red-700/20'
+                                : s === 'processing' ? 'bg-yellow-900/10 text-yellow-700 dark:text-yellow-400 border border-yellow-700/20'
                                 : platform === 'instagram'
                                 ? 'bg-gradient-to-r from-pink-600 to-orange-500 text-white hover:opacity-90 disabled:opacity-50'
-                                : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50'
+                                : 'bg-brand text-on-brand hover:bg-brand-hover disabled:opacity-50'
                               )}
                             >
                               {(s === 'publishing' || s === 'processing') ? <Loader2 size={12} className='animate-spin' />
@@ -204,7 +204,7 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
                       </div>
                     </div>
                   ) : asset && asset.status === 'generating' ? (
-                    <div className='flex items-center gap-2 text-xs text-gray-400 dark:text-gray-400'>
+                    <div className='flex items-center gap-2 text-meta text-text-muted'>
                       <Loader2 size={12} className='animate-spin' />
                       {isVideo ? 'Generating video...' : 'Generating image...'}
                     </div>
@@ -230,12 +230,12 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
 
               {/* Hashtags */}
               <div>
-                <p className='text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2'>Hashtags</p>
+                <p className='text-meta font-semibold text-text-muted uppercase tracking-wide mb-2'>Hashtags</p>
                 <div className='flex flex-wrap gap-1.5'>
                   {pkg.hashtags.map((h) => (
                     <span
                       key={h}
-                      className='inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-gray-100 dark:bg-gray-800 text-violet-600 dark:text-violet-300 rounded-full'
+                      className='inline-flex items-center gap-1 text-meta px-2 py-0.5 bg-surface-white text-text-secondary rounded-full'
                     >
                       <Hash size={10} />
                       {h}
@@ -258,7 +258,7 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
   // Plain assistant message
   return (
     <div className='flex justify-start'>
-      <div className='max-w-[85%] bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl rounded-tl-sm px-4 py-2.5 text-sm text-gray-800 dark:text-gray-200 leading-relaxed'>
+      <div className='max-w-[85%] bg-ink text-on-ink rounded-2xl rounded-tl-none px-4 py-2.5 text-message leading-relaxed'>
         {message.content}
       </div>
     </div>
@@ -305,10 +305,10 @@ function QuestionGroups({
   const allAnswered = questions.every((q) => (selected[q.id]?.length ?? 0) > 0);
 
   return (
-    <div className='bg-gray-50/50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-800 rounded-xl p-4 space-y-4'>
+    <div className='bg-surface-card border border-border-soft rounded-xl p-4 space-y-4'>
       {questions.map((q) => (
         <div key={q.id}>
-          <p className='text-xs font-medium text-gray-500 dark:text-gray-400 mb-2'>{q.text}</p>
+          <p className='text-meta font-medium text-text-secondary mb-2'>{q.text}</p>
           <div className='flex flex-wrap gap-2'>
             {q.options.map((opt) => {
               const isSelected = selected[q.id]?.includes(opt.id);
@@ -318,10 +318,10 @@ function QuestionGroups({
                   onClick={() => !submitted && toggle(q.id, opt.id, q.allowMultiple)}
                   disabled={submitted}
                   className={cn(
-                    'px-3 py-1.5 text-sm rounded-full border transition-all',
+                    'px-3 py-1.5 text-message rounded-full border transition-all',
                     isSelected
-                      ? 'bg-violet-600 border-violet-500 text-white'
-                      : 'bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:border-violet-500 hover:text-violet-600 dark:hover:text-white',
+                      ? 'bg-ink border-ink text-on-ink'
+                      : 'bg-surface-white border-border-soft text-text-secondary hover:border-ink/40 hover:text-text-primary',
                     submitted && 'opacity-60 cursor-not-allowed'
                   )}
                 >
@@ -336,10 +336,10 @@ function QuestionGroups({
         onClick={handleSubmit}
         disabled={!allAnswered || submitted}
         className={cn(
-          'mt-1 px-4 py-1.5 text-sm font-medium rounded-lg transition-all',
+          'mt-1 px-4 py-1.5 text-message font-medium rounded-full transition-all',
           allAnswered && !submitted
-            ? 'bg-violet-600 hover:bg-violet-500 text-white'
-            : 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 cursor-not-allowed'
+            ? 'bg-brand hover:bg-brand-hover text-on-brand'
+            : 'bg-surface-white text-text-muted cursor-not-allowed'
         )}
       >
         {submitted ? 'Sent ✓' : 'Continue →'}
@@ -364,16 +364,16 @@ function Section({
   return (
     <div>
       <div className='flex items-center justify-between mb-1.5'>
-        <p className='text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide'>{label}</p>
+        <p className='text-meta font-semibold text-text-muted uppercase tracking-wide'>{label}</p>
         <button
           onClick={onCopy}
-          className='text-xs text-gray-400 dark:text-gray-500 hover:text-gray-900 dark:hover:text-white flex items-center gap-1 transition-colors'
+          className='text-meta text-text-muted hover:text-text-primary flex items-center gap-1 transition-colors'
         >
           {copied ? <Check size={12} /> : <Copy size={12} />}
           {copied ? 'Copied' : 'Copy'}
         </button>
       </div>
-      <p className={cn('text-sm text-gray-700 dark:text-gray-300 leading-relaxed', mono && 'font-mono text-xs bg-gray-100 dark:bg-gray-800 p-2 rounded')}>
+      <p className={cn('text-message text-text-secondary leading-relaxed', mono && 'font-mono text-meta bg-surface-white p-2 rounded-lg')}>
         {value}
       </p>
     </div>
