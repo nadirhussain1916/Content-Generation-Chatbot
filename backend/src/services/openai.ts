@@ -3,6 +3,7 @@ import { generateText, tool, stepCountIs } from 'ai';
 import { z } from 'zod';
 import { AGENT_SYSTEM_PROMPT, type WorkspaceBrand } from './prompts';
 import type { ImagePostPackage, VideoPostPackage } from '../types';
+import { Logger } from '../utils/Logger';
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -104,6 +105,13 @@ export async function runAgent(params: {
   const openai = createOpenAI({ apiKey: params.apiKey });
   const imageReferences = params.imageReferences ?? [];
 
+  Logger.log('AgentStart', {
+    model: params.textModel ?? 'gpt-4o',
+    threadStatus: params.threadStatus,
+    attachedImageCount: imageReferences.length,
+    hasPersistedContext: !!params.persistedImageContext,
+  });
+
   const result = await generateText({
     model: openai.chat(params.textModel ?? 'gpt-4o'),
     // Allow steps for: current-message refs + draft refs (unknown count) + reasoning + terminal tool
@@ -130,19 +138,34 @@ export async function runAgent(params: {
         execute: async ({ uploadId }) => {
           // 1. Serve from cache first — works for any uploadId, not just current attachments
           const cached = await params.getVisionDescription(uploadId);
-          if (cached) return cached;
+          if (cached) {
+            Logger.log('AnalyzeImageCacheHit', { uploadId });
+            return cached;
+          }
 
           // 2. Find publicUrl: current-message attachment first, then DB lookup
           const ref = imageReferences.find((r) => r.uploadId === uploadId);
-          const publicUrl = ref?.publicUrl ?? (await params.resolveUpload(uploadId))?.publicUrl;
-          if (!publicUrl) return `Image ${uploadId} not found or has no public URL.`;
+          let publicUrl = ref?.publicUrl;
+
+          if (!publicUrl) {
+            Logger.log('AnalyzeImageResolveFromDB', { uploadId });
+            const resolved = await params.resolveUpload(uploadId);
+            publicUrl = resolved?.publicUrl;
+          }
+
+          if (!publicUrl) {
+            Logger.log('AnalyzeImageNotFound', { uploadId });
+            return `Image ${uploadId} not found or has no public URL.`;
+          }
 
           // 3. Live vision call — always gpt-4o
+          Logger.log('AnalyzeImageLiveVision', { uploadId, source: ref ? 'attached' : 'draft-ref' });
           const description = await analyzeImageForDescription({
             apiKey: params.apiKey,
             imageUrl: publicUrl,
           });
           await params.saveVisionDescription(uploadId, description);
+          Logger.log('AnalyzeImageComplete', { uploadId, descriptionLength: description.length });
           return description;
         },
       }),
@@ -186,6 +209,13 @@ export async function runAgent(params: {
     },
   });
 
+  Logger.log('AgentComplete', {
+    stepCount: result.steps.length,
+    totalInputTokens: result.usage?.inputTokens,
+    totalOutputTokens: result.usage?.outputTokens,
+    finishReason: result.finishReason,
+  });
+
   // ── Extract result from the last terminal tool call ───────────────────────
   const terminalTools = new Set(['ask_questions', 'generate_image_draft', 'generate_video_script', 'chat_reply']);
 
@@ -197,6 +227,8 @@ export async function runAgent(params: {
     for (const tc of step.toolCalls as unknown as FlatToolCall[]) {
       if (!terminalTools.has(tc.toolName)) continue;
       const { toolName, input } = tc;
+
+      Logger.log('AgentTerminalTool', { toolName, stepIndex: i });
 
       if (toolName === 'chat_reply') {
         return { action: 'chat', reply: String(input.reply ?? '') };
@@ -219,7 +251,11 @@ export async function runAgent(params: {
     }
   }
 
-  // Fallback: use final text output as a chat reply
+  // Fallback: no terminal tool found — use raw text output
+  Logger.log('AgentFallbackToText', {
+    stepCount: result.steps.length,
+    textLength: result.text?.length ?? 0,
+  });
   return {
     action: 'chat',
     reply: result.text || "I'm here to help! What would you like to create?",
