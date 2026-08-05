@@ -24,7 +24,9 @@ async function tiktokRequest<T>(
   } catch (err) {
     clearTimeout(timer);
     const isAbort = err instanceof Error && err.name === 'AbortError';
-    throw new Error(`TikTok fetch ${isAbort ? 'timed out' : 'failed'} [${endpoint}]: ${err instanceof Error ? err.message : String(err)}`);
+    const msg = `TikTok fetch ${isAbort ? 'timed out' : 'failed'} [${endpoint}]: ${err instanceof Error ? err.message : String(err)}`;
+    Logger.log('TikTokFetchError', { endpoint, isAbort }, err);
+    throw new Error(msg);
   }
   clearTimeout(timer);
 
@@ -38,7 +40,8 @@ async function tiktokRequest<T>(
   let data: T & { error?: { code: string; message: string } };
   try {
     data = JSON.parse(rawText) as T & { error?: { code: string; message: string } };
-  } catch {
+  } catch (err) {
+    Logger.log('TikTokJsonParseError', { endpoint, status: res.status, body: rawText.slice(0, 300) }, err);
     throw new Error(`TikTok API returned non-JSON [${endpoint}]: ${rawText.slice(0, 300)}`);
   }
 

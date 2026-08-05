@@ -102,7 +102,8 @@ socialCallbackRouter.get('/callback/instagram', async (c) => {
     workspaceId = parsed.workspaceId;
     workspaceSlug = parsed.workspaceSlug;
     await c.env.KV.delete(`oauth-state:${state}`);
-  } catch {
+  } catch (err) {
+    Logger.log('InstagramOAuthStateError', { state }, err);
     return c.redirect(`${fallbackUrl}?error=invalid_state`);
   }
 
@@ -161,7 +162,8 @@ socialCallbackRouter.get('/callback/tiktok', async (c) => {
     workspaceId = parsed.workspaceId;
     workspaceSlug = parsed.workspaceSlug;
     await c.env.KV.delete(`oauth-state:${state}`);
-  } catch {
+  } catch (err) {
+    Logger.log('TikTokOAuthStateError', { state }, err);
     return c.redirect(`${fallbackUrl}?error=invalid_state`);
   }
 

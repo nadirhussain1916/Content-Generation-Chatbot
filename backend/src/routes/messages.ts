@@ -123,7 +123,7 @@ messagesRouter.post('/:threadId/messages', async (c) => {
           const u = records.results[0];
           if (u) uploadMap.set(u.id, u); // cache for subsequent calls this turn
           return u?.vision_description ?? null;
-        } catch { return null; }
+        } catch (err) { Logger.log('GetVisionDescriptionError', { uploadId, workspaceId: workspace.id }, err); return null; }
       },
       saveVisionDescription: async (uploadId, description) => {
         await updateWorkspaceUploadVisionDescription(c.env.DB, uploadId, description);
@@ -141,7 +141,7 @@ messagesRouter.post('/:threadId/messages', async (c) => {
           if (u) uploadMap.set(u.id, u);
           if (!u?.public_url) return null;
           return { publicUrl: u.public_url, name: u.name };
-        } catch { return null; }
+        } catch (err) { Logger.log('ResolveUploadError', { uploadId, workspaceId: workspace.id }, err); return null; }
       },
     });
 
@@ -192,7 +192,7 @@ messagesRouter.post('/:threadId/messages', async (c) => {
         draft.referenceUploadIds = imageReferences.map((r) => r.uploadId);
         draft.primaryReferenceUploadId = imageReferences[0].uploadId;
         postPackageJson = JSON.stringify(draft);
-      } catch { /* leave postPackageJson unchanged on parse error */ }
+      } catch (err) { Logger.log('PostPackageParseError', { workspaceId: workspace.id }, err); /* leave postPackageJson unchanged */ }
     }
 
     // 5. Persist assistant message

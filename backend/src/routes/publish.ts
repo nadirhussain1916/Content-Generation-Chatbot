@@ -92,6 +92,7 @@ publishRouter.post('/instagram', async (c) => {
       }
     } catch (publishErr) {
       const msg = publishErr instanceof Error ? publishErr.message : String(publishErr);
+      Logger.log('InstagramPublishFailed', { workspaceId: workspace.id, recordId, assetId: body.assetId }, publishErr);
       await updatePublishRecord(c.env.DB, recordId, { status: 'failed', error_message: msg });
       return c.json<TfResponse<null>>({ success: false, message: `Instagram publish failed: ${msg}` }, 500);
     }
@@ -166,6 +167,7 @@ publishRouter.post('/tiktok', async (c) => {
       }
     } catch (publishErr) {
       const msg = publishErr instanceof Error ? publishErr.message : String(publishErr);
+      Logger.log('TikTokPublishFailed', { workspaceId: workspace.id, recordId, assetId: body.assetId }, publishErr);
       await updatePublishRecord(c.env.DB, recordId, { status: 'failed', error_message: msg });
       return c.json<TfResponse<null>>({ success: false, message: `TikTok publish failed: ${msg}` }, 500);
     }
@@ -245,7 +247,7 @@ publishRouter.get('/status/:recordId', async (c) => {
     if (record.platform === 'tiktok') {
       const raw = await c.env.KV.get(publishProgressKey(recordId));
       if (raw) {
-        try { progress = JSON.parse(raw) as PublishProgress; } catch {}
+        try { progress = JSON.parse(raw) as PublishProgress; } catch (e) { Logger.log('PublishProgressParseError', { recordId }, e); }
       }
     }
 
