@@ -2,10 +2,12 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@clerk/clerk-react';
 import type { Message, PlannerResult, PlannerQuestion, ImagePostPackage, VideoPostPackage, Asset, WorkspaceUpload } from '../types';
 import { cn } from '../lib/utils';
-import { ChevronDown, ChevronUp, Copy, Check, Hash, Loader2, Share2, CheckCircle, AlertCircle, Star, X, Plus } from 'lucide-react';
+import { ChevronDown, ChevronUp, Copy, Check, Hash, Loader2, Share2, CheckCircle, AlertCircle, Star, X, Plus, Pencil } from 'lucide-react';
 import GenerateImageButton from './GenerateImageButton';
 import GenerateVideoButton from './GenerateVideoButton';
+import EditDraftModal from './EditDraftModal';
 import { usePublishStatus } from '../hooks/usePublishStatus';
+import { readPref, IMAGE_MODEL_KEY, VIDEO_MODEL_KEY, DEFAULT_IMAGE_MODEL, DEFAULT_VIDEO_MODEL, IMAGE_MODEL_REF_CAPS, VIDEO_MODEL_REF_CAPS } from '../lib/models';
 
 interface ChatMessageProps {
   message: Message;
@@ -28,11 +30,12 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
   const { status: publishStatus, publish } = usePublishStatus(slug, asset?.id);
   const { getToken } = useAuth();
 
-  // Local post_package state for optimistic draft reference edits
+  // Local post_package state for optimistic draft reference/content edits
   const [localPkg, setLocalPkg] = useState<(ImagePostPackage & VideoPostPackage) | null>(() => {
     try { return message.post_package ? JSON.parse(message.post_package) : null; } catch { return null; }
   });
   const [refPickerOpen, setRefPickerOpen] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
 
   // Sync from prop only when the message id changes (avoid clobbering local edits during polls)
   useEffect(() => {
@@ -58,6 +61,31 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
         }
       );
     } catch { /* revert handled by caller */ }
+  }
+
+  async function savePackage(updatedPkg: ImagePostPackage | VideoPostPackage) {
+    if (!slug || !threadId) return;
+    const token = await getToken();
+    const prevPkg = localPkg;
+    // Optimistic update
+    setLocalPkg(updatedPkg as ImagePostPackage & VideoPostPackage);
+    try {
+      await fetch(
+        `${BACKEND}/api/workspaces/${slug}/threads/${threadId}/messages/${message.id}/package`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token && { Authorization: `Bearer ${token}` }),
+          },
+          body: JSON.stringify({ post_package: JSON.stringify(updatedPkg) }),
+        }
+      );
+    } catch {
+      // Revert on error
+      setLocalPkg(prevPkg);
+      throw new Error('Failed to save');
+    }
   }
 
   function optimisticUpdateRefs(referenceUploadIds: string[], primaryReferenceUploadId: string | null) {
@@ -177,13 +205,32 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
 
   // Draft / PostPackage card
   if (isDraft && postPackage) {
-    // Use localPkg for reference fields (supports optimistic edits); fall back to postPackage for everything else
+    // Use localPkg for all fields (supports optimistic edits); fall back to postPackage
     const pkg = (localPkg ?? postPackage) as ImagePostPackage & VideoPostPackage;
     const isVideo = 'script' in (postPackage as object);
     const refIds: string[] = pkg.referenceUploadIds ?? [];
     const primaryId = pkg.primaryReferenceUploadId ?? null;
 
+    // ── Reference cap based on user's current preferred generation model ──────
+    const preferredImageModel = readPref(IMAGE_MODEL_KEY, DEFAULT_IMAGE_MODEL);
+    const preferredVideoModel = readPref(VIDEO_MODEL_KEY, DEFAULT_VIDEO_MODEL);
+    const refCap = isVideo
+      ? (VIDEO_MODEL_REF_CAPS[preferredVideoModel as keyof typeof VIDEO_MODEL_REF_CAPS] ?? 1)
+      : (IMAGE_MODEL_REF_CAPS[preferredImageModel as keyof typeof IMAGE_MODEL_REF_CAPS] ?? 1);
+    const isWanT2V = isVideo && preferredVideoModel === 'wan-video/wan-2.7-t2v';
+    const refAtCap = refIds.length >= refCap;
+
     return (
+      <>
+        {editModalOpen && (
+          <EditDraftModal
+            open={editModalOpen}
+            onClose={() => setEditModalOpen(false)}
+            pkg={pkg}
+            isVideo={isVideo}
+            onSave={savePackage}
+          />
+        )}
       <div className='flex justify-start'>
         <div className='max-w-[90%] w-full bg-surface-card border border-border-soft rounded-2xl overflow-hidden'>
           {/* Header */}
@@ -194,9 +241,20 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
                 {isVideo ? 'Video Script' : 'Image Post'} Draft
               </span>
             </div>
-            <button onClick={() => setExpanded((p) => !p)} className='text-text-muted hover:text-text-primary'>
-              {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-            </button>
+            <div className='flex items-center gap-1'>
+              {slug && threadId && (
+                <button
+                  onClick={() => setEditModalOpen(true)}
+                  title='Edit draft'
+                  className='p-1 text-text-muted hover:text-ink transition-colors'
+                >
+                  <Pencil size={14} />
+                </button>
+              )}
+              <button onClick={() => setExpanded((p) => !p)} className='p-1 text-text-muted hover:text-text-primary'>
+                {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              </button>
+            </div>
           </div>
 
           {expanded && (
@@ -346,7 +404,7 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
               {(refIds.length > 0 || (uploads.length > 0 || imageAssets.length > 0)) && (
                 <div>
                   <p className='text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2'>References</p>
-                  <div className='flex flex-wrap gap-2'>
+                  <div className='flex flex-wrap gap-2 items-start'>
                     {refIds.map((id) => {
                       const url = getRefUrl(id);
                       const isPrimary = id === primaryId;
@@ -369,10 +427,7 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
                             />
                           </button>
                           {isPrimary && (
-                            <Star
-                              size={12}
-                              className='absolute -top-1.5 -left-1.5 fill-violet-500 text-violet-500'
-                            />
+                            <Star size={12} className='absolute -top-1.5 -left-1.5 fill-violet-500 text-violet-500' />
                           )}
                           <button
                             onClick={() => removeRef(id)}
@@ -383,38 +438,49 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
                         </div>
                       );
                     })}
-                    {/* Add reference button */}
-                    <div className='relative'>
-                      <button
-                        onClick={() => setRefPickerOpen((o) => !o)}
-                        className='w-14 h-14 flex items-center justify-center rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-700 text-gray-400 hover:border-violet-500 hover:text-violet-500 transition-colors'
-                        title='Add reference'
-                      >
-                        <Plus size={16} />
-                      </button>
-                      {refPickerOpen && (
-                        <div className='absolute bottom-16 left-0 z-20 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3 w-56 max-h-52 overflow-y-auto'>
-                          <div className='flex items-center justify-between mb-2'>
-                            <span className='text-xs font-medium text-gray-500'>Pick a reference</span>
-                            <button onClick={() => setRefPickerOpen(false)}>
-                              <X size={12} className='text-gray-400' />
-                            </button>
-                          </div>
-                          <div className='flex flex-wrap gap-2'>
-                            {uploads.map((u) => (
-                              <button key={u.id} onClick={() => addRef(u)} title={u.name}>
-                                <img src={u.public_url} alt={u.name} className={cn('w-12 h-12 object-cover rounded-lg border-2 transition-all', refIds.includes(u.id) ? 'border-violet-500' : 'border-gray-200 dark:border-gray-700 hover:border-violet-400')} />
+
+                    {/* Add reference button — hidden when model doesn't support refs or at cap */}
+                    {isWanT2V ? (
+                      <p className='text-xs text-amber-600 dark:text-amber-400 self-center'>
+                        Wan 2.7 T2V is text-only — references are not supported
+                      </p>
+                    ) : refAtCap ? (
+                      <p className='text-xs text-gray-400 dark:text-gray-500 self-center'>
+                        Max {refCap} reference for this model
+                      </p>
+                    ) : (
+                      <div className='relative'>
+                        <button
+                          onClick={() => setRefPickerOpen((o) => !o)}
+                          className='w-14 h-14 flex items-center justify-center rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-700 text-gray-400 hover:border-violet-500 hover:text-violet-500 transition-colors'
+                          title='Add reference'
+                        >
+                          <Plus size={16} />
+                        </button>
+                        {refPickerOpen && (
+                          <div className='absolute bottom-16 left-0 z-20 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3 w-56 max-h-52 overflow-y-auto'>
+                            <div className='flex items-center justify-between mb-2'>
+                              <span className='text-xs font-medium text-gray-500'>Pick a reference</span>
+                              <button onClick={() => setRefPickerOpen(false)}>
+                                <X size={12} className='text-gray-400' />
                               </button>
-                            ))}
-                            {imageAssets.map((a) => a.public_url && (
-                              <button key={a.id} onClick={() => addRef({ id: a.id, name: a.id, public_url: a.public_url!, workspace_id: '', thread_id: null, mime_type: null, vision_description: null, created_at: 0 })} title='Generated image'>
-                                <img src={a.public_url} alt='Generated' className={cn('w-12 h-12 object-cover rounded-lg border-2 transition-all', refIds.includes(a.id) ? 'border-violet-500' : 'border-gray-200 dark:border-gray-700 hover:border-violet-400')} />
-                              </button>
-                            ))}
+                            </div>
+                            <div className='flex flex-wrap gap-2'>
+                              {uploads.map((u) => (
+                                <button key={u.id} onClick={() => addRef(u)} title={u.name}>
+                                  <img src={u.public_url} alt={u.name} className={cn('w-12 h-12 object-cover rounded-lg border-2 transition-all', refIds.includes(u.id) ? 'border-violet-500' : 'border-gray-200 dark:border-gray-700 hover:border-violet-400')} />
+                                </button>
+                              ))}
+                              {imageAssets.map((a) => a.public_url && (
+                                <button key={a.id} onClick={() => addRef({ id: a.id, name: a.id, public_url: a.public_url!, workspace_id: '', thread_id: null, mime_type: null, vision_description: null, created_at: 0 })} title='Generated image'>
+                                  <img src={a.public_url} alt='Generated' className={cn('w-12 h-12 object-cover rounded-lg border-2 transition-all', refIds.includes(a.id) ? 'border-violet-500' : 'border-gray-200 dark:border-gray-700 hover:border-violet-400')} />
+                                </button>
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      )}
-                    </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -422,6 +488,7 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
           )}
         </div>
       </div>
+    </>
     );
   }
 

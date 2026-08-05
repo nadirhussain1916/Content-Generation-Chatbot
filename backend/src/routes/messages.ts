@@ -4,11 +4,10 @@ import {
   getThread, getMessages, createMessage, updateThread,
   getWorkspaceUploads, getWorkspaceUploadsByIds, updateWorkspaceUploadVisionDescription, updateMessage,
 } from '../db/queries';
-import { runPlanner, generateImageDraft, generateVideoScript, runFollowup, resolveImageContext, type FollowupResult } from '../services/openai';
+import { runAgent, type AgentResult } from '../services/openai';
 import type { CloudflareBindings } from '../env';
 import type { ContextVariables, TfResponse, Thread, Message } from '../types';
 import { Logger } from '../utils/Logger';
-import { kvRateLimiter } from '../middleware/rateLimiter';
 
 type Env = { Bindings: CloudflareBindings; Variables: ContextVariables };
 
@@ -16,13 +15,9 @@ const messagesRouter = new Hono<Env>();
 
 messagesRouter.use('*', authMiddleware);
 messagesRouter.use('*', workspaceMiddleware);
-// messagesRouter.use(
-//   '/:threadId/messages',
-//   kvRateLimiter({ windowMs: 60 * 1000, limit: 20, message: 'Slow down — 20 AI calls per minute max' })
-// );
 
 // POST /api/workspaces/:slug/threads/:threadId/messages
-// Handles ALL phases: planning → draft → followup
+// Single agentic handler — covers planning, questioning, drafting, and refinement
 messagesRouter.post('/:threadId/messages', async (c) => {
   const workspace = c.get('workspace');
   const threadId = c.req.param('threadId');
@@ -41,57 +36,40 @@ messagesRouter.post('/:threadId/messages', async (c) => {
     if (!body.content?.trim()) {
       return c.json<TfResponse<null>>({ success: false, message: 'Message content is required' }, 400);
     }
+
     const textModel = body.textModel ?? 'gpt-4o';
     const imageReferences = body.imageReferences ?? [];
 
-    // ── Vision context ────────────────────────────────────────────────────────
-    // Two sources:
-    // 1. Images attached to THIS message → run agentic pre-flight (always analyzes every image)
-    // 2. Images attached to PREVIOUS messages in this thread → pulled from DB cache
-    // Both are merged and injected into conversation history so the AI always has
-    // full context, even in follow-up messages where no images are re-attached.
-    let visionContext = '';
-
-    // Source 1: pre-flight for images attached to this message
+    // ── Pre-load cached vision descriptions for newly attached images ─────────
+    // (The agent's analyze_image tool will serve from this cache when available)
+    type UploadRecord = { id: string; vision_description: string | null };
+    let uploadMap = new Map<string, UploadRecord>();
     if (imageReferences.length > 0) {
       try {
-        const uploadIds = imageReferences.map((r) => r.uploadId);
-        const uploadRecords = await getWorkspaceUploadsByIds(c.env.DB, uploadIds, workspace.id);
-        const uploadMap = new Map(uploadRecords.results.map((u) => [u.id, u]));
-
-        const freshContext = await resolveImageContext({
-          apiKey: c.env.OPENAI_API_KEY,
-          userMessage: body.content.trim(),
-          imageReferences,
-          getVisionDescription: async (uploadId) => uploadMap.get(uploadId)?.vision_description ?? null,
-          saveVisionDescription: async (uploadId, description) => {
-            await updateWorkspaceUploadVisionDescription(c.env.DB, uploadId, description);
-          },
-        });
-        if (freshContext) visionContext = freshContext;
+        const ids = imageReferences.map((r) => r.uploadId);
+        const records = await getWorkspaceUploadsByIds(c.env.DB, ids, workspace.id);
+        uploadMap = new Map(records.results.map((u) => [u.id, u]));
       } catch (err) {
-        Logger.log('VisionPreflightError', { workspaceId: workspace.id }, err);
+        Logger.log('UploadPreloadError', { workspaceId: workspace.id }, err);
       }
     }
 
-    // Source 2: already-analyzed uploads scoped to this thread (persistent across messages)
+    // ── Build persisted image context from earlier messages in this thread ────
+    // Descriptions cached from previous messages are injected into the system
+    // prompt so the model always has full visual context in follow-up turns.
+    let persistedImageContext = '';
     try {
       const threadUploads = await getWorkspaceUploads(c.env.DB, workspace.id);
-      const currentUploadIds = new Set(imageReferences.map((r) => r.uploadId));
-      const persistedLines = threadUploads.results
-        .filter((u) => u.thread_id === threadId && u.vision_description && !currentUploadIds.has(u.id))
+      const currentIds = new Set(imageReferences.map((r) => r.uploadId));
+      const lines = threadUploads.results
+        .filter((u) => u.thread_id === threadId && u.vision_description && !currentIds.has(u.id))
         .map((u) => `[Image: ${u.name}] ${u.vision_description}`);
-      if (persistedLines.length > 0) {
-        const persistedContext = persistedLines.join('\n');
-        visionContext = visionContext
-          ? `${persistedContext}\n${visionContext}`
-          : persistedContext;
-      }
+      persistedImageContext = lines.join('\n');
     } catch (err) {
       Logger.log('PersistedVisionError', { workspaceId: workspace.id, threadId }, err);
     }
 
-    // 1. Persist user message (store original content without vision context)
+    // 1. Persist user message
     const userMsgId = crypto.randomUUID();
     await createMessage(c.env.DB, {
       id: userMsgId,
@@ -101,24 +79,14 @@ messagesRouter.post('/:threadId/messages', async (c) => {
       content: body.content.trim(),
     });
 
-    // 2. Build conversation history for AI
+    // 2. Build conversation history
+    // Assistant draft messages include POST_PACKAGE context so the model can
+    // reference and refine the existing draft in follow-up turns.
     const allMessages = await getMessages(c.env.DB, threadId);
     const history = allMessages.results.map((m) => ({
       role: m.role as 'user' | 'assistant',
-      // For assistant draft/followup messages, include the post_package as context
       content: m.post_package ? `${m.content}\n\nPOST_PACKAGE:${m.post_package}` : m.content,
     }));
-
-    // Prepend vision context to the last (current) user message in history
-    if (visionContext && history.length > 0) {
-      const last = history[history.length - 1];
-      if (last.role === 'user') {
-        history[history.length - 1] = {
-          ...last,
-          content: `${visionContext}\n\n${last.content}`,
-        };
-      }
-    }
 
     const tone = workspace.ai_tone;
     const captionStyle = workspace.default_caption_style;
@@ -133,78 +101,64 @@ messagesRouter.post('/:threadId/messages', async (c) => {
       default_video_dimensions: workspace.default_video_dimensions,
     };
 
+    // 3. Run unified agent
+    const agentResult: AgentResult = await runAgent({
+      apiKey: c.env.OPENAI_API_KEY,
+      messages: history,
+      tone,
+      captionStyle,
+      brand,
+      textModel,
+      threadStatus: thread.status,
+      imageReferences,
+      persistedImageContext: persistedImageContext || undefined,
+      getVisionDescription: async (uploadId) => uploadMap.get(uploadId)?.vision_description ?? null,
+      saveVisionDescription: async (uploadId, description) => {
+        await updateWorkspaceUploadVisionDescription(c.env.DB, uploadId, description);
+      },
+    });
+
+    // 4. Map agent result → message fields + thread state
     let assistantContent: string;
     let postPackageJson: string | undefined;
     let newThreadStatus: Thread['status'] = thread.status;
     let newMediaType: Thread['media_type'] = thread.media_type;
     let messageType: Message['type'] = 'chat';
 
-    // 3. Route to the correct AI phase
-    if (thread.status === 'planning') {
-      // Planning phase — gather info and detect readiness
-      const planResult = await runPlanner({ apiKey: c.env.OPENAI_API_KEY, messages: history, tone, captionStyle, brand, textModel });
-
-      if (planResult.mode === 'chat') {
-        // Pure conversation — greetings, off-topic, etc.
-        assistantContent = planResult.reply;
-        messageType = 'chat';
-      } else if (planResult.ready && planResult.mediaType !== null) {
-        // AI has enough info — generate full draft immediately
-        newMediaType = planResult.mediaType;
-        newThreadStatus = planResult.mediaType === 'image' ? 'draft' : 'script_ready';
-        messageType = 'draft';
-
-        if (planResult.mediaType === 'image') {
-          const draft = await generateImageDraft({ apiKey: c.env.OPENAI_API_KEY, messages: history, tone, captionStyle, brand, textModel });
-          assistantContent = draft.content;
-          postPackageJson = JSON.stringify(draft);
-        } else {
-          const script = await generateVideoScript({ apiKey: c.env.OPENAI_API_KEY, messages: history, tone, captionStyle, brand, textModel });
-          assistantContent = script.content;
-          postPackageJson = JSON.stringify(script);
-        }
-      } else {
-        // Still gathering info — return planner reply with chip questions
-        assistantContent = JSON.stringify(planResult);
-        messageType = 'chat';
-      }
-    } else if (thread.status === 'draft' || thread.status === 'script_ready') {
-      // Followup / refinement phase
-      const followupResult: FollowupResult = await runFollowup({
-        apiKey: c.env.OPENAI_API_KEY,
-        messages: history,
-        mediaType: thread.media_type === 'video' ? 'video' : 'image',
-        tone,
-        captionStyle,
-        brand,
-        textModel,
+    if (agentResult.action === 'chat') {
+      assistantContent = agentResult.reply;
+      messageType = 'chat';
+    } else if (agentResult.action === 'questions') {
+      // Serialize in the same planner JSON format the frontend already parses
+      assistantContent = JSON.stringify({
+        reply: agentResult.reply,
+        ready: false,
+        mediaType: null,
+        questions: agentResult.questions,
       });
-
-      if (followupResult.mode === 'chat') {
-        // Pure conversation — no content update
-        assistantContent = followupResult.reply;
-        messageType = 'chat';
-      } else if (followupResult.mode === 'needs_context') {
-        // Vague new topic — ask questions using the same planner-style JSON format
-        assistantContent = JSON.stringify({
-          reply: followupResult.reply,
-          ready: false,
-          mediaType: null,
-          questions: followupResult.questions,
-        });
-        messageType = 'chat';
-      } else {
-        // Refined draft
-        assistantContent = followupResult.package.content;
-        postPackageJson = JSON.stringify(followupResult.package);
-        messageType = 'followup';
+      messageType = 'chat';
+    } else if (agentResult.action === 'image_draft') {
+      const isNewDraft = thread.status === 'planning';
+      assistantContent = agentResult.reply;
+      postPackageJson = JSON.stringify(agentResult.package);
+      messageType = isNewDraft ? 'draft' : 'followup';
+      if (isNewDraft) {
+        newThreadStatus = 'draft';
+        newMediaType = 'image';
       }
     } else {
-      // Thread is published — allow minor followups as plain chat
-      assistantContent = "This thread is already published. Start a new thread to create fresh content!";
+      // video_script
+      const isNewDraft = thread.status === 'planning';
+      assistantContent = agentResult.reply;
+      postPackageJson = JSON.stringify(agentResult.package);
+      messageType = isNewDraft ? 'draft' : 'followup';
+      if (isNewDraft) {
+        newThreadStatus = 'script_ready';
+        newMediaType = 'video';
+      }
     }
 
-    // ── Inject referenceUploadIds into post_package (after AI generation) ────
+    // ── Inject referenceUploadIds into post_package ───────────────────────────
     if (imageReferences.length > 0 && postPackageJson) {
       try {
         const draft = JSON.parse(postPackageJson);
@@ -214,7 +168,7 @@ messagesRouter.post('/:threadId/messages', async (c) => {
       } catch { /* leave postPackageJson unchanged on parse error */ }
     }
 
-    // 4. Persist assistant message
+    // 5. Persist assistant message
     const assistantMsgId = crypto.randomUUID();
     await createMessage(c.env.DB, {
       id: assistantMsgId,
@@ -225,7 +179,7 @@ messagesRouter.post('/:threadId/messages', async (c) => {
       post_package: postPackageJson,
     });
 
-    // 5. Update thread state
+    // 6. Update thread state
     const threadUpdate: Partial<Pick<Thread, 'status' | 'media_type' | 'active_draft_id' | 'title'>> = {};
     if (newThreadStatus !== thread.status) threadUpdate.status = newThreadStatus;
     if (newMediaType !== thread.media_type) threadUpdate.media_type = newMediaType;
@@ -233,7 +187,6 @@ messagesRouter.post('/:threadId/messages', async (c) => {
     if (!thread.title && body.content.length > 0) {
       threadUpdate.title = body.content.substring(0, 80);
     }
-
     if (Object.keys(threadUpdate).length > 0) {
       await updateThread(c.env.DB, threadId, threadUpdate);
     }
@@ -275,8 +228,7 @@ messagesRouter.patch('/:threadId/messages/:messageId/references', async (c) => {
       return c.json<TfResponse<null>>({ success: false, message: 'Thread not found' }, 404);
     }
 
-    const { getMessages: _getMessages } = await import('../db/queries');
-    const allMessages = await _getMessages(c.env.DB, threadId);
+    const allMessages = await getMessages(c.env.DB, threadId);
     const msg = allMessages.results.find((m) => m.id === messageId);
     if (!msg || !msg.post_package) {
       return c.json<TfResponse<null>>({ success: false, message: 'Message not found or has no draft' }, 404);
@@ -301,6 +253,44 @@ messagesRouter.patch('/:threadId/messages/:messageId/references', async (c) => {
   } catch (error) {
     Logger.log('PatchReferencesError', { messageId, threadId }, error);
     return c.json<TfResponse<null>>({ success: false, message: 'Failed to update references' }, 500);
+  }
+});
+
+// PATCH /api/workspaces/:slug/threads/:threadId/messages/:messageId/package
+// Replaces the full post_package for manual draft edits from the Edit modal
+messagesRouter.patch('/:threadId/messages/:messageId/package', async (c) => {
+  const workspace = c.get('workspace');
+  const threadId = c.req.param('threadId');
+  const messageId = c.req.param('messageId');
+
+  try {
+    const thread = await getThread(c.env.DB, threadId);
+    if (!thread || thread.workspace_id !== workspace.id) {
+      return c.json<TfResponse<null>>({ success: false, message: 'Thread not found' }, 404);
+    }
+
+    const allMessages = await getMessages(c.env.DB, threadId);
+    const msg = allMessages.results.find((m) => m.id === messageId);
+    if (!msg || !msg.post_package) {
+      return c.json<TfResponse<null>>({ success: false, message: 'Message not found or has no draft' }, 404);
+    }
+
+    const body = await c.req.json() as { post_package: string };
+
+    // Validate it's parseable JSON before writing
+    try { JSON.parse(body.post_package); } catch {
+      return c.json<TfResponse<null>>({ success: false, message: 'Invalid post_package JSON' }, 400);
+    }
+
+    await updateMessage(c.env.DB, messageId, { post_package: body.post_package });
+
+    return c.json<TfResponse<{ post_package: string }>>({
+      success: true,
+      data: { post_package: body.post_package },
+    });
+  } catch (error) {
+    Logger.log('PatchPackageError', { messageId, threadId }, error);
+    return c.json<TfResponse<null>>({ success: false, message: 'Failed to update draft' }, 500);
   }
 });
 

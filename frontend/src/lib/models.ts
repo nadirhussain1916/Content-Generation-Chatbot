@@ -151,6 +151,27 @@ export const LTX_EXTEND_OPTIONS = [
 
 export const LTX_EXTEND_KEY = 'tf_ltx_extend';
 
+// ─── Reference image capability caps ─────────────────────────────────────────
+// Maximum number of reference images each generation model accepts.
+// 0 = model does not support reference images at all.
+
+/** Max references per image generation model */
+export const IMAGE_MODEL_REF_CAPS: Record<ImageModelId, number> = {
+  'gpt-image-1': 1,
+  'dall-e-3':    1, // inspire mode only — description is injected into the prompt
+};
+
+/** Max references per video generation model */
+export const VIDEO_MODEL_REF_CAPS: Record<VideoModelId, number> = {
+  'lightricks/ltx-2.3-fast':    1,
+  'lightricks/ltx-2.3-pro':     1,
+  'bytedance/seedance-2.0':      1,
+  'bytedance/seedance-2.0-fast': 1,
+  'wan-video/wan-2.7-t2v':       0, // text-only model — ignores reference images
+  'wan-video/wan-2.7-i2v':       1,
+  'google/veo-2':                1,
+};
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 export function readPref<T extends string>(key: string, fallback: T): T {

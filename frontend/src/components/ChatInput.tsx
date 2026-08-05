@@ -5,6 +5,9 @@ import { cn } from '../lib/utils';
 import ModelPicker from './ModelPicker';
 import { useWorkspaceUploads } from '../hooks/useWorkspaceUploads';
 import { TEXT_MODELS, TEXT_MODEL_KEY, readPref, writePref } from '../lib/models';
+
+// All current generation models accept at most 1 reference image
+const GLOBAL_REF_CAP = 1;
 import type { Asset, WorkspaceUpload } from '../types';
 
 export type ImageReference = { uploadId: string; name: string; publicUrl: string };
@@ -60,10 +63,10 @@ export default function ChatInput({
 
   function handleInputChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const val = e.target.value;
-    // Open picker when user types "/" at the start of a word
+    // Open picker when user types "/" at the start of a word (only if under the ref cap)
     const lastChar = val[val.length - 1];
     const beforeLast = val[val.length - 2];
-    if (lastChar === '/' && (!beforeLast || /\s/.test(beforeLast))) {
+    if (lastChar === '/' && (!beforeLast || /\s/.test(beforeLast)) && attachedRefs.length < GLOBAL_REF_CAP) {
       setPickerOpen(true);
       setValue(val.slice(0, -1)); // strip trigger "/"
     } else {
@@ -113,6 +116,9 @@ export default function ChatInput({
   function removeRef(uploadId: string) {
     setAttachedRefs((prev) => prev.filter((r) => r.uploadId !== uploadId));
   }
+
+  // ── reference cap ────────────────────────────────────────────────────────
+  const atRefCap = attachedRefs.length >= GLOBAL_REF_CAP;
 
   // ── computed placeholder ─────────────────────────────────────────────────
   const effectivePlaceholder = placeholder ?? (
@@ -273,21 +279,24 @@ export default function ChatInput({
 
         {/* Toolbar row */}
         <div className='px-3 pb-2.5 flex items-center gap-2'>
-          {/* Paperclip */}
+          {/* Paperclip — disabled when already at the reference cap */}
           <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading || disabled}
-            title='Upload reference image'
+            onClick={() => !atRefCap && fileInputRef.current?.click()}
+            disabled={uploading || disabled || atRefCap}
+            title={atRefCap ? 'Only 1 reference image per generation' : 'Upload reference image'}
             className='text-gray-400 hover:text-violet-500 disabled:opacity-40 transition-colors'
           >
             {uploading ? <Loader2 size={15} className='animate-spin' /> : <Paperclip size={15} />}
           </button>
-          {/* @ picker toggle */}
+          {/* / picker toggle — disabled when at cap */}
           <button
-            onClick={() => setPickerOpen((o) => !o)}
-            disabled={disabled}
-            title='Pick reference from uploads'
-            className={cn('transition-colors', pickerOpen ? 'text-violet-500' : 'text-gray-400 hover:text-violet-500')}
+            onClick={() => !atRefCap && setPickerOpen((o) => !o)}
+            disabled={disabled || atRefCap}
+            title={atRefCap ? 'Only 1 reference image per generation' : 'Pick reference from uploads (type / to open)'}
+            className={cn(
+              'transition-colors',
+              pickerOpen ? 'text-violet-500' : atRefCap ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed' : 'text-gray-400 hover:text-violet-500'
+            )}
           >
             <AtSign size={15} />
           </button>

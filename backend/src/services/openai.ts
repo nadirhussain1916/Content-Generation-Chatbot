@@ -1,7 +1,7 @@
 import { createOpenAI } from '@ai-sdk/openai';
-import { generateText, Output, tool, stepCountIs } from 'ai';
+import { generateText, tool, stepCountIs } from 'ai';
 import { z } from 'zod';
-import { PLANNER_PROMPT, IMAGE_DRAFT_PROMPT, VIDEO_SCRIPT_PROMPT, FOLLOWUP_PROMPT, type WorkspaceBrand } from './prompts';
+import { AGENT_SYSTEM_PROMPT, type WorkspaceBrand } from './prompts';
 import type { ImagePostPackage, VideoPostPackage } from '../types';
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
@@ -10,20 +10,7 @@ const QuestionSchema = z.object({
   id: z.string().describe('Unique identifier for this question, e.g. "angle", "audience", "format"'),
   text: z.string().describe('The question label shown above the chips'),
   options: z.array(z.object({ id: z.string(), label: z.string() })).describe('2-5 selectable chips for this question'),
-  allowMultiple: z.boolean().describe('True if the user should be able to select more than one option — use for questions like "target audience" or "platforms". False for single-choice decisions like "image vs video".'),
-});
-
-const PlannerSchema = z.object({
-  mode: z
-    .enum(['plan', 'chat'])
-    .describe('"plan" = user wants to create content | "chat" = user is just greeting or conversing, not asking for content'),
-  reply: z.string().describe('Your response. For "chat" mode: a warm, brief reply. For "plan" mode: short intro before questions, or a summary of what you will create.'),
-  ready: z.boolean().describe('plan mode only — true when you have enough info to generate content. Always false when mode is "chat".'),
-  mediaType: z.enum(['image', 'video']).nullable().describe('Required when ready is true, null otherwise'),
-  questions: z
-    .array(QuestionSchema)
-    .nullable()
-    .describe('plan mode only — chip question groups. Set to null when ready is true or when mode is "chat".'),
+  allowMultiple: z.boolean().describe('True if the user should be able to select more than one option'),
 });
 
 const VideoSceneSchema = z.object({
@@ -66,7 +53,7 @@ const VideoPostPackageSchema = z.object({
   suggestedPlatforms: z.array(z.enum(['instagram', 'tiktok'])),
 });
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Public types ─────────────────────────────────────────────────────────────
 
 export type PlannerQuestion = {
   id: string;
@@ -75,11 +62,13 @@ export type PlannerQuestion = {
   allowMultiple: boolean;
 };
 
-export type PlannerResult =
-  | { mode: 'chat'; reply: string; ready: false; mediaType: null; questions: null }
-  | { mode: 'plan'; reply: string; ready: boolean; mediaType: 'image' | 'video' | null; questions: PlannerQuestion[] | null };
+export type AgentResult =
+  | { action: 'chat'; reply: string }
+  | { action: 'questions'; reply: string; questions: PlannerQuestion[] }
+  | { action: 'image_draft'; reply: string; package: ImagePostPackage }
+  | { action: 'video_script'; reply: string; package: VideoPostPackage };
 
-// ─── Message helpers ──────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function buildHistory(messages: { role: 'user' | 'assistant'; content: string }[]) {
   return messages.map((m) => ({
@@ -88,130 +77,147 @@ function buildHistory(messages: { role: 'user' | 'assistant'; content: string }[
   }));
 }
 
-// ─── Planning phase ───────────────────────────────────────────────────────────
+// ─── Unified Agent ────────────────────────────────────────────────────────────
 
-export async function runPlanner(params: {
+/**
+ * Single agentic generateText call that covers all conversation phases:
+ * image analysis, clarifying questions, draft generation, refinement, and chat.
+ *
+ * The model decides autonomously which terminal tool to call based on context.
+ * analyze_image may be called 0-N times before the terminal tool.
+ */
+export async function runAgent(params: {
   apiKey: string;
   messages: { role: 'user' | 'assistant'; content: string }[];
   tone: string;
   captionStyle: string;
   brand?: WorkspaceBrand;
   textModel?: string;
-}): Promise<PlannerResult> {
+  threadStatus: string;
+  imageReferences?: { uploadId: string; publicUrl: string; name: string }[];
+  persistedImageContext?: string;
+  getVisionDescription: (uploadId: string) => Promise<string | null>;
+  saveVisionDescription: (uploadId: string, description: string) => Promise<void>;
+}): Promise<AgentResult> {
   const openai = createOpenAI({ apiKey: params.apiKey });
+  const imageReferences = params.imageReferences ?? [];
 
-  const { output: object } = await generateText({
+  const result = await generateText({
     model: openai.chat(params.textModel ?? 'gpt-4o'),
-    output: Output.object({ schema: PlannerSchema }),
-    system: PLANNER_PROMPT(params.tone, params.captionStyle, params.brand),
+    // Allow one step per attached image (for analyze_image) plus 5 for reasoning + terminal tool
+    stopWhen: stepCountIs(imageReferences.length + 5),
+    system: AGENT_SYSTEM_PROMPT({
+      tone: params.tone,
+      captionStyle: params.captionStyle,
+      brand: params.brand,
+      threadStatus: params.threadStatus,
+      imageReferences: imageReferences.map((r) => ({ uploadId: r.uploadId, name: r.name })),
+      persistedImageContext: params.persistedImageContext,
+    }),
     messages: buildHistory(params.messages),
+    tools: {
+      analyze_image: tool({
+        description:
+          'Get a detailed visual description of one of the attached reference images. ' +
+          'Call for every image listed in REFERENCE IMAGES before making any content decision.',
+        inputSchema: z.object({
+          uploadId: z.string().describe('The uploadId of the image to analyze'),
+        }),
+        execute: async ({ uploadId }) => {
+          const ref = imageReferences.find((r) => r.uploadId === uploadId);
+          if (!ref) return 'Image not found in attached references.';
+
+          // Serve from cache when available
+          const cached = await params.getVisionDescription(uploadId);
+          if (cached) return cached;
+
+          // Live vision call — always gpt-4o regardless of user model choice
+          const description = await analyzeImageForDescription({
+            apiKey: params.apiKey,
+            imageUrl: ref.publicUrl,
+          });
+          await params.saveVisionDescription(uploadId, description);
+          return description;
+        },
+      }),
+
+      ask_questions: tool({
+        description:
+          'Ask the user clarifying questions via chip groups. Use when you need more information ' +
+          'before generating content. Maximum 2 rounds across the whole conversation.',
+        inputSchema: z.object({
+          reply: z.string().describe('Short intro message before the chip questions'),
+          questions: z.array(QuestionSchema).describe('2-4 chip question groups'),
+        }),
+        execute: async (input) => input,
+      }),
+
+      generate_image_draft: tool({
+        description: 'Generate a complete, publish-ready image post package.',
+        inputSchema: ImagePostPackageSchema.extend({
+          reply: z.string().describe('1-2 sentence message to the user about what was created'),
+        }),
+        execute: async (input) => input,
+      }),
+
+      generate_video_script: tool({
+        description: 'Generate a complete video script and post package.',
+        inputSchema: VideoPostPackageSchema.extend({
+          reply: z.string().describe('1-2 sentence message to the user about what was created'),
+        }),
+        execute: async (input) => input,
+      }),
+
+      chat_reply: tool({
+        description:
+          'Send a plain conversational reply. Use for greetings, brand questions, off-topic ' +
+          'messages, or any response that does not produce content.',
+        inputSchema: z.object({
+          reply: z.string().describe('Your message to the user'),
+        }),
+        execute: async (input) => input,
+      }),
+    },
   });
 
-  return object! as PlannerResult;
-}
+  // ── Extract result from the last terminal tool call ───────────────────────
+  const terminalTools = new Set(['ask_questions', 'generate_image_draft', 'generate_video_script', 'chat_reply']);
 
-// ─── Draft generation ─────────────────────────────────────────────────────────
+  // Cast to a simple shape to avoid fighting the AI SDK's complex union type
+  type FlatToolCall = { toolName: string; args: Record<string, unknown> };
 
-export async function generateImageDraft(params: {
-  apiKey: string;
-  messages: { role: 'user' | 'assistant'; content: string }[];
-  tone: string;
-  captionStyle: string;
-  brand?: WorkspaceBrand;
-  textModel?: string;
-}): Promise<ImagePostPackage> {
-  const openai = createOpenAI({ apiKey: params.apiKey });
+  for (let i = result.steps.length - 1; i >= 0; i--) {
+    const step = result.steps[i];
+    for (const tc of step.toolCalls as unknown as FlatToolCall[]) {
+      if (!terminalTools.has(tc.toolName)) continue;
+      const { toolName, args } = tc;
 
-  const { output: object } = await generateText({
-    model: openai.chat(params.textModel ?? 'gpt-4o'),
-    output: Output.object({ schema: ImagePostPackageSchema }),
-    system: IMAGE_DRAFT_PROMPT(params.tone, params.captionStyle, params.brand),
-    messages: buildHistory(params.messages),
-  });
-
-  return object! as ImagePostPackage;
-}
-
-export async function generateVideoScript(params: {
-  apiKey: string;
-  messages: { role: 'user' | 'assistant'; content: string }[];
-  tone: string;
-  captionStyle: string;
-  brand?: WorkspaceBrand;
-  textModel?: string;
-}): Promise<VideoPostPackage> {
-  const openai = createOpenAI({ apiKey: params.apiKey });
-
-  const { output: object } = await generateText({
-    model: openai.chat(params.textModel ?? 'gpt-4o'),
-    output: Output.object({ schema: VideoPostPackageSchema }),
-    system: VIDEO_SCRIPT_PROMPT(params.tone, params.captionStyle, params.brand),
-    messages: buildHistory(params.messages),
-  });
-
-  return object! as VideoPostPackage;
-}
-
-// ─── Followup / refinement ────────────────────────────────────────────────────
-
-const FollowupMode = z.enum(['refined', 'needs_context', 'chat']).describe(
-  '"refined" = update the post package | "needs_context" = topic too vague, ask questions | "chat" = user is just chatting, no content needed'
-);
-
-const ImageFollowupSchema = z.object({
-  mode: FollowupMode,
-  reply: z.string().describe('Message to the user'),
-  questions: z.array(QuestionSchema).nullable().describe('Chip questions — required when mode is needs_context, null otherwise'),
-  package: ImagePostPackageSchema.nullable().describe('Updated image post package — required when mode is refined, null otherwise'),
-});
-
-const VideoFollowupSchema = z.object({
-  mode: FollowupMode,
-  reply: z.string().describe('Message to the user'),
-  questions: z.array(QuestionSchema).nullable().describe('Chip questions — required when mode is needs_context, null otherwise'),
-  package: VideoPostPackageSchema.nullable().describe('Updated video post package — required when mode is refined, null otherwise'),
-});
-
-export type FollowupResult =
-  | { mode: 'refined'; reply: string; package: ImagePostPackage | VideoPostPackage }
-  | { mode: 'needs_context'; reply: string; questions: PlannerQuestion[] }
-  | { mode: 'chat'; reply: string };
-
-export async function runFollowup(params: {
-  apiKey: string;
-  messages: { role: 'user' | 'assistant'; content: string }[];
-  mediaType: 'image' | 'video';
-  tone: string;
-  captionStyle: string;
-  brand?: WorkspaceBrand;
-  textModel?: string;
-}): Promise<FollowupResult> {
-  const openai = createOpenAI({ apiKey: params.apiKey });
-  const model = openai.chat(params.textModel ?? 'gpt-4o');
-
-  if (params.mediaType === 'image') {
-    const { output } = await generateText({
-      model,
-      output: Output.object({ schema: ImageFollowupSchema }),
-      system: FOLLOWUP_PROMPT(params.tone, params.brand),
-      messages: buildHistory(params.messages),
-    });
-    const result = output!;
-    if (result.mode === 'chat') return { mode: 'chat', reply: result.reply };
-    if (result.mode === 'needs_context') return { mode: 'needs_context', reply: result.reply, questions: result.questions ?? [] };
-    return { mode: 'refined', reply: result.reply, package: result.package! as ImagePostPackage };
-  } else {
-    const { output } = await generateText({
-      model,
-      output: Output.object({ schema: VideoFollowupSchema }),
-      system: FOLLOWUP_PROMPT(params.tone, params.brand),
-      messages: buildHistory(params.messages),
-    });
-    const result = output!;
-    if (result.mode === 'chat') return { mode: 'chat', reply: result.reply };
-    if (result.mode === 'needs_context') return { mode: 'needs_context', reply: result.reply, questions: result.questions ?? [] };
-    return { mode: 'refined', reply: result.reply, package: result.package! as VideoPostPackage };
+      if (toolName === 'chat_reply') {
+        return { action: 'chat', reply: String(args.reply ?? '') };
+      }
+      if (toolName === 'ask_questions') {
+        return {
+          action: 'questions',
+          reply: String(args.reply ?? ''),
+          questions: (args.questions as PlannerQuestion[]) ?? [],
+        };
+      }
+      if (toolName === 'generate_image_draft') {
+        const { reply, ...pkg } = args;
+        return { action: 'image_draft', reply: String(reply ?? ''), package: pkg as unknown as ImagePostPackage };
+      }
+      if (toolName === 'generate_video_script') {
+        const { reply, ...pkg } = args;
+        return { action: 'video_script', reply: String(reply ?? ''), package: pkg as unknown as VideoPostPackage };
+      }
+    }
   }
+
+  // Fallback: use final text output as a chat reply
+  return {
+    action: 'chat',
+    reply: result.text || "I'm here to help! What would you like to create?",
+  };
 }
 
 // ─── Image description via GPT-4o vision ─────────────────────────────────────
@@ -245,77 +251,6 @@ export async function analyzeImageForDescription(params: {
     ],
   });
   return text;
-}
-
-// ─── Agentic pre-flight: resolve image context via tool calls ─────────────────
-
-/**
- * Runs a lightweight tool-calling pass before the main generation.
- * The model decides autonomously whether to call `analyze_image` based on
- * the user's message and the list of attached references.
- * Returns a context string (descriptions) to inject into conversation history,
- * or an empty string if the model decided no analysis was needed.
- *
- * Tool results are cached in `workspace_uploads.vision_description` via the
- * callbacks supplied by the caller.
- */
-export async function resolveImageContext(params: {
-  apiKey: string;
-  userMessage: string;
-  imageReferences: { uploadId: string; publicUrl: string; name: string }[];
-  getVisionDescription: (uploadId: string) => Promise<string | null>;
-  saveVisionDescription: (uploadId: string, description: string) => Promise<void>;
-}): Promise<string> {
-  if (params.imageReferences.length === 0) return '';
-
-  const openai = createOpenAI({ apiKey: params.apiKey });
-
-  const refList = params.imageReferences
-    .map((r) => `  - uploadId="${r.uploadId}"  name="${r.name}"`)
-    .join('\n');
-
-  const { text } = await generateText({
-    model: openai.chat('gpt-4o'),
-    stopWhen: stepCountIs(params.imageReferences.length + 1), // one step per image + final reply
-    system: `You are a vision pre-processor for a content-creation AI.
-The user has attached the following reference images:
-${refList}
-
-IMPORTANT: Call analyze_image for EVERY image listed above — no exceptions.
-The descriptions you gather will be injected as context for the main AI assistant.
-After calling the tool for each image, output a context block in this exact format:
-
-[Image: <name>] <description>
-
-One entry per image, each on its own line.`.trim(),
-    messages: [{ role: 'user', content: params.userMessage }],
-    tools: {
-      analyze_image: tool({
-        description: 'Get a detailed visual description of one of the attached reference images.',
-        inputSchema: z.object({
-          uploadId: z.string().describe('The uploadId of the image to analyze (from the list above)'),
-        }),
-        execute: async ({ uploadId }) => {
-          const ref = params.imageReferences.find((r) => r.uploadId === uploadId);
-          if (!ref) return 'Image not found.';
-
-          // Serve from cache if available
-          const cached = await params.getVisionDescription(uploadId);
-          if (cached) return cached;
-
-          // Live vision call — always gpt-4o
-          const description = await analyzeImageForDescription({
-            apiKey: params.apiKey,
-            imageUrl: ref.publicUrl,
-          });
-          await params.saveVisionDescription(uploadId, description);
-          return description;
-        },
-      }),
-    },
-  });
-
-  return text.trim();
 }
 
 // ─── Image generation (DALL-E 3 / gpt-image-1) ───────────────────────────────

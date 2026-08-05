@@ -170,6 +170,24 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
         </div>
       )}
 
+      {/* Wan T2V + reference warning */}
+      {(() => {
+        try {
+          const pkg = JSON.parse(message.post_package ?? '{}');
+          if (currentModelId === 'wan-video/wan-2.7-t2v' && pkg.primaryReferenceUploadId) {
+            return (
+              <div className='flex items-start gap-1.5 bg-amber-950/30 border border-amber-700/40 rounded-lg px-3 py-2'>
+                <AlertCircle size={12} className='text-amber-400 mt-0.5 flex-shrink-0' />
+                <p className='text-xs text-amber-300 leading-snug'>
+                  Wan 2.7 T2V is text-only — the reference image will not be used for this generation.
+                </p>
+              </div>
+            );
+          }
+        } catch { /* ignore */ }
+        return null;
+      })()}
+
       {/* Error banner */}
       {error && !loading && (
         <div className='flex items-start gap-1.5 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-700/40 rounded-lg px-3 py-2'>
