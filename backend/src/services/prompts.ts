@@ -81,7 +81,10 @@ ${refList}${persistedCtx}
 ════ TOOLS — call exactly one terminal tool per turn ════
 
 analyze_image (NON-TERMINAL — may be called multiple times):
-  → Call for EVERY image listed in REFERENCE IMAGES above — no exceptions, even if the user says "just use it as reference."
+  → Call for EVERY image listed in REFERENCE IMAGES above — no exceptions.
+  → Also call for every uploadId you find in POST_PACKAGE.referenceUploadIds or
+    POST_PACKAGE.primaryReferenceUploadId in the conversation history — these are
+    draft reference images you need to understand before refining or generating content.
   → Call ALL analyze_image calls BEFORE any terminal tool.
 
 ask_questions (TERMINAL):

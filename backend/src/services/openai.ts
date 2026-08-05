@@ -98,14 +98,16 @@ export async function runAgent(params: {
   persistedImageContext?: string;
   getVisionDescription: (uploadId: string) => Promise<string | null>;
   saveVisionDescription: (uploadId: string, description: string) => Promise<void>;
+  /** Resolve any upload ID the agent finds in the conversation (e.g. POST_PACKAGE.referenceUploadIds) */
+  resolveUpload: (uploadId: string) => Promise<{ publicUrl: string; name: string } | null>;
 }): Promise<AgentResult> {
   const openai = createOpenAI({ apiKey: params.apiKey });
   const imageReferences = params.imageReferences ?? [];
 
   const result = await generateText({
     model: openai.chat(params.textModel ?? 'gpt-4o'),
-    // Allow one step per attached image (for analyze_image) plus 5 for reasoning + terminal tool
-    stopWhen: stepCountIs(imageReferences.length + 5),
+    // Allow steps for: current-message refs + draft refs (unknown count) + reasoning + terminal tool
+    stopWhen: stepCountIs(Math.max(imageReferences.length + 8, 12)),
     system: AGENT_SYSTEM_PROMPT({
       tone: params.tone,
       captionStyle: params.captionStyle,
@@ -118,23 +120,27 @@ export async function runAgent(params: {
     tools: {
       analyze_image: tool({
         description:
-          'Get a detailed visual description of one of the attached reference images. ' +
-          'Call for every image listed in REFERENCE IMAGES before making any content decision.',
+          'Get a detailed visual description of any reference image. ' +
+          'Call for every image listed in REFERENCE IMAGES and for every uploadId ' +
+          'seen in POST_PACKAGE.referenceUploadIds or POST_PACKAGE.primaryReferenceUploadId ' +
+          'before making any content decision.',
         inputSchema: z.object({
           uploadId: z.string().describe('The uploadId of the image to analyze'),
         }),
         execute: async ({ uploadId }) => {
-          const ref = imageReferences.find((r) => r.uploadId === uploadId);
-          if (!ref) return 'Image not found in attached references.';
-
-          // Serve from cache when available
+          // 1. Serve from cache first — works for any uploadId, not just current attachments
           const cached = await params.getVisionDescription(uploadId);
           if (cached) return cached;
 
-          // Live vision call — always gpt-4o regardless of user model choice
+          // 2. Find publicUrl: current-message attachment first, then DB lookup
+          const ref = imageReferences.find((r) => r.uploadId === uploadId);
+          const publicUrl = ref?.publicUrl ?? (await params.resolveUpload(uploadId))?.publicUrl;
+          if (!publicUrl) return `Image ${uploadId} not found or has no public URL.`;
+
+          // 3. Live vision call — always gpt-4o
           const description = await analyzeImageForDescription({
             apiKey: params.apiKey,
-            imageUrl: ref.publicUrl,
+            imageUrl: publicUrl,
           });
           await params.saveVisionDescription(uploadId, description);
           return description;

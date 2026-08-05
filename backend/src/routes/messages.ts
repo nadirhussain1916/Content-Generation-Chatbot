@@ -41,14 +41,15 @@ messagesRouter.post('/:threadId/messages', async (c) => {
     const imageReferences = body.imageReferences ?? [];
 
     // ── Pre-load cached vision descriptions for newly attached images ─────────
-    // (The agent's analyze_image tool will serve from this cache when available)
-    type UploadRecord = { id: string; vision_description: string | null };
-    let uploadMap = new Map<string, UploadRecord>();
+    // uploadMap is also used as an in-process cache by getVisionDescription /
+    // resolveUpload so repeated DB lookups for the same ID are avoided.
+    type UploadRecord = { id: string; vision_description: string | null; public_url: string | null; name: string };
+    const uploadMap = new Map<string, UploadRecord>();
     if (imageReferences.length > 0) {
       try {
         const ids = imageReferences.map((r) => r.uploadId);
         const records = await getWorkspaceUploadsByIds(c.env.DB, ids, workspace.id);
-        uploadMap = new Map(records.results.map((u) => [u.id, u]));
+        for (const u of records.results) uploadMap.set(u.id, u);
       } catch (err) {
         Logger.log('UploadPreloadError', { workspaceId: workspace.id }, err);
       }
@@ -112,9 +113,35 @@ messagesRouter.post('/:threadId/messages', async (c) => {
       threadStatus: thread.status,
       imageReferences,
       persistedImageContext: persistedImageContext || undefined,
-      getVisionDescription: async (uploadId) => uploadMap.get(uploadId)?.vision_description ?? null,
+      // Check in-memory map first; fall back to DB for IDs not in current imageReferences
+      // (e.g. upload IDs the agent finds in POST_PACKAGE.referenceUploadIds)
+      getVisionDescription: async (uploadId) => {
+        const inMap = uploadMap.get(uploadId);
+        if (inMap !== undefined) return inMap.vision_description ?? null;
+        try {
+          const records = await getWorkspaceUploadsByIds(c.env.DB, [uploadId], workspace.id);
+          const u = records.results[0];
+          if (u) uploadMap.set(u.id, u); // cache for subsequent calls this turn
+          return u?.vision_description ?? null;
+        } catch { return null; }
+      },
       saveVisionDescription: async (uploadId, description) => {
         await updateWorkspaceUploadVisionDescription(c.env.DB, uploadId, description);
+        // Keep in-map cache fresh so a subsequent getVisionDescription hit is instant
+        const cached = uploadMap.get(uploadId);
+        if (cached) uploadMap.set(uploadId, { ...cached, vision_description: description });
+      },
+      // Resolve any upload ID the agent sees in the conversation to its public URL
+      resolveUpload: async (uploadId) => {
+        const inMap = uploadMap.get(uploadId);
+        if (inMap?.public_url) return { publicUrl: inMap.public_url, name: inMap.name };
+        try {
+          const records = await getWorkspaceUploadsByIds(c.env.DB, [uploadId], workspace.id);
+          const u = records.results[0];
+          if (u) uploadMap.set(u.id, u);
+          if (!u?.public_url) return null;
+          return { publicUrl: u.public_url, name: u.name };
+        } catch { return null; }
       },
     });
 
