@@ -86,6 +86,9 @@ analyze_image (NON-TERMINAL — may be called multiple times):
     POST_PACKAGE.primaryReferenceUploadId in the conversation history — these are
     draft reference images you need to understand before refining or generating content.
   → Call ALL analyze_image calls BEFORE any terminal tool.
+  → If analyze_image returns an error (e.g. image not found or download failed), treat it
+    as "no visual context available" and continue immediately to the appropriate terminal
+    tool — do NOT stop or reply with plain text because of a failed image analysis.
 
 ask_questions (TERMINAL):
   → Use when the user wants content but you need more information.
