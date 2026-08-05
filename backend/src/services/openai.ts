@@ -160,13 +160,18 @@ export async function runAgent(params: {
 
           // 3. Live vision call — always gpt-4o
           Logger.log('AnalyzeImageLiveVision', { uploadId, source: ref ? 'attached' : 'draft-ref' });
-          const description = await analyzeImageForDescription({
-            apiKey: params.apiKey,
-            imageUrl: publicUrl,
-          });
-          await params.saveVisionDescription(uploadId, description);
-          Logger.log('AnalyzeImageComplete', { uploadId, descriptionLength: description.length });
-          return description;
+          try {
+            const description = await analyzeImageForDescription({
+              apiKey: params.apiKey,
+              imageUrl: publicUrl,
+            });
+            await params.saveVisionDescription(uploadId, description);
+            Logger.log('AnalyzeImageComplete', { uploadId, descriptionLength: description.length });
+            return description;
+          } catch (err) {
+            Logger.log('AnalyzeImageFailed', { uploadId }, err);
+            return `Failed to analyze image ${uploadId} — vision API error.`;
+          }
         },
       }),
 
@@ -178,7 +183,10 @@ export async function runAgent(params: {
           reply: z.string().describe('Short intro message before the chip questions'),
           questions: z.array(QuestionSchema).describe('2-4 chip question groups'),
         }),
-        execute: async (input) => input,
+        execute: async (input) => {
+          Logger.log('ToolCall:ask_questions', { questionCount: input.questions.length });
+          return input;
+        },
       }),
 
       generate_image_draft: tool({
@@ -186,7 +194,15 @@ export async function runAgent(params: {
         inputSchema: ImagePostPackageSchema.extend({
           reply: z.string().describe('1-2 sentence message to the user about what was created'),
         }),
-        execute: async (input) => input,
+        execute: async (input) => {
+          Logger.log('ToolCall:generate_image_draft', {
+            imageSize: input.imageSize,
+            imageStyle: input.imageStyle,
+            hashtagCount: input.hashtags.length,
+            promptLength: input.imagePrompt.length,
+          });
+          return input;
+        },
       }),
 
       generate_video_script: tool({
@@ -194,7 +210,15 @@ export async function runAgent(params: {
         inputSchema: VideoPostPackageSchema.extend({
           reply: z.string().describe('1-2 sentence message to the user about what was created'),
         }),
-        execute: async (input) => input,
+        execute: async (input) => {
+          Logger.log('ToolCall:generate_video_script', {
+            estimatedDuration: input.script.estimatedDuration,
+            sceneCount: input.script.scenes.length,
+            hashtagCount: input.hashtags.length,
+            promptLength: input.videoPrompt.length,
+          });
+          return input;
+        },
       }),
 
       chat_reply: tool({
@@ -204,9 +228,19 @@ export async function runAgent(params: {
         inputSchema: z.object({
           reply: z.string().describe('Your message to the user'),
         }),
-        execute: async (input) => input,
+        execute: async (input) => {
+          Logger.log('ToolCall:chat_reply', { replyLength: input.reply.length });
+          return input;
+        },
       }),
     },
+  }).catch((err: unknown) => {
+    Logger.log('AgentGenerateTextFailed', {
+      model: params.textModel ?? 'gpt-4o',
+      threadStatus: params.threadStatus,
+      attachedImageCount: imageReferences.length,
+    }, err);
+    throw err; // re-throw so messages.ts returns a 500
   });
 
   Logger.log('AgentComplete', {
