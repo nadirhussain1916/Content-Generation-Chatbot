@@ -183,31 +183,31 @@ export async function runAgent(params: {
   // ── Extract result from the last terminal tool call ───────────────────────
   const terminalTools = new Set(['ask_questions', 'generate_image_draft', 'generate_video_script', 'chat_reply']);
 
-  // Cast to a simple shape to avoid fighting the AI SDK's complex union type
-  type FlatToolCall = { toolName: string; args: Record<string, unknown> };
+  // AI SDK v6 uses `input` (not `args`) on both StaticToolCall and DynamicToolCall
+  type FlatToolCall = { toolName: string; input: Record<string, unknown> };
 
   for (let i = result.steps.length - 1; i >= 0; i--) {
     const step = result.steps[i];
     for (const tc of step.toolCalls as unknown as FlatToolCall[]) {
       if (!terminalTools.has(tc.toolName)) continue;
-      const { toolName, args } = tc;
+      const { toolName, input } = tc;
 
       if (toolName === 'chat_reply') {
-        return { action: 'chat', reply: String(args.reply ?? '') };
+        return { action: 'chat', reply: String(input.reply ?? '') };
       }
       if (toolName === 'ask_questions') {
         return {
           action: 'questions',
-          reply: String(args.reply ?? ''),
-          questions: (args.questions as PlannerQuestion[]) ?? [],
+          reply: String(input.reply ?? ''),
+          questions: (input.questions as PlannerQuestion[]) ?? [],
         };
       }
       if (toolName === 'generate_image_draft') {
-        const { reply, ...pkg } = args;
+        const { reply, ...pkg } = input;
         return { action: 'image_draft', reply: String(reply ?? ''), package: pkg as unknown as ImagePostPackage };
       }
       if (toolName === 'generate_video_script') {
-        const { reply, ...pkg } = args;
+        const { reply, ...pkg } = input;
         return { action: 'video_script', reply: String(reply ?? ''), package: pkg as unknown as VideoPostPackage };
       }
     }
