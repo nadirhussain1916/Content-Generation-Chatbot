@@ -15,7 +15,7 @@ export default function WorkspacePage() {
   const { getToken } = useAuth();
   const [creating, setCreating] = useState(false);
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
-  const [textModel, setTextModel] = useState(() => readPref(TEXT_MODEL_KEY, DEFAULT_TEXT_MODEL));
+  const [textModel, setTextModel] = useState<string>(() => readPref(TEXT_MODEL_KEY, DEFAULT_TEXT_MODEL));
 
   useEffect(() => {
     (async () => {

@@ -27,7 +27,7 @@ export default function ThreadPage() {
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sidebarRefreshKey, setSidebarRefreshKey] = useState(0);
-  const [textModel, setTextModel] = useState(() => readPref(TEXT_MODEL_KEY, DEFAULT_TEXT_MODEL));
+  const [textModel, setTextModel] = useState<string>(() => readPref(TEXT_MODEL_KEY, DEFAULT_TEXT_MODEL));
   const initialMessageFiredRef = useRef(false);
   // keyed by message.id
   const [assetsByMessageId, setAssetsByMessageId] = useState<Record<string, Asset>>({});

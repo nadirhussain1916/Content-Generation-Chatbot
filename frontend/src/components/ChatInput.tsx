@@ -4,7 +4,7 @@ import { Paperclip, AtSign, X, Loader2, Send, ArrowUp } from 'lucide-react';
 import { cn } from '../lib/utils';
 import ModelPicker from './ModelPicker';
 import { useWorkspaceUploads } from '../hooks/useWorkspaceUploads';
-import { TEXT_MODELS, TEXT_MODEL_KEY, readPref, writePref } from '../lib/models';
+import { TEXT_MODELS, TEXT_MODEL_KEY, writePref } from '../lib/models';
 
 // All current generation models accept at most 1 reference image
 const GLOBAL_REF_CAP = 1;
