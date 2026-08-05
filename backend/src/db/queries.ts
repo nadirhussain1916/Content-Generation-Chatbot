@@ -1,4 +1,4 @@
-import type { User, Workspace, Thread, Message, Asset, SocialAccount, PublishRecord } from '../types';
+import type { User, Workspace, Thread, Message, Asset, SocialAccount, PublishRecord, WorkspaceUpload } from '../types';
 
 // ─── Users ────────────────────────────────────────────────────────────────────
 
@@ -213,4 +213,65 @@ export async function getExpiringTokens(db: D1Database, thresholdSecs: number) {
   return db.prepare(
     'SELECT * FROM social_accounts WHERE token_expires_at IS NOT NULL AND token_expires_at < ?'
   ).bind(now + thresholdSecs).all<SocialAccount>();
+}
+
+// ─── Workspace Uploads ────────────────────────────────────────────────────────
+
+export async function createWorkspaceUpload(db: D1Database, data: {
+  id: string;
+  workspace_id: string;
+  thread_id?: string | null;
+  uploaded_by: string;
+  name: string;
+  r2_key: string;
+  public_url: string;
+  mime_type?: string | null;
+}) {
+  return db.prepare(
+    `INSERT INTO workspace_uploads (id, workspace_id, thread_id, uploaded_by, name, r2_key, public_url, mime_type)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(
+    data.id, data.workspace_id, data.thread_id ?? null, data.uploaded_by,
+    data.name, data.r2_key, data.public_url, data.mime_type ?? null
+  ).run();
+}
+
+export async function getWorkspaceUploads(db: D1Database, workspaceId: string) {
+  return db.prepare(
+    'SELECT * FROM workspace_uploads WHERE workspace_id = ? ORDER BY created_at DESC'
+  ).bind(workspaceId).all<WorkspaceUpload>();
+}
+
+export async function getWorkspaceUploadsByIds(db: D1Database, ids: string[], workspaceId: string) {
+  if (ids.length === 0) return { results: [] as WorkspaceUpload[] };
+  const placeholders = ids.map(() => '?').join(', ');
+  return db.prepare(
+    `SELECT * FROM workspace_uploads WHERE id IN (${placeholders}) AND workspace_id = ?`
+  ).bind(...ids, workspaceId).all<WorkspaceUpload>();
+}
+
+export async function getWorkspaceUploadById(db: D1Database, id: string, workspaceId: string) {
+  return db.prepare(
+    'SELECT * FROM workspace_uploads WHERE id = ? AND workspace_id = ?'
+  ).bind(id, workspaceId).first<WorkspaceUpload>();
+}
+
+export async function deleteWorkspaceUpload(db: D1Database, id: string, workspaceId: string) {
+  return db.prepare(
+    'DELETE FROM workspace_uploads WHERE id = ? AND workspace_id = ?'
+  ).bind(id, workspaceId).run();
+}
+
+export async function updateWorkspaceUploadVisionDescription(db: D1Database, id: string, description: string) {
+  return db.prepare(
+    'UPDATE workspace_uploads SET vision_description = ? WHERE id = ?'
+  ).bind(description, id).run();
+}
+
+// ─── Message update (for PATCH references) ───────────────────────────────────
+
+export async function updateMessage(db: D1Database, id: string, data: { post_package: string }) {
+  return db.prepare(
+    'UPDATE messages SET post_package = ? WHERE id = ?'
+  ).bind(data.post_package, id).run();
 }

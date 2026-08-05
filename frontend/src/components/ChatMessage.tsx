@@ -1,7 +1,8 @@
-import { useState } from 'react';
-import type { Message, PlannerResult, PlannerQuestion, ImagePostPackage, VideoPostPackage, Asset } from '../types';
+import { useState, useEffect } from 'react';
+import { useAuth } from '@clerk/clerk-react';
+import type { Message, PlannerResult, PlannerQuestion, ImagePostPackage, VideoPostPackage, Asset, WorkspaceUpload } from '../types';
 import { cn } from '../lib/utils';
-import { ChevronDown, ChevronUp, Copy, Check, Hash, Loader2, Share2, CheckCircle, AlertCircle } from 'lucide-react';
+import { ChevronDown, ChevronUp, Copy, Check, Hash, Loader2, Share2, CheckCircle, AlertCircle, Star, X, Plus } from 'lucide-react';
 import GenerateImageButton from './GenerateImageButton';
 import GenerateVideoButton from './GenerateVideoButton';
 import { usePublishStatus } from '../hooks/usePublishStatus';
@@ -14,12 +15,87 @@ interface ChatMessageProps {
   slug?: string;
   threadId?: string;
   onAssetGenerated?: (asset: Asset) => void;
+  // Reference image thumbnails to display in user bubbles
+  attachedImages?: { publicUrl: string; name: string }[];
+  // For the draft card reference picker
+  uploads?: WorkspaceUpload[];
+  imageAssets?: Asset[];
 }
 
-export default function ChatMessage({ message, onOptionSelect, asset, assetBlobUrl, slug, threadId, onAssetGenerated }: ChatMessageProps) {
+export default function ChatMessage({ message, onOptionSelect, asset, assetBlobUrl, slug, threadId, onAssetGenerated, attachedImages, uploads = [], imageAssets = [] }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState(true);
   const { status: publishStatus, publish } = usePublishStatus(slug, asset?.id);
+  const { getToken } = useAuth();
+
+  // Local post_package state for optimistic draft reference edits
+  const [localPkg, setLocalPkg] = useState<(ImagePostPackage & VideoPostPackage) | null>(() => {
+    try { return message.post_package ? JSON.parse(message.post_package) : null; } catch { return null; }
+  });
+  const [refPickerOpen, setRefPickerOpen] = useState(false);
+
+  // Sync from prop only when the message id changes (avoid clobbering local edits during polls)
+  useEffect(() => {
+    try { setLocalPkg(message.post_package ? JSON.parse(message.post_package) : null); } catch { setLocalPkg(null); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [message.id]);
+
+  const BACKEND = import.meta.env.VITE_API_BASE_URL ?? '';
+
+  async function patchReferences(referenceUploadIds: string[], primaryReferenceUploadId: string | null) {
+    if (!slug || !threadId) return;
+    const token = await getToken();
+    try {
+      await fetch(
+        `${BACKEND}/api/workspaces/${slug}/threads/${threadId}/messages/${message.id}/references`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token && { Authorization: `Bearer ${token}` }),
+          },
+          body: JSON.stringify({ referenceUploadIds, primaryReferenceUploadId }),
+        }
+      );
+    } catch { /* revert handled by caller */ }
+  }
+
+  function optimisticUpdateRefs(referenceUploadIds: string[], primaryReferenceUploadId: string | null) {
+    const prevPkg = localPkg;
+    setLocalPkg((prev) => prev ? { ...prev, referenceUploadIds, primaryReferenceUploadId } : prev);
+    patchReferences(referenceUploadIds, primaryReferenceUploadId).catch(() => {
+      // Revert on error
+      setLocalPkg(prevPkg);
+    });
+  }
+
+  function removeRef(uploadId: string) {
+    const ids = (localPkg?.referenceUploadIds ?? []).filter((id) => id !== uploadId);
+    let primary = localPkg?.primaryReferenceUploadId ?? null;
+    if (primary === uploadId) primary = ids[0] ?? null;
+    optimisticUpdateRefs(ids, primary);
+  }
+
+  function swapPrimary(uploadId: string) {
+    const ids = localPkg?.referenceUploadIds ?? [];
+    optimisticUpdateRefs(ids, uploadId);
+  }
+
+  function addRef(upload: WorkspaceUpload) {
+    const ids = [...(localPkg?.referenceUploadIds ?? [])];
+    if (ids.includes(upload.id)) return;
+    ids.push(upload.id);
+    const primary = localPkg?.primaryReferenceUploadId ?? ids[0] ?? null;
+    optimisticUpdateRefs(ids, primary);
+    setRefPickerOpen(false);
+  }
+
+  function getRefUrl(uploadId: string): string | undefined {
+    const u = uploads.find((up) => up.id === uploadId);
+    if (u) return u.public_url;
+    const a = imageAssets.find((a) => a.id === uploadId);
+    return a?.public_url ?? undefined;
+  }
 
   async function handlePublish(platform: 'instagram' | 'tiktok') {
     if (!asset || !slug || !message.post_package) return;
@@ -58,8 +134,23 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
   if (isUser) {
     return (
       <div className='flex justify-end'>
-        <div className='max-w-[75%] bg-surface-white border border-black/[0.04] dark:border-white/[0.06] text-text-primary rounded-2xl rounded-br-[4px] px-4 py-2.5 text-message shadow-[0_2px_10px_rgba(0,0,0,0.03)]'>
-          {message.content}
+        <div className='max-w-[75%] space-y-1.5'>
+          {attachedImages && attachedImages.length > 0 && (
+            <div className='flex flex-wrap gap-1.5 justify-end'>
+              {attachedImages.map((img) => (
+                <img
+                  key={img.publicUrl}
+                  src={img.publicUrl}
+                  alt={img.name}
+                  title={img.name}
+                  className='w-12 h-12 object-cover rounded-lg border-2 border-violet-400/60'
+                />
+              ))}
+            </div>
+          )}
+          <div className='bg-surface-white border border-black/[0.04] dark:border-white/[0.06] text-text-primary rounded-2xl rounded-br-[4px] px-4 py-2.5 text-message shadow-[0_2px_10px_rgba(0,0,0,0.03)]'>
+            {message.content}
+          </div>
         </div>
       </div>
     );
@@ -86,9 +177,11 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
 
   // Draft / PostPackage card
   if (isDraft && postPackage) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const pkg = postPackage as any as ImagePostPackage & VideoPostPackage;
+    // Use localPkg for reference fields (supports optimistic edits); fall back to postPackage for everything else
+    const pkg = (localPkg ?? postPackage) as ImagePostPackage & VideoPostPackage;
     const isVideo = 'script' in (postPackage as object);
+    const refIds: string[] = pkg.referenceUploadIds ?? [];
+    const primaryId = pkg.primaryReferenceUploadId ?? null;
 
     return (
       <div className='flex justify-start'>
@@ -247,6 +340,83 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
               {/* TikTok title */}
               {pkg.title && (
                 <Section label='TikTok Title' value={pkg.title} onCopy={() => copy(pkg.title)} copied={copied} />
+              )}
+
+              {/* ── References section ── */}
+              {(refIds.length > 0 || (uploads.length > 0 || imageAssets.length > 0)) && (
+                <div>
+                  <p className='text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2'>References</p>
+                  <div className='flex flex-wrap gap-2'>
+                    {refIds.map((id) => {
+                      const url = getRefUrl(id);
+                      const isPrimary = id === primaryId;
+                      if (!url) return null;
+                      return (
+                        <div key={id} className='relative group'>
+                          <button
+                            onClick={() => !isPrimary && swapPrimary(id)}
+                            title={isPrimary ? 'Primary reference' : 'Make primary'}
+                          >
+                            <img
+                              src={url}
+                              alt='Reference'
+                              className={cn(
+                                'w-14 h-14 object-cover rounded-lg border-2 transition-all',
+                                isPrimary
+                                  ? 'border-violet-500'
+                                  : 'border-gray-200 dark:border-gray-700 hover:border-violet-400'
+                              )}
+                            />
+                          </button>
+                          {isPrimary && (
+                            <Star
+                              size={12}
+                              className='absolute -top-1.5 -left-1.5 fill-violet-500 text-violet-500'
+                            />
+                          )}
+                          <button
+                            onClick={() => removeRef(id)}
+                            className='absolute -top-1.5 -right-1.5 bg-gray-800 dark:bg-gray-200 text-white dark:text-gray-900 rounded-full p-px opacity-0 group-hover:opacity-100 transition-opacity'
+                          >
+                            <X size={10} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                    {/* Add reference button */}
+                    <div className='relative'>
+                      <button
+                        onClick={() => setRefPickerOpen((o) => !o)}
+                        className='w-14 h-14 flex items-center justify-center rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-700 text-gray-400 hover:border-violet-500 hover:text-violet-500 transition-colors'
+                        title='Add reference'
+                      >
+                        <Plus size={16} />
+                      </button>
+                      {refPickerOpen && (
+                        <div className='absolute bottom-16 left-0 z-20 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3 w-56 max-h-52 overflow-y-auto'>
+                          <div className='flex items-center justify-between mb-2'>
+                            <span className='text-xs font-medium text-gray-500'>Pick a reference</span>
+                            <button onClick={() => setRefPickerOpen(false)}>
+                              <X size={12} className='text-gray-400' />
+                            </button>
+                          </div>
+                          <div className='flex flex-wrap gap-2'>
+                            {uploads.map((u) => (
+                              <button key={u.id} onClick={() => addRef(u)} title={u.name}>
+                                <img src={u.public_url} alt={u.name} className={cn('w-12 h-12 object-cover rounded-lg border-2 transition-all', refIds.includes(u.id) ? 'border-violet-500' : 'border-gray-200 dark:border-gray-700 hover:border-violet-400')} />
+                              </button>
+                            ))}
+                            {imageAssets.map((a) => a.public_url && (
+                              <button key={a.id} onClick={() => addRef({ id: a.id, name: a.id, public_url: a.public_url!, workspace_id: '', thread_id: null, mime_type: null, vision_description: null, created_at: 0 })} title='Generated image'>
+                                <img src={a.public_url} alt='Generated' className={cn('w-12 h-12 object-cover rounded-lg border-2 transition-all', refIds.includes(a.id) ? 'border-violet-500' : 'border-gray-200 dark:border-gray-700 hover:border-violet-400')} />
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
           )}

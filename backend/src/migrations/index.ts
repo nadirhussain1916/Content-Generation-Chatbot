@@ -8,6 +8,7 @@ import { migratePublishRecordsTable } from './007_publish_records';
 import { migrateWorkspaceBrandFields } from './008_workspace_brand';
 import { migrateWorkspaceMediaDefaults } from './009_workspace_media_defaults';
 import { migrateAssetErrorColumn } from './010_asset_error';
+import { migrateWorkspaceUploadsTable } from './011_workspace_uploads';
 
 export async function runAllMigrations(db: D1Database): Promise<string[]> {
   const all: string[] = ['[Migrations] Starting...'];
@@ -23,6 +24,7 @@ export async function runAllMigrations(db: D1Database): Promise<string[]> {
     migrateWorkspaceBrandFields,
     migrateWorkspaceMediaDefaults,
     migrateAssetErrorColumn,
+    migrateWorkspaceUploadsTable,
   ];
 
   for (const migrate of migrations) {

@@ -14,6 +14,9 @@ export type GenerationParams =
       prompt: string;
       size?: '1024x1024' | '1024x1792' | '1792x1024';
       imageModel?: string;
+      referenceImageUrl?: string;
+      referenceVisionDescription?: string;
+      generationMode?: 'edit' | 'inspire';
     }
   | {
       type: 'video';
@@ -23,6 +26,7 @@ export type GenerationParams =
       prompt: string;
       predictionId: string;
       aspectRatio?: '16:9' | '9:16';
+      referenceImageUrl?: string;
     }
   | {
       // LTX 2.3 Pro extend chaining — generates an initial clip then extends it N times.
@@ -37,6 +41,7 @@ export type GenerationParams =
       initialDuration: number;  // 6, 8, or 10 — LTX Pro initial clip length
       extendDuration: number;   // seconds to add per extend call (max 20)
       chainCount: number;       // number of extend calls after the initial clip (1–6)
+      referenceImageUrl?: string;
     };
 
 const KV_TTL = 60 * 60 * 24; // 24 h — long enough to cover any polling window
@@ -78,6 +83,9 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
             prompt: p.prompt,
             size: p.size,
             imageModel: p.imageModel,
+            referenceImageUrl: p.referenceImageUrl,
+            referenceVisionDescription: p.referenceVisionDescription,
+            generationMode: p.generationMode,
           });
         });
 
@@ -193,16 +201,20 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
       };
 
       try {
-        // Step 1 — create and wait for the initial text_to_video clip
+        // Step 1 — create and wait for the initial clip (image_to_video if reference provided)
         const initialPredId = await step.do('create-initial-prediction', async () => {
-          return createReplicatePrediction(token, 'lightricks/ltx-2.3-pro', {
-            task: 'text_to_video',
+          const input: Record<string, unknown> = {
+            task: p.referenceImageUrl ? 'image_to_video' : 'text_to_video',
             prompt: p.prompt,
             aspect_ratio: p.aspectRatio,
             duration: p.initialDuration,
             resolution: '1080p',
             generate_audio: true,
-          });
+          };
+          if (p.referenceImageUrl) {
+            input['image'] = p.referenceImageUrl;
+          }
+          return createReplicatePrediction(token, 'lightricks/ltx-2.3-pro', input);
         });
 
         const initialResult = await step.do('wait-for-initial', {

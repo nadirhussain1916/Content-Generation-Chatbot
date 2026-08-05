@@ -1,5 +1,5 @@
 import { createOpenAI } from '@ai-sdk/openai';
-import { generateText, Output } from 'ai';
+import { generateText, Output, tool, stepCountIs } from 'ai';
 import { z } from 'zod';
 import { PLANNER_PROMPT, IMAGE_DRAFT_PROMPT, VIDEO_SCRIPT_PROMPT, FOLLOWUP_PROMPT, type WorkspaceBrand } from './prompts';
 import type { ImagePostPackage, VideoPostPackage } from '../types';
@@ -214,16 +214,164 @@ export async function runFollowup(params: {
   }
 }
 
-// ─── Image generation (DALL-E 3) ─────────────────────────────────────────────
+// ─── Image description via GPT-4o vision ─────────────────────────────────────
+
+/**
+ * Analyzes an image URL and returns a concise text description.
+ * Always uses gpt-4o regardless of the user's textModel choice.
+ * Result is cached in workspace_uploads.vision_description by the caller.
+ */
+export async function analyzeImageForDescription(params: {
+  apiKey: string;
+  imageUrl: string;
+}): Promise<string> {
+  const openai = createOpenAI({ apiKey: params.apiKey });
+  const { text } = await generateText({
+    model: openai.chat('gpt-4o'),
+    messages: [
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: 'Describe this image in detail for use as a reference in content creation. Include visual style, colors, composition, key elements, and any text or logos visible. Keep it under 150 words.',
+          },
+          {
+            type: 'image',
+            image: new URL(params.imageUrl),
+          },
+        ],
+      },
+    ],
+  });
+  return text;
+}
+
+// ─── Agentic pre-flight: resolve image context via tool calls ─────────────────
+
+/**
+ * Runs a lightweight tool-calling pass before the main generation.
+ * The model decides autonomously whether to call `analyze_image` based on
+ * the user's message and the list of attached references.
+ * Returns a context string (descriptions) to inject into conversation history,
+ * or an empty string if the model decided no analysis was needed.
+ *
+ * Tool results are cached in `workspace_uploads.vision_description` via the
+ * callbacks supplied by the caller.
+ */
+export async function resolveImageContext(params: {
+  apiKey: string;
+  userMessage: string;
+  imageReferences: { uploadId: string; publicUrl: string; name: string }[];
+  getVisionDescription: (uploadId: string) => Promise<string | null>;
+  saveVisionDescription: (uploadId: string, description: string) => Promise<void>;
+}): Promise<string> {
+  if (params.imageReferences.length === 0) return '';
+
+  const openai = createOpenAI({ apiKey: params.apiKey });
+
+  const refList = params.imageReferences
+    .map((r) => `  - uploadId="${r.uploadId}"  name="${r.name}"`)
+    .join('\n');
+
+  const { text } = await generateText({
+    model: openai.chat('gpt-4o'),
+    stopWhen: stepCountIs(params.imageReferences.length + 1), // one step per image + final reply
+    system: `You are a vision pre-processor for a content-creation AI.
+The user has attached the following reference images:
+${refList}
+
+IMPORTANT: Call analyze_image for EVERY image listed above — no exceptions.
+The descriptions you gather will be injected as context for the main AI assistant.
+After calling the tool for each image, output a context block in this exact format:
+
+[Image: <name>] <description>
+
+One entry per image, each on its own line.`.trim(),
+    messages: [{ role: 'user', content: params.userMessage }],
+    tools: {
+      analyze_image: tool({
+        description: 'Get a detailed visual description of one of the attached reference images.',
+        inputSchema: z.object({
+          uploadId: z.string().describe('The uploadId of the image to analyze (from the list above)'),
+        }),
+        execute: async ({ uploadId }) => {
+          const ref = params.imageReferences.find((r) => r.uploadId === uploadId);
+          if (!ref) return 'Image not found.';
+
+          // Serve from cache if available
+          const cached = await params.getVisionDescription(uploadId);
+          if (cached) return cached;
+
+          // Live vision call — always gpt-4o
+          const description = await analyzeImageForDescription({
+            apiKey: params.apiKey,
+            imageUrl: ref.publicUrl,
+          });
+          await params.saveVisionDescription(uploadId, description);
+          return description;
+        },
+      }),
+    },
+  });
+
+  return text.trim();
+}
+
+// ─── Image generation (DALL-E 3 / gpt-image-1) ───────────────────────────────
 
 export async function generateDalleImage(params: {
   apiKey: string;
   prompt: string;
   size?: '1024x1024' | '1024x1792' | '1792x1024';
   imageModel?: string; // 'gpt-image-1' (default) | 'dall-e-3'
+  referenceImageUrl?: string;          // R2 public URL of the reference image
+  referenceVisionDescription?: string; // cached vision description (for inspire mode)
+  generationMode?: 'edit' | 'inspire'; // edit = /edits endpoint; inspire = enrich prompt
 }): Promise<string> {
   const model = params.imageModel ?? 'gpt-image-1';
-  // dall-e-3 uses 'standard'/'hd'; gpt-image-1 uses 'auto'
+
+  // ── Edit mode: use /v1/images/edits (gpt-image-1 only) ───────────────────
+  if (params.generationMode === 'edit' && params.referenceImageUrl && model !== 'dall-e-3') {
+    // Fetch the reference image bytes from R2
+    const imgRes = await fetch(params.referenceImageUrl);
+    if (!imgRes.ok) throw new Error(`Failed to fetch reference image: ${imgRes.statusText}`);
+    const imgBuffer = await imgRes.arrayBuffer();
+    const imgBlob = new Blob([imgBuffer], { type: imgRes.headers.get('Content-Type') ?? 'image/png' });
+
+    const formData = new FormData();
+    formData.append('model', model);
+    formData.append('image[]', imgBlob, 'reference.png');
+    formData.append('prompt', params.prompt);
+    formData.append('n', '1');
+    formData.append('size', params.size ?? '1024x1024');
+
+    const response = await fetch('https://api.openai.com/v1/images/edits', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${params.apiKey}` },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(`gpt-image-1 edits error: ${err}`);
+    }
+
+    const data = (await response.json()) as { data: { url?: string; b64_json?: string }[] };
+    const item = data.data[0];
+    if (!item) throw new Error('gpt-image-1 edits returned no image data');
+    if (item.url) return item.url;
+    if (item.b64_json) return `data:image/png;base64,${item.b64_json}`;
+    throw new Error('gpt-image-1 edits returned neither url nor b64_json');
+  }
+
+  // ── Inspire mode: enrich prompt with vision description ──────────────────
+  let finalPrompt = params.prompt;
+  if (params.generationMode === 'inspire' && params.referenceVisionDescription) {
+    finalPrompt = `Inspired by this reference: ${params.referenceVisionDescription}\n\n${params.prompt}`;
+  }
+
+  // ── Standard generation ───────────────────────────────────────────────────
   const quality = model === 'dall-e-3' ? 'standard' : 'auto';
 
   const response = await fetch('https://api.openai.com/v1/images/generations', {
@@ -234,7 +382,7 @@ export async function generateDalleImage(params: {
     },
     body: JSON.stringify({
       model,
-      prompt: params.prompt,
+      prompt: finalPrompt,
       n: 1,
       size: params.size ?? '1024x1024',
       quality,

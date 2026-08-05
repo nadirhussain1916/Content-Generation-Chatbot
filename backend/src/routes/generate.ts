@@ -1,11 +1,12 @@
 import { Hono } from 'hono';
 import { authMiddleware, workspaceMiddleware } from '../middleware/auth';
-import { getThread, createAsset, updateAsset, getAsset, getAssetsByWorkspace } from '../db/queries';
+import { getThread, createAsset, updateAsset, getAsset, getAssetsByWorkspace, getWorkspaceUploadsByIds, updateWorkspaceUploadVisionDescription } from '../db/queries';
 import type { CloudflareBindings } from '../env';
 import type { ContextVariables, TfResponse, Asset } from '../types';
 import { Logger } from '../utils/Logger';
 import { withPublicUrl } from '../services/r2';
 import { kvRateLimiter } from '../middleware/rateLimiter';
+import { analyzeImageForDescription } from '../services/openai';
 
 type Env = { Bindings: CloudflareBindings; Variables: ContextVariables };
 
@@ -38,6 +39,8 @@ generateRouter.post('/image', async (c) => {
       threadId: string; prompt: string; messageId?: string;
       size?: '1024x1024' | '1024x1792' | '1792x1024';
       imageModel?: string;
+      referenceUploadId?: string;
+      generationMode?: 'edit' | 'inspire';
     };
     if (!body.threadId || !body.prompt) {
       return c.json<TfResponse<null>>({ success: false, message: 'threadId and prompt are required' }, 400);
@@ -69,6 +72,32 @@ generateRouter.post('/image', async (c) => {
     );
 
     // Trigger Workflow — durable, retriable, no 30 s CPU limit
+    // Resolve reference image if provided
+    let referenceImageUrl: string | undefined;
+    let referenceVisionDescription: string | undefined;
+    if (body.referenceUploadId) {
+      const uploads = await getWorkspaceUploadsByIds(c.env.DB, [body.referenceUploadId], workspace.id);
+      const upload = uploads.results[0];
+      if (upload) {
+        referenceImageUrl = upload.public_url;
+        if (body.generationMode === 'inspire') {
+          if (upload.vision_description) {
+            referenceVisionDescription = upload.vision_description;
+          } else {
+            try {
+              referenceVisionDescription = await analyzeImageForDescription({
+                apiKey: c.env.OPENAI_API_KEY,
+                imageUrl: upload.public_url,
+              });
+              await updateWorkspaceUploadVisionDescription(c.env.DB, upload.id, referenceVisionDescription);
+            } catch (err) {
+              Logger.log('VisionAnalysisError', { uploadId: upload.id }, err);
+            }
+          }
+        }
+      }
+    }
+
     await c.env.GENERATION_WORKFLOW.create({
       id: assetId,
       params: {
@@ -79,6 +108,9 @@ generateRouter.post('/image', async (c) => {
         prompt: body.prompt,
         size: imageSize as '1024x1024' | '1024x1792' | '1792x1024',
         imageModel: body.imageModel,
+        referenceImageUrl,
+        referenceVisionDescription,
+        generationMode: body.generationMode,
       },
     });
 
@@ -107,6 +139,7 @@ generateRouter.post('/video', async (c) => {
       // LTX 2.3 Pro extend chaining — only honoured when videoModel is 'lightricks/ltx-2.3-pro'
       chainCount?: number;    // number of extend calls to append (1–6); 0 or absent = no chaining
       extendDuration?: number; // seconds per extend (1–20); defaults to 20
+      referenceUploadId?: string;
     };
     if (!body.threadId || !body.prompt) {
       return c.json<TfResponse<null>>({ success: false, message: 'threadId and prompt are required' }, 400);
@@ -121,57 +154,70 @@ generateRouter.post('/video', async (c) => {
       return c.json<TfResponse<null>>({ success: false, message: 'Video generation is not configured' }, 501);
     }
 
+    // ── Resolve reference image for video generation ──────────────────────────
+    let videoReferenceImageUrl: string | undefined;
+    if (body.referenceUploadId) {
+      const refUploads = await getWorkspaceUploadsByIds(c.env.DB, [body.referenceUploadId], workspace.id);
+      videoReferenceImageUrl = refUploads.results[0]?.public_url;
+    }
+
     // ── Per-model config ──────────────────────────────────────────────────────
     // Each entry defines the Replicate model slug and how to build its input.
     // The workflow just polls the prediction ID — it doesn't need to know the model.
     type VideoModelConfig = {
       slug: string;
-      buildInput: (prompt: string, aspectRatio: string, duration: number) => Record<string, unknown>;
+      buildInput: (prompt: string, aspectRatio: string, duration: number, referenceImageUrl?: string) => Record<string, unknown>;
     };
 
     const VIDEO_MODEL_CONFIGS: Record<string, VideoModelConfig> = {
       'google/veo-2': {
         slug: 'google/veo-2',
-        buildInput: (prompt, aspectRatio, duration) => ({
+        buildInput: (prompt, aspectRatio, duration, referenceImageUrl) => ({
           prompt,
           aspect_ratio: aspectRatio,
           duration,
+          ...(referenceImageUrl && { image_url: referenceImageUrl }),
         }),
       },
       'lightricks/ltx-2.3-fast': {
         slug: 'lightricks/ltx-2.3-fast',
-        buildInput: (prompt, aspectRatio, duration) => ({
+        buildInput: (prompt, aspectRatio, duration, referenceImageUrl) => ({
           prompt,
           aspect_ratio: aspectRatio,
           duration,
+          ...(referenceImageUrl && { image: referenceImageUrl }),
         }),
       },
       'lightricks/ltx-2.3-pro': {
         slug: 'lightricks/ltx-2.3-pro',
-        buildInput: (prompt, aspectRatio, duration) => ({
+        buildInput: (prompt, aspectRatio, duration, referenceImageUrl) => ({
           prompt,
           aspect_ratio: aspectRatio,
           duration,
+          ...(referenceImageUrl && { image: referenceImageUrl }),
         }),
       },
       'bytedance/seedance-2.0': {
         slug: 'bytedance/seedance-2.0',
-        buildInput: (prompt, aspectRatio, duration) => ({
+        buildInput: (prompt, aspectRatio, duration, referenceImageUrl) => ({
           prompt,
           aspect_ratio: aspectRatio,
           duration,
+          ...(referenceImageUrl && { image: referenceImageUrl }),
         }),
       },
       'bytedance/seedance-2.0-fast': {
         slug: 'bytedance/seedance-2.0-fast',
-        buildInput: (prompt, aspectRatio, duration) => ({
+        buildInput: (prompt, aspectRatio, duration, referenceImageUrl) => ({
           prompt,
           aspect_ratio: aspectRatio,
           duration,
+          ...(referenceImageUrl && { image: referenceImageUrl }),
         }),
       },
       'wan-video/wan-2.7-t2v': {
         slug: 'wan-video/wan-2.7-t2v',
+        // Text-only model — ignores referenceImageUrl
         buildInput: (prompt, aspectRatio, duration) => ({
           prompt,
           aspect_ratio: aspectRatio,
@@ -181,11 +227,12 @@ generateRouter.post('/video', async (c) => {
       },
       'wan-video/wan-2.7-i2v': {
         slug: 'wan-video/wan-2.7-i2v',
-        buildInput: (prompt, aspectRatio, duration) => ({
+        buildInput: (prompt, aspectRatio, duration, referenceImageUrl) => ({
           prompt,
           aspect_ratio: aspectRatio,
           duration,
           resolution: '720p',
+          ...(referenceImageUrl && { image_url: referenceImageUrl }),
         }),
       },
     };
@@ -252,6 +299,7 @@ generateRouter.post('/video', async (c) => {
           initialDuration: VALID_DURATIONS.has(videoDuration) ? videoDuration : 10,
           extendDuration,
           chainCount,
+          referenceImageUrl: videoReferenceImageUrl,
         },
       });
 
@@ -273,7 +321,7 @@ generateRouter.post('/video', async (c) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          input: modelConfig.buildInput(body.prompt, videoAspectRatio, videoDuration),
+          input: modelConfig.buildInput(body.prompt, videoAspectRatio, videoDuration, videoReferenceImageUrl),
         }),
       }
     );
@@ -319,6 +367,7 @@ generateRouter.post('/video', async (c) => {
         prompt: body.prompt,
         predictionId: prediction.id,
         aspectRatio: videoAspectRatio as '16:9' | '9:16',
+        referenceImageUrl: videoReferenceImageUrl,
       },
     });
 

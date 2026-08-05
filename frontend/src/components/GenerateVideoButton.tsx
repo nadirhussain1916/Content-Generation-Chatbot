@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '@clerk/clerk-react';
 import { api } from '../lib/api';
-import type { TfResponse, Asset, Message } from '../types';
+import type { TfResponse, Asset, Message, VideoPostPackage } from '../types';
 import { Video, Loader2, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
 import { cn } from '../lib/utils';
 import ModelPicker from './ModelPicker';
@@ -72,9 +72,11 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
     setError(null);
 
     try {
-      const pkg = JSON.parse(message.post_package);
+      const pkg = JSON.parse(message.post_package) as Partial<VideoPostPackage>;
       const prompt = pkg.videoPrompt;
       if (!prompt) { setError('No video prompt in this draft'); return; }
+
+      const primaryReferenceUploadId = pkg.primaryReferenceUploadId ?? null;
 
       const token = await getToken();
       const res = await api.post<TfResponse<{ assetId: string; predictionId: string; status: string }>>(
@@ -89,6 +91,7 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
           ...(isLtxPro && chainCount > 0
             ? { duration: 10, chainCount, extendDuration: 20 }
             : supportsDuration && { duration: Number(duration) }),
+          ...(primaryReferenceUploadId && { referenceUploadId: primaryReferenceUploadId }),
         },
         token ?? undefined
       );

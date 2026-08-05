@@ -8,10 +8,11 @@ import AppShell from '../components/AppShell';
 import Sidebar from '../components/Sidebar';
 import ChatMessage from '../components/ChatMessage';
 import PublishBar from '../components/PublishBar';
-import ModelPicker from '../components/ModelPicker';
-import { Send, Loader2, ArrowLeft } from 'lucide-react';
+import ChatInput, { type ImageReference } from '../components/ChatInput';
+import { Loader2, ArrowLeft } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { TEXT_MODELS, DEFAULT_TEXT_MODEL, TEXT_MODEL_KEY, readPref, writePref } from '../lib/models';
+import { useWorkspaceUploads } from '../hooks/useWorkspaceUploads';
+import { DEFAULT_TEXT_MODEL, TEXT_MODEL_KEY, readPref, writePref } from '../lib/models';
 
 const POLL_INTERVAL_MS = 8000; // poll every 8 s — video generation can take 2-3 min
 
@@ -23,7 +24,6 @@ export default function ThreadPage() {
 
   const [thread, setThread] = useState<Thread | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sidebarRefreshKey, setSidebarRefreshKey] = useState(0);
@@ -34,8 +34,12 @@ export default function ThreadPage() {
   const [blobUrlsByMessageId, setBlobUrlsByMessageId] = useState<Record<string, string>>({});
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Map tempId → attached images for optimistic user bubble rendering
+  const attachmentsByTempId = useRef<Record<string, ImageReference[]>>({});
+
+  const { uploads } = useWorkspaceUploads(slug, getToken);
+
   const bottomRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const BACKEND = import.meta.env.VITE_API_BASE_URL ?? '';
 
@@ -149,12 +153,20 @@ export default function ThreadPage() {
   useEffect(() => {
     if (loading) return;
     if (initialMessageFiredRef.current) return;
-    const msg = (location.state as { initialMessage?: string } | null)?.initialMessage;
+    const state = location.state as {
+      initialMessage?: string;
+      imageReferences?: { uploadId: string; publicUrl: string; name: string }[];
+    } | null;
+    const msg = state?.initialMessage;
     if (!msg) return;
     initialMessageFiredRef.current = true;
     // Clear from history so a page refresh doesn't re-send
     window.history.replaceState({}, '');
-    sendMessage(msg);
+    // Pass refs directly to avoid stale-closure issue with component state
+    sendMessage(
+      msg,
+      state?.imageReferences?.map((r) => ({ uploadId: r.uploadId, name: r.name, publicUrl: r.publicUrl }))
+    );
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading]);
 
@@ -162,7 +174,7 @@ export default function ThreadPage() {
     navigate(`/workspaces/${slug}`);
   }
 
-  async function sendMessage(content: string) {
+  async function sendMessage(content: string, imageReferences: ImageReference[] = []) {
     if (!content.trim() || sending) return;
     setSending(true);
 
@@ -177,8 +189,10 @@ export default function ThreadPage() {
       post_package: null,
       created_at: Math.floor(Date.now() / 1000),
     };
+    if (imageReferences.length > 0) {
+      attachmentsByTempId.current[tempId] = imageReferences;
+    }
     setMessages((prev) => [...prev, tempMsg]);
-    setInput('');
 
     try {
       const token = await getToken();
@@ -187,44 +201,43 @@ export default function ThreadPage() {
         assistantMessage: Message;
       }>>(
         `/api/workspaces/${slug}/threads/${threadId}/messages`,
-        { content: content.trim(), textModel },
+        { content: content.trim(), textModel, imageReferences },
         token ?? undefined
       );
 
       if (res.success && res.data) {
-        // Replace temp with real user message, add assistant message
         setMessages((prev) => [
           ...prev.filter((m) => m.id !== tempId),
           { ...tempMsg, id: res.data!.userMessage.id },
           res.data!.assistantMessage,
         ]);
-        // Refresh thread to get updated status + title
+        // Migrate attachment annotation to real message id
+        if (imageReferences.length > 0) {
+          attachmentsByTempId.current[res.data.userMessage.id] = imageReferences;
+          delete attachmentsByTempId.current[tempId];
+        }
+        // Refresh thread title + status
         const threadRes = await api.get<TfResponse<{ thread: Thread; messages: Message[] }>>(
           `/api/workspaces/${slug}/threads/${threadId}`,
           token ?? undefined
         );
         if (threadRes.success && threadRes.data) {
           setThread(threadRes.data.thread);
-          // Bump sidebar so the new title appears in the list
           setSidebarRefreshKey((k) => k + 1);
         }
       }
     } finally {
       setSending(false);
-      inputRef.current?.focus();
-    }
-  }
-
-  function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage(input);
     }
   }
 
   function handleOptionSelect(text: string) {
     sendMessage(text);
   }
+
+  // Image-only assets for the picker (pass to ChatInput + ChatMessage references picker)
+  const imageAssets = Object.values(assetsByMessageId).filter((a) => a.type === 'image' && a.public_url);
+
 
   async function handleAssetGenerated(asset: Asset) {
     if (asset.message_id) {
@@ -312,6 +325,12 @@ export default function ThreadPage() {
                   slug={slug}
                   threadId={threadId}
                   onAssetGenerated={handleAssetGenerated}
+                  attachedImages={attachmentsByTempId.current[msg.id]?.map((r) => ({
+                    publicUrl: r.publicUrl,
+                    name: r.name,
+                  }))}
+                  uploads={uploads}
+                  imageAssets={imageAssets}
                 />
               ))}
               {sending && (
@@ -339,51 +358,22 @@ export default function ThreadPage() {
         {/* Input */}
         <div className='border-t border-border-soft/60 bg-surface/50 backdrop-blur-xl p-4'>
           <div className='max-w-3xl mx-auto'>
-            <div className='bg-surface-white rounded-3xl shadow-[0_3px_15px_rgba(0,0,0,0.04)] border border-black/[0.04] dark:border-white/[0.06] focus-within:shadow-[0_4px_20px_rgba(0,0,0,0.08)] transition-shadow'>
-              <div className='flex gap-3 items-end pl-5 pr-2 pt-3 pb-2'>
-                <textarea
-                  ref={inputRef}
-                  rows={1}
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder={
-                    thread?.status === 'planning'
-                      ? 'Describe what you want to create...'
-                      : 'Ask for changes, refinements, or say "looks good"...'
-                  }
-                  className='flex-1 bg-transparent text-message text-text-primary placeholder-text-muted resize-none focus:outline-none max-h-32 overflow-y-auto py-2'
-                  style={{ height: 'auto' }}
-                  onInput={(e) => {
-                    const el = e.currentTarget;
-                    el.style.height = 'auto';
-                    el.style.height = `${Math.min(el.scrollHeight, 128)}px`;
-                  }}
-                  disabled={thread?.status === 'published'}
-                />
-                <button
-                  onClick={() => sendMessage(input)}
-                  disabled={!input.trim() || sending || thread?.status === 'published'}
-                  className='flex-shrink-0 w-10 h-10 flex items-center justify-center bg-ink hover:bg-ink-hover disabled:opacity-30 disabled:cursor-not-allowed rounded-full transition-all hover:scale-[1.04]'
-                >
-                  {sending ? (
-                    <Loader2 size={16} className='animate-spin text-on-ink' />
-                  ) : (
-                    <Send size={16} className='text-on-ink' />
-                  )}
-                </button>
-              </div>
-              {/* Model selector row */}
-              <div className='px-4 pb-2.5 flex items-center gap-1'>
-                <span className='text-meta text-text-muted'>Model</span>
-                <ModelPicker
-                  options={TEXT_MODELS}
-                  value={textModel}
-                  onChange={(id) => { setTextModel(id); writePref(TEXT_MODEL_KEY, id); }}
-                />
-              </div>
-            </div>
-            <p className='text-meta text-text-muted mt-2.5 text-center'>
+            <ChatInput
+              slug={slug!}
+              threadId={threadId}
+              onSend={sendMessage}
+              sending={sending}
+              disabled={thread?.status === 'published'}
+              imageAssets={imageAssets}
+              placeholder={
+                thread?.status === 'planning'
+                  ? 'Describe what you want to create... (type / to pick a reference)'
+                  : undefined // ChatInput will use its own contextual default
+              }
+              textModel={textModel}
+              onTextModelChange={(id) => { setTextModel(id); writePref(TEXT_MODEL_KEY, id); }}
+            />
+            <p className='text-xs text-text-muted mt-2 text-center'>
               Press Enter to send • Shift+Enter for new line
             </p>
           </div>

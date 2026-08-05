@@ -73,6 +73,9 @@ export interface ImagePostPackage {
   imageStyle: string;
   tone: string;
   suggestedPlatforms: ('instagram' | 'tiktok')[];
+  // Reference images (injected by backend after AI generation)
+  referenceUploadIds?: string[];
+  primaryReferenceUploadId?: string | null;
 }
 
 export interface VideoPostPackage {
@@ -92,6 +95,20 @@ export interface VideoPostPackage {
   videoPrompt: string;
   tone: string;
   suggestedPlatforms: ('instagram' | 'tiktok')[];
+  // Reference images (injected by backend after AI generation)
+  referenceUploadIds?: string[];
+  primaryReferenceUploadId?: string | null;
+}
+
+export interface WorkspaceUpload {
+  id: string;
+  workspace_id: string;
+  thread_id: string | null;
+  name: string;
+  public_url: string;
+  mime_type: string | null;
+  vision_description: string | null;
+  created_at: number;
 }
 
 export interface Asset {

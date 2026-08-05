@@ -123,6 +123,9 @@ export interface ImagePostPackage {
   imageStyle: string;
   tone: string;
   suggestedPlatforms: ('instagram' | 'tiktok')[];
+  // Reference images (injected by backend after AI generation)
+  referenceUploadIds?: string[];
+  primaryReferenceUploadId?: string | null;
 }
 
 export interface VideoScene {
@@ -150,6 +153,24 @@ export interface VideoPostPackage {
   videoPrompt: string;
   tone: string;
   suggestedPlatforms: ('instagram' | 'tiktok')[];
+  // Reference images (injected by backend after AI generation)
+  referenceUploadIds?: string[];
+  primaryReferenceUploadId?: string | null;
+}
+
+// ─── Workspace Uploads ────────────────────────────────────────────────────────
+
+export interface WorkspaceUpload {
+  id: string;
+  workspace_id: string;
+  thread_id: string | null;
+  uploaded_by: string;
+  name: string;
+  r2_key: string;
+  public_url: string;
+  mime_type: string | null;
+  vision_description: string | null;
+  created_at: number;
 }
 
 export type PostPackage = ImagePostPackage | VideoPostPackage;

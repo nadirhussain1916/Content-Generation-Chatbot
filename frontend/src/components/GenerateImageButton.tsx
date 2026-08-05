@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { useAuth } from '@clerk/clerk-react';
 import { api } from '../lib/api';
-import type { TfResponse, Asset, Message } from '../types';
+import type { TfResponse, Asset, Message, ImagePostPackage, VideoPostPackage } from '../types';
 import { ImageIcon, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { cn } from '../lib/utils';
 import ModelPicker from './ModelPicker';
 import { IMAGE_MODELS, DEFAULT_IMAGE_MODEL, IMAGE_MODEL_KEY, readPref, writePref } from '../lib/models';
 
 type ImageSize = '1024x1024' | '1024x1792' | '1792x1024';
+type GenerationMode = 'edit' | 'inspire';
 
 const SIZE_OPTIONS: { value: ImageSize; label: string; desc: string }[] = [
   { value: '1024x1024', label: '1:1',  desc: 'Square · Instagram feed' },
@@ -38,12 +39,16 @@ export default function GenerateImageButton({ slug, threadId, message, existingA
       : null
   );
   const [imageModel, setImageModel] = useState(() => readPref(IMAGE_MODEL_KEY, DEFAULT_IMAGE_MODEL));
+  const [generationMode, setGenerationMode] = useState<GenerationMode>('inspire');
 
-  // Parse AI-chosen size from package, default to square
-  const pkgSize = (() => {
-    try { return JSON.parse(message.post_package ?? '{}').imageSize as ImageSize | undefined; } catch { return undefined; }
+  // Parse AI-chosen size and reference fields from package
+  const pkg = (() => {
+    try { return JSON.parse(message.post_package ?? '{}') as Partial<ImagePostPackage & VideoPostPackage>; } catch { return {}; }
   })();
+  const pkgSize = pkg.imageSize as ImageSize | undefined;
   const [size, setSize] = useState<ImageSize>(pkgSize ?? '1024x1024');
+  const primaryReferenceUploadId = pkg.primaryReferenceUploadId ?? null;
+  const hasReference = !!primaryReferenceUploadId;
 
   async function pollUntilReady(assetId: string): Promise<Asset> {
     const deadline = Date.now() + POLL_TIMEOUT_MS;
@@ -67,14 +72,24 @@ export default function GenerateImageButton({ slug, threadId, message, existingA
     setError(null);
 
     try {
-      const pkg = JSON.parse(message.post_package);
-      const prompt = pkg.imagePrompt;
+      const parsedPkg = JSON.parse(message.post_package) as Partial<ImagePostPackage & VideoPostPackage>;
+      const prompt = parsedPkg.imagePrompt;
       if (!prompt) { setError('No image prompt in this draft'); return; }
+
+      // Force gpt-image-1 when edit mode is selected (DALL-E 3 has no edits endpoint)
+      const effectiveModel = generationMode === 'edit' && imageModel === 'dall-e-3' ? 'gpt-image-1' : imageModel;
 
       const token = await getToken();
       const res = await api.post<TfResponse<{ assetId: string; status: string }>>(
         `/api/workspaces/${slug}/generate/image`,
-        { threadId, prompt, messageId: message.id, size, imageModel },
+        {
+          threadId, prompt, messageId: message.id, size,
+          imageModel: effectiveModel,
+          ...(primaryReferenceUploadId && {
+            referenceUploadId: primaryReferenceUploadId,
+            generationMode,
+          }),
+        },
         token ?? undefined
       );
 
@@ -96,13 +111,13 @@ export default function GenerateImageButton({ slug, threadId, message, existingA
   // Don't render if no imagePrompt in this draft
   if (!message.post_package) return null;
   try {
-    const pkg = JSON.parse(message.post_package);
-    if (!pkg.imagePrompt) return null;
+    const parsedCheck = JSON.parse(message.post_package);
+    if (!parsedCheck.imagePrompt) return null;
   } catch { return null; }
 
   return (
     <div className='space-y-2'>
-      {/* Aspect ratio picker */}
+      {/* Pickers — only shown before generation */}
       {!done && (
         <div className='space-y-2'>
           {/* Aspect ratio */}
@@ -140,6 +155,37 @@ export default function GenerateImageButton({ slug, threadId, message, existingA
               onChange={(id) => { setImageModel(id); writePref(IMAGE_MODEL_KEY, id); }}
             />
           </div>
+          {/* Reference mode toggle — only shown when a primary reference is set */}
+          {hasReference && (
+            <div className='flex items-center gap-1.5'>
+              <span className='text-xs text-gray-500'>Reference</span>
+              <div className='flex gap-1'>
+                {(['inspire', 'edit'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    onClick={() => {
+                      setGenerationMode(mode);
+                      // Edit mode requires gpt-image-1
+                      if (mode === 'edit' && imageModel === 'dall-e-3') {
+                        setImageModel('gpt-image-1');
+                        writePref(IMAGE_MODEL_KEY, 'gpt-image-1');
+                      }
+                    }}
+                    disabled={loading}
+                    className={cn(
+                      'px-2.5 py-1 text-xs rounded-lg border transition-all capitalize',
+                      generationMode === mode
+                        ? 'bg-violet-600 border-violet-500 text-white'
+                        : 'bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-violet-500 hover:text-violet-600',
+                      loading && 'cursor-not-allowed opacity-50'
+                    )}
+                  >
+                    {mode === 'inspire' ? 'Inspired by' : 'Edit reference'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

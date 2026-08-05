@@ -14,6 +14,7 @@ import generateRouter from './routes/generate';
 import socialRouter, { socialCallbackRouter } from './routes/social';
 import publishRouter from './routes/publish';
 import adminRouter from './routes/admin/index';
+import uploadsRouter from './routes/uploads';
 import { getExpiringTokens, getProcessingInstagramPublishes, getSocialAccount, upsertSocialAccount, updatePublishRecord } from './db/queries';
 import { refreshLongLivedToken, checkContainerStatus, publishContainer } from './services/instagram';
 import { refreshTikTokToken } from './services/tiktok';
@@ -54,6 +55,7 @@ app.route('/api/workspaces/:slug/generate', generateRouter);
 app.route('/api/workspaces/:slug/social', socialRouter);
 app.route('/api/social', socialCallbackRouter);
 app.route('/api/workspaces/:slug/publish', publishRouter);
+app.route('/api/workspaces/:slug', uploadsRouter);
 app.route('/api/admin', adminRouter);
 
 // Run migrations — protected by MIGRATE_SECRET header
