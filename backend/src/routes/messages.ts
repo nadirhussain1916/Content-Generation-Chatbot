@@ -186,13 +186,45 @@ messagesRouter.post('/:threadId/messages', async (c) => {
     }
 
     // ── Inject referenceUploadIds into post_package ───────────────────────────
+    // Case A: agent just produced a fresh draft — stamp references onto it
     if (imageReferences.length > 0 && postPackageJson) {
       try {
         const draft = JSON.parse(postPackageJson);
         draft.referenceUploadIds = imageReferences.map((r) => r.uploadId);
         draft.primaryReferenceUploadId = imageReferences[0].uploadId;
         postPackageJson = JSON.stringify(draft);
-      } catch (err) { Logger.log('PostPackageParseError', { workspaceId: workspace.id }, err); /* leave postPackageJson unchanged */ }
+      } catch (err) { Logger.log('PostPackageParseError', { workspaceId: workspace.id }, err); }
+    }
+
+    // Case B: agent returned chat/questions — merge new images into the existing draft
+    // (e.g. user uploads a reference image while the AI asks a follow-up question)
+    if (imageReferences.length > 0 && !postPackageJson) {
+      try {
+        const lastDraft = [...allMessages.results]
+          .reverse()
+          .find((m) => (m.type === 'draft' || m.type === 'followup') && m.post_package);
+
+        if (lastDraft?.post_package) {
+          const draftPkg = JSON.parse(lastDraft.post_package);
+          const existingIds: string[] = draftPkg.referenceUploadIds ?? [];
+          const newIds = imageReferences
+            .map((r) => r.uploadId)
+            .filter((id) => !existingIds.includes(id));
+
+          if (newIds.length > 0) {
+            const mergedIds = [...existingIds, ...newIds];
+            draftPkg.referenceUploadIds = mergedIds;
+            // Set primary only if one wasn't already chosen
+            if (!draftPkg.primaryReferenceUploadId) {
+              draftPkg.primaryReferenceUploadId = mergedIds[0] ?? null;
+            }
+            await updateMessage(c.env.DB, lastDraft.id, { post_package: JSON.stringify(draftPkg) });
+            Logger.log('AutoRefInject', { threadId, injectedCount: newIds.length });
+          }
+        }
+      } catch (err) {
+        Logger.log('AutoRefInjectError', { threadId }, err);
+      }
     }
 
     // 5. Persist assistant message
