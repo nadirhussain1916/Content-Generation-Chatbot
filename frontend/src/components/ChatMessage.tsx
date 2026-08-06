@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@clerk/clerk-react';
 import type { Message, PlannerResult, PlannerQuestion, ImagePostPackage, VideoPostPackage, Asset, WorkspaceUpload } from '../types';
-import { cn } from '../lib/utils';
+import { cn, formatMessageTime } from '../lib/utils';
 import { ChevronDown, ChevronUp, Copy, Check, Hash, Loader2, Share2, CheckCircle, AlertCircle, Star, X, Plus, Pencil } from 'lucide-react';
 import GenerateImageButton from './GenerateImageButton';
 import GenerateVideoButton from './GenerateVideoButton';
@@ -179,6 +179,9 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
           <div className='bg-surface-white border border-black/[0.04] dark:border-white/[0.06] text-text-primary rounded-2xl rounded-br-[4px] px-4 py-2.5 text-message shadow-[0_2px_10px_rgba(0,0,0,0.03)]'>
             {message.content}
           </div>
+          <p className='text-right text-[10px] text-text-muted mt-1 px-1'>
+            {formatMessageTime(message.created_at)}
+          </p>
         </div>
       </div>
     );
@@ -198,6 +201,9 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
               onSelect={onOptionSelect}
             />
           )}
+          <p className='text-[10px] text-text-muted px-1'>
+            {formatMessageTime(message.created_at)}
+          </p>
         </div>
       </div>
     );
@@ -488,6 +494,9 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
           )}
         </div>
       </div>
+      <p className='text-[10px] text-text-muted mt-1 px-1'>
+        {formatMessageTime(message.created_at)}
+      </p>
     </>
     );
   }
@@ -495,8 +504,13 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
   // Plain assistant message
   return (
     <div className='flex justify-start'>
-      <div className='max-w-[85%] bg-ink text-on-ink rounded-2xl rounded-tl-none px-4 py-2.5 text-message leading-relaxed'>
-        {message.content}
+      <div className='max-w-[85%] space-y-1'>
+        <div className='bg-ink text-on-ink rounded-2xl rounded-tl-none px-4 py-2.5 text-message leading-relaxed'>
+          {message.content}
+        </div>
+        <p className='text-[10px] text-text-muted px-1'>
+          {formatMessageTime(message.created_at)}
+        </p>
       </div>
     </div>
   );

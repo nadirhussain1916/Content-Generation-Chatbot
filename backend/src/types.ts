@@ -65,6 +65,7 @@ export interface Message {
   type: 'chat' | 'draft' | 'followup';
   content: string;
   post_package: string | null; // JSON: ImagePostPackage | VideoPostPackage
+  image_references: string | null; // JSON: { uploadId, publicUrl, name }[]
   created_at: number;
 }
 

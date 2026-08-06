@@ -105,11 +105,14 @@ export async function runAgent(params: {
   const openai = createOpenAI({ apiKey: params.apiKey });
   const imageReferences = params.imageReferences ?? [];
 
+  // Log the last user message so logs can be correlated to the user's input
+  const lastUserMsg = [...params.messages].reverse().find((m) => m.role === 'user');
   Logger.log('AgentStart', {
     model: params.textModel ?? 'gpt-4o',
     threadStatus: params.threadStatus,
     attachedImageCount: imageReferences.length,
     hasPersistedContext: !!params.persistedImageContext,
+    userMessage: lastUserMsg?.content?.slice(0, 200) ?? '',
   });
 
   const result = await generateText({

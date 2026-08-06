@@ -78,6 +78,7 @@ messagesRouter.post('/:threadId/messages', async (c) => {
       role: 'user',
       type: 'chat',
       content: body.content.trim(),
+      image_references: imageReferences.length > 0 ? JSON.stringify(imageReferences) : undefined,
     });
 
     // 2. Build conversation history
@@ -273,12 +274,15 @@ messagesRouter.post('/:threadId/messages', async (c) => {
     }
 
     return c.json<TfResponse<{
-      userMessage: { id: string };
+      userMessage: { id: string; image_references: string | null };
       assistantMessage: Message;
     }>>({
       success: true,
       data: {
-        userMessage: { id: userMsgId },
+        userMessage: {
+          id: userMsgId,
+          image_references: imageReferences.length > 0 ? JSON.stringify(imageReferences) : null,
+        },
         assistantMessage: {
           id: assistantMsgId,
           thread_id: threadId,
@@ -286,6 +290,7 @@ messagesRouter.post('/:threadId/messages', async (c) => {
           type: messageType,
           content: assistantContent,
           post_package: postPackageJson ?? null,
+          image_references: null,
           created_at: Math.floor(Date.now() / 1000),
         },
       },

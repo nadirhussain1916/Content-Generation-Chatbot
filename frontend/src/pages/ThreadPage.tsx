@@ -116,6 +116,16 @@ export default function ThreadPage() {
       setThread(threadRes.data.thread);
       setMessages(threadRes.data.messages);
 
+      // Hydrate attachment map from persisted image_references on user messages
+      for (const m of threadRes.data.messages) {
+        if (m.role === 'user' && m.image_references) {
+          try {
+            const refs = JSON.parse(m.image_references) as { uploadId: string; publicUrl: string; name: string }[];
+            if (refs.length > 0) attachmentsByTempId.current[m.id] = refs;
+          } catch { /* ignore malformed */ }
+        }
+      }
+
       if (assetsRes.success && assetsRes.data) {
         const byMsgId: Record<string, Asset> = {};
         for (const a of assetsRes.data) {
@@ -187,6 +197,7 @@ export default function ThreadPage() {
       type: 'chat',
       content: content.trim(),
       post_package: null,
+      image_references: imageReferences.length > 0 ? JSON.stringify(imageReferences) : null,
       created_at: Math.floor(Date.now() / 1000),
     };
     if (imageReferences.length > 0) {
@@ -197,7 +208,7 @@ export default function ThreadPage() {
     try {
       const token = await getToken();
       const res = await api.post<TfResponse<{
-        userMessage: { id: string };
+        userMessage: { id: string; image_references: string | null };
         assistantMessage: Message;
       }>>(
         `/api/workspaces/${slug}/threads/${threadId}/messages`,
@@ -206,9 +217,14 @@ export default function ThreadPage() {
       );
 
       if (res.success && res.data) {
+        const realUserMsg: Message = {
+          ...tempMsg,
+          id: res.data.userMessage.id,
+          image_references: res.data.userMessage.image_references,
+        };
         setMessages((prev) => [
           ...prev.filter((m) => m.id !== tempId),
-          { ...tempMsg, id: res.data!.userMessage.id },
+          realUserMsg,
           res.data!.assistantMessage,
         ]);
         // Migrate attachment annotation to real message id

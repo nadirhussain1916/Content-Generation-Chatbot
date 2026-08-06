@@ -88,14 +88,11 @@ ${refList}${persistedCtx}
 ════ TOOLS ════
 
 analyze_image (NON-TERMINAL — may be called multiple times):
-  → Call for EVERY image listed in REFERENCE IMAGES above — no exceptions.
-  → Also call for every uploadId you find in POST_PACKAGE.referenceUploadIds or
-    POST_PACKAGE.primaryReferenceUploadId in the conversation history — these are
-    draft reference images you need to understand before refining or generating content.
+  → Call ONLY for images listed under "REFERENCE IMAGES ATTACHED TO THIS MESSAGE" above.
+  → Do NOT call for images in "PREVIOUSLY ANALYZED IMAGES" — those are already processed; use their descriptions directly.
+  → Do NOT invent or guess uploadIds — only use the exact uploadId values from the REFERENCE IMAGES list.
   → Call ALL analyze_image calls BEFORE any terminal tool.
-  → If analyze_image returns an error (e.g. image not found or download failed), treat it
-    as "no visual context available" and continue immediately to the appropriate terminal
-    tool — do NOT stop or reply with plain text because of a failed image analysis.
+  → If analyze_image returns an error or "not found": treat it as no visual context and immediately call the correct terminal tool (ask_questions, generate_image_draft, generate_video_script, or chat_reply). Never reply with plain text after a failed analyze_image.
 
 ask_questions (TERMINAL — REQUIRED for any content request when info is missing):
   → Use this when: the user asks for content (video, image, post, etc.) but hasn't given enough detail.

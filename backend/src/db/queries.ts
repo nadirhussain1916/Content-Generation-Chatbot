@@ -86,10 +86,11 @@ export async function getMessages(db: D1Database, threadId: string) {
 export async function createMessage(db: D1Database, data: {
   id: string; thread_id: string; role: 'user' | 'assistant';
   type: 'chat' | 'draft' | 'followup'; content: string; post_package?: string;
+  image_references?: string;
 }) {
   return db.prepare(
-    'INSERT INTO messages (id, thread_id, role, type, content, post_package) VALUES (?, ?, ?, ?, ?, ?)'
-  ).bind(data.id, data.thread_id, data.role, data.type, data.content, data.post_package ?? null).run();
+    'INSERT INTO messages (id, thread_id, role, type, content, post_package, image_references) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).bind(data.id, data.thread_id, data.role, data.type, data.content, data.post_package ?? null, data.image_references ?? null).run();
 }
 
 // ─── Assets ──────────────────────────────────────────────────────────────────
