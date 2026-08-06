@@ -1,14 +1,12 @@
 import { useRef, useState } from 'react';
-import { useAuth } from '@clerk/clerk-react';
 import { Paperclip, AtSign, X, Loader2, Send, ArrowUp } from 'lucide-react';
 import { cn } from '../lib/utils';
 import ModelPicker from './ModelPicker';
-import { useWorkspaceUploads } from '../hooks/useWorkspaceUploads';
 import { TEXT_MODELS, TEXT_MODEL_KEY, writePref } from '../lib/models';
+import type { Asset, WorkspaceUpload } from '../types';
 
 // All current generation models accept at most 1 reference image
 const GLOBAL_REF_CAP = 1;
-import type { Asset, WorkspaceUpload } from '../types';
 
 export type ImageReference = { uploadId: string; name: string; publicUrl: string };
 
@@ -33,10 +31,14 @@ interface ChatInputProps {
   /** Controlled text model — parent owns model state */
   textModel: string;
   onTextModelChange: (id: string) => void;
+  /** Upload list owned by the parent — single source of truth */
+  uploads?: WorkspaceUpload[];
+  uploading?: boolean;
+  uploadFile?: (file: File, threadId?: string) => Promise<WorkspaceUpload>;
 }
 
 export default function ChatInput({
-  slug,
+  slug: _slug,
   threadId,
   onSend,
   sending = false,
@@ -48,16 +50,16 @@ export default function ChatInput({
   autoFocus = false,
   textModel,
   onTextModelChange,
+  uploads = [],
+  uploading = false,
+  uploadFile,
 }: ChatInputProps) {
-  const { getToken } = useAuth();
   const [value, setValue] = useState('');
   const [attachedRefs, setAttachedRefs] = useState<ImageReference[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const { uploads, uploading, uploadFile } = useWorkspaceUploads(slug, getToken);
 
   // ── handlers ──────────────────────────────────────────────────────────────
 
@@ -105,7 +107,7 @@ export default function ChatInput({
 
   async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || !uploadFile) return;
     e.target.value = '';
     try {
       const upload = await uploadFile(file, threadId);

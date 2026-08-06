@@ -37,7 +37,7 @@ export default function ThreadPage() {
   // Map tempId → attached images for optimistic user bubble rendering
   const attachmentsByTempId = useRef<Record<string, ImageReference[]>>({});
 
-  const { uploads } = useWorkspaceUploads(slug, getToken);
+  const { uploads, uploading, uploadFile } = useWorkspaceUploads(slug, getToken);
 
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -365,6 +365,9 @@ export default function ThreadPage() {
               sending={sending}
               disabled={thread?.status === 'published'}
               imageAssets={imageAssets}
+              uploads={uploads}
+              uploading={uploading}
+              uploadFile={uploadFile}
               placeholder={
                 thread?.status === 'planning'
                   ? 'Describe what you want to create... (type / to pick a reference)'
