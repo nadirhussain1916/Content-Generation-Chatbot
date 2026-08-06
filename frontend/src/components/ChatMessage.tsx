@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { useAuth } from '@clerk/clerk-react';
 import type { Message, PlannerResult, PlannerQuestion, ImagePostPackage, VideoPostPackage, Asset, WorkspaceUpload } from '../types';
 import { cn, formatMessageTime } from '../lib/utils';
@@ -137,6 +138,22 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
   const isUser = message.role === 'user';
   const isDraft = message.type === 'draft' || message.type === 'followup';
 
+  // Markdown component overrides — styled to match the dark ink bubble
+  const mdComponents: React.ComponentProps<typeof ReactMarkdown>['components'] = {
+    p:      ({ children }) => <p className='mb-2 last:mb-0'>{children}</p>,
+    strong: ({ children }) => <strong className='font-semibold text-white'>{children}</strong>,
+    em:     ({ children }) => <em className='italic opacity-90'>{children}</em>,
+    ul:     ({ children }) => <ul className='list-disc list-inside mb-2 space-y-0.5'>{children}</ul>,
+    ol:     ({ children }) => <ol className='list-decimal list-inside mb-2 space-y-0.5'>{children}</ol>,
+    li:     ({ children }) => <li className='leading-relaxed'>{children}</li>,
+    h1:     ({ children }) => <h1 className='text-base font-bold mb-1'>{children}</h1>,
+    h2:     ({ children }) => <h2 className='text-sm font-bold mb-1'>{children}</h2>,
+    h3:     ({ children }) => <h3 className='text-sm font-semibold mb-1'>{children}</h3>,
+    code:   ({ children }) => <code className='bg-white/10 rounded px-1 py-0.5 text-meta font-mono'>{children}</code>,
+    pre:    ({ children }) => <pre className='bg-white/10 rounded-lg p-3 mb-2 overflow-x-auto text-meta font-mono'>{children}</pre>,
+    a:      ({ href, children }) => <a href={href} target='_blank' rel='noopener noreferrer' className='underline underline-offset-2 opacity-80 hover:opacity-100'>{children}</a>,
+  };
+
   function copy(text: string) {
     navigator.clipboard.writeText(text);
     setCopied(true);
@@ -193,7 +210,7 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
       <div className='flex justify-start'>
         <div className='max-w-[85%] space-y-3'>
           <div className='bg-ink text-on-ink rounded-2xl rounded-tl-none px-4 py-3 text-message leading-relaxed'>
-            {plannerData.reply}
+            <ReactMarkdown components={mdComponents}>{plannerData.reply}</ReactMarkdown>
           </div>
           {plannerData.questions && plannerData.questions.length > 0 && (
             <QuestionGroups
@@ -506,7 +523,7 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
     <div className='flex justify-start'>
       <div className='max-w-[85%] space-y-1'>
         <div className='bg-ink text-on-ink rounded-2xl rounded-tl-none px-4 py-2.5 text-message leading-relaxed'>
-          {message.content}
+          <ReactMarkdown components={mdComponents}>{message.content}</ReactMarkdown>
         </div>
         <p className='text-[10px] text-text-muted px-1'>
           {formatMessageTime(message.created_at)}
