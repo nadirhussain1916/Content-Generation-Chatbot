@@ -349,6 +349,16 @@ export async function generateDalleImage(params: {
 }): Promise<string> {
   const model = params.imageModel ?? 'gpt-image-1';
 
+  // ── Normalise size per model ──────────────────────────────────────────────
+  // dall-e-3 uses 1024x1792 / 1792x1024; gpt-image-1 uses 1024x1536 / 1536x1024.
+  // Any size coming in may be a dall-e-3 value — remap it for gpt-image-1.
+  const GPT_IMAGE_SIZE_MAP: Record<string, string> = {
+    '1024x1792': '1024x1536',
+    '1792x1024': '1536x1024',
+  };
+  const rawSize = params.size ?? '1024x1024';
+  const resolvedSize = model !== 'dall-e-3' ? (GPT_IMAGE_SIZE_MAP[rawSize] ?? rawSize) : rawSize;
+
   // ── Edit mode: use /v1/images/edits (gpt-image-1 only) ───────────────────
   if (params.generationMode === 'edit' && params.referenceImageUrl && model !== 'dall-e-3') {
     // Fetch the reference image bytes from R2
@@ -362,7 +372,7 @@ export async function generateDalleImage(params: {
     formData.append('image[]', imgBlob, 'reference.png');
     formData.append('prompt', params.prompt);
     formData.append('n', '1');
-    formData.append('size', params.size ?? '1024x1024');
+    formData.append('size', resolvedSize);
 
     const response = await fetch('https://api.openai.com/v1/images/edits', {
       method: 'POST',
@@ -402,7 +412,7 @@ export async function generateDalleImage(params: {
       model,
       prompt: finalPrompt,
       n: 1,
-      size: params.size ?? '1024x1024',
+      size: resolvedSize,
       quality,
     }),
   });
