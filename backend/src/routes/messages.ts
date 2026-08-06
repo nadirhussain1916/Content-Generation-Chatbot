@@ -196,6 +196,28 @@ messagesRouter.post('/:threadId/messages', async (c) => {
       } catch (err) { Logger.log('PostPackageParseError', { workspaceId: workspace.id }, err); }
     }
 
+    // Case C: agent produced a draft but user attached no new images
+    // — carry over referenceUploadIds from the previous draft so they are not lost
+    if (postPackageJson && imageReferences.length === 0) {
+      try {
+        const newDraft = JSON.parse(postPackageJson);
+        if (!newDraft.referenceUploadIds?.length) {
+          const prevDraft = [...allMessages.results]
+            .reverse()
+            .find((m) => (m.type === 'draft' || m.type === 'followup') && m.post_package);
+          if (prevDraft?.post_package) {
+            const prevPkg = JSON.parse(prevDraft.post_package);
+            if (prevPkg.referenceUploadIds?.length) {
+              newDraft.referenceUploadIds = prevPkg.referenceUploadIds;
+              newDraft.primaryReferenceUploadId =
+                prevPkg.primaryReferenceUploadId ?? prevPkg.referenceUploadIds[0] ?? null;
+              postPackageJson = JSON.stringify(newDraft);
+            }
+          }
+        }
+      } catch (err) { Logger.log('RefCarryOverError', { threadId }, err); }
+    }
+
     // Case B: agent returned chat/questions — merge new images into the existing draft
     // (e.g. user uploads a reference image while the AI asks a follow-up question)
     if (imageReferences.length > 0 && !postPackageJson) {
