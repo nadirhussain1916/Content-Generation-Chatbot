@@ -1,0 +1,16 @@
+---
+description: Always ask for live logs before diagnosing bugs when there is any doubt
+alwaysApply: true
+---
+
+# Ask for Live Logs Before Diagnosing Bugs
+
+If you are not 100% certain about the root cause of a bug — even the slightest doubt — ask the user for live logs before proposing or applying a fix.
+
+Do NOT assume the cause from code alone when runtime behaviour might differ. Always say:
+
+> "Can you share the live logs for this request? That will confirm the root cause before I make any changes."
+
+The user can pull logs from Cloudflare Workers Observability (Query Builder → filter by trigger path).
+
+Only skip asking if the bug is fully deterministic from static analysis with zero ambiguity (e.g. a TypeScript compile error or a clearly wrong constant).
