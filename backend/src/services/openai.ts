@@ -250,13 +250,17 @@ export async function runAgent(params: {
     finishReason: result.finishReason,
   });
 
-  // ── Extract result from the last terminal tool call ───────────────────────
+  // ── Extract result from the FIRST terminal tool call ─────────────────────
+  // Scan forward so that if the model incorrectly calls a second terminal tool
+  // after seeing the first tool's result, we still use the first decision.
+  // (e.g. model calls ask_questions → gets result back → calls chat_reply to
+  //  "summarize" — we want ask_questions, not the follow-up chat_reply)
   const terminalTools = new Set(['ask_questions', 'generate_image_draft', 'generate_video_script', 'chat_reply']);
 
   // AI SDK v6 uses `input` (not `args`) on both StaticToolCall and DynamicToolCall
   type FlatToolCall = { toolName: string; input: Record<string, unknown> };
 
-  for (let i = result.steps.length - 1; i >= 0; i--) {
+  for (let i = 0; i < result.steps.length; i++) {
     const step = result.steps[i];
     for (const tc of step.toolCalls as unknown as FlatToolCall[]) {
       if (!terminalTools.has(tc.toolName)) continue;
