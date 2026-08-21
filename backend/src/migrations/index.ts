@@ -12,6 +12,7 @@ import { migrateWorkspaceUploadsTable } from './011_workspace_uploads';
 import { migrateMessageImageReferences } from './012_message_image_references';
 import { migrateWorkspaceTargetVideoLength } from './013_workspace_target_video_length';
 import { migrateWorkspaceCharacter } from './014_workspace_character';
+import { migrateUserEmail } from './015_user_email';
 
 export async function runAllMigrations(db: D1Database): Promise<string[]> {
   const all: string[] = ['[Migrations] Starting...'];
@@ -31,6 +32,7 @@ export async function runAllMigrations(db: D1Database): Promise<string[]> {
     migrateMessageImageReferences,
     migrateWorkspaceTargetVideoLength,
     migrateWorkspaceCharacter,
+    migrateUserEmail,
   ];
 
   for (const migrate of migrations) {

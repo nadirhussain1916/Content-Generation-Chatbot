@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
-import { upsertUser, getUser, setUserOnboarded, createWorkspace, getWorkspacesByOwner } from '../db/queries';
+import { upsertUser, getUser, setUserOnboarded, updateUserEmail, createWorkspace, getWorkspacesByOwner } from '../db/queries';
 import type { CloudflareBindings } from '../env';
 import type { ContextVariables, TfResponse, Workspace } from '../types';
 import { Logger } from '../utils/Logger';
@@ -17,8 +17,34 @@ onboardingRouter.post('/bootstrap', async (c) => {
   const userId = c.get('userId');
   try {
     await upsertUser(c.env.DB, userId);
-    const user = await getUser(c.env.DB, userId);
-    const workspaces = await getWorkspacesByOwner(c.env.DB, userId);
+    const [user, workspaces] = await Promise.all([
+      getUser(c.env.DB, userId),
+      getWorkspacesByOwner(c.env.DB, userId),
+    ]);
+
+    // Populate email on first bootstrap after migration (or if missing for any reason).
+    if (user && !user.email) {
+      try {
+        const clerkRes = await fetch(`https://api.clerk.com/v1/users/${userId}`, {
+          headers: { Authorization: `Bearer ${c.env.CLERK_SECRET_KEY}` },
+        });
+        if (clerkRes.ok) {
+          const data = await clerkRes.json() as {
+            primary_email_address_id?: string;
+            email_addresses?: { id: string; email_address: string }[];
+          };
+          const primary = data.email_addresses?.find(
+            (e) => e.id === data.primary_email_address_id
+          );
+          if (primary?.email_address) {
+            await updateUserEmail(c.env.DB, userId, primary.email_address);
+          }
+        }
+      } catch (emailErr) {
+        // Non-fatal — don't block the bootstrap response
+        Logger.log('OnboardingEmailFetchError', { userId }, emailErr);
+      }
+    }
 
     return c.json<TfResponse<{ onboarded: boolean; workspaceSlug: string | null }>>({
       success: true,

@@ -18,6 +18,12 @@ export async function setUserOnboarded(db: D1Database, id: string) {
   ).bind(id).run();
 }
 
+export async function updateUserEmail(db: D1Database, id: string, email: string) {
+  return db.prepare(
+    'UPDATE users SET email = ?, updated_at = unixepoch() WHERE id = ?'
+  ).bind(email, id).run();
+}
+
 // ─── Workspaces ──────────────────────────────────────────────────────────────
 
 export async function getWorkspaceBySlug(db: D1Database, slug: string) {
