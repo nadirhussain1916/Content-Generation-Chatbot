@@ -1,18 +1,45 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { SignedIn, SignedOut, RedirectToSignIn } from '@clerk/clerk-react';
+import { SignedIn, SignedOut, RedirectToSignIn, useAuth, useUser } from '@clerk/clerk-react';
+import { useImpersonation } from './context/ImpersonationContext';
+import { ImpersonationBanner } from './components/ImpersonationBanner';
 import LandingPage from './pages/LandingPage';
 import OnboardingPage from './pages/OnboardingPage';
 import WorkspacePage from './pages/WorkspacePage';
 import ThreadPage from './pages/ThreadPage';
 import SettingsPage from './pages/SettingsPage';
 import GenerationsPage from './pages/GenerationsPage';
+import AdminPage from './pages/AdminPage';
 import AuthGuard from './components/AuthGuard';
 import TermsPage from './pages/TermsPage';
 import PrivacyPage from './pages/PrivacyPage';
 
+const SUPER_ADMIN_EMAIL = 'zaibchahal@gmail.com';
+
+function SuperAdminRoute({ children }: { children: React.ReactNode }) {
+  const { isLoaded, isSignedIn } = useAuth();
+  const { user } = useUser();
+
+  if (!isLoaded) return null;
+  if (!isSignedIn) return <RedirectToSignIn />;
+
+  const email = user?.primaryEmailAddress?.emailAddress;
+  if (email !== SUPER_ADMIN_EMAIL) return <Navigate to='/' replace />;
+
+  return <>{children}</>;
+}
+
+function ImpersonationSpacer() {
+  const { isImpersonating } = useImpersonation();
+  if (!isImpersonating) return null;
+  // Reserves space equal to the banner height so sticky headers stay below it.
+  return <div className='h-10 w-full shrink-0' aria-hidden />;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
+      <ImpersonationBanner />
+      <ImpersonationSpacer />
       <Routes>
         {/* Public */}
         <Route path='/' element={<LandingPage />} />
@@ -77,6 +104,16 @@ export default function App() {
             <SignedOut>
               <RedirectToSignIn />
             </SignedOut>
+          }
+        />
+
+        {/* Super admin panel */}
+        <Route
+          path='/admin'
+          element={
+            <SuperAdminRoute>
+              <AdminPage />
+            </SuperAdminRoute>
           }
         />
 

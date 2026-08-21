@@ -5,6 +5,71 @@ import type { ContextVariables, Workspace } from '../types';
 
 type HonoContext = Context<{ Bindings: CloudflareBindings; Variables: ContextVariables }>;
 
+// ─── Impersonation token helpers ──────────────────────────────────────────────
+
+export interface ImpersonationPayload {
+  sub: string;    // impersonated userId
+  admin: string;  // admin userId who started the session
+  type: 'impersonation';
+  iat: number;
+  exp: number;
+}
+
+function base64UrlEncode(buf: ArrayBuffer | Uint8Array): string {
+  const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  let str = '';
+  for (const b of bytes) str += String.fromCharCode(b);
+  return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+function base64UrlDecodeToBytes(str: string): Uint8Array {
+  const padded = str.replace(/-/g, '+').replace(/_/g, '/');
+  const binary = atob(padded);
+  return Uint8Array.from(binary, (c) => c.charCodeAt(0));
+}
+
+async function getHmacKey(secret: string): Promise<CryptoKey> {
+  return crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign', 'verify']
+  );
+}
+
+export async function signImpersonationToken(
+  secret: string,
+  payload: Omit<ImpersonationPayload, 'iat' | 'exp'>
+): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  const fullPayload: ImpersonationPayload = { ...payload, iat: now, exp: now + 3600 };
+  const headerB64 = base64UrlEncode(new TextEncoder().encode(JSON.stringify({ alg: 'HS256', typ: 'JWT' })));
+  const payloadB64 = base64UrlEncode(new TextEncoder().encode(JSON.stringify(fullPayload)));
+  const data = new TextEncoder().encode(`${headerB64}.${payloadB64}`);
+  const key = await getHmacKey(secret);
+  const sig = await crypto.subtle.sign('HMAC', key, data);
+  return `${headerB64}.${payloadB64}.${base64UrlEncode(sig)}`;
+}
+
+async function verifyImpersonationToken(token: string, secret: string): Promise<ImpersonationPayload> {
+  const parts = token.split('.');
+  if (parts.length !== 3) throw new Error('Malformed token');
+  const [headerB64, payloadB64, sigB64] = parts as [string, string, string];
+
+  const payload = JSON.parse(new TextDecoder().decode(base64UrlDecodeToBytes(payloadB64))) as ImpersonationPayload;
+  if (payload.type !== 'impersonation') throw new Error('Not an impersonation token');
+  if (Date.now() / 1000 > payload.exp) throw new Error('Impersonation token expired');
+
+  const key = await getHmacKey(secret);
+  const data = new TextEncoder().encode(`${headerB64}.${payloadB64}`);
+  const sig = base64UrlDecodeToBytes(sigB64);
+  const valid = await crypto.subtle.verify('HMAC', key, sig, data);
+  if (!valid) throw new Error('Impersonation token signature invalid');
+
+  return payload;
+}
+
 // ─── JWKS + JWT Verification ──────────────────────────────────────────────────
 
 interface JWK {
@@ -118,7 +183,7 @@ async function verifyClerkToken(
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
 
-// Tier 1 — Required auth: 401 if no valid Clerk JWT
+// Tier 1 — Required auth: accepts Clerk JWT or impersonation token
 export const authMiddleware = async (c: HonoContext, next: Next) => {
   const authHeader = c.req.header('Authorization');
   // Accept token from ?t= query param as fallback for browser-initiated OAuth redirects
@@ -129,18 +194,24 @@ export const authMiddleware = async (c: HonoContext, next: Next) => {
     return c.json({ success: false, message: 'Missing or invalid Authorization header' }, 401);
   }
 
-  const userId = await verifyClerkToken(
-    rawToken,
-    c.env.CLERK_SECRET_KEY,
-    c.env.KV
-  );
-
-  if (!userId) {
-    return c.json({ success: false, message: 'Invalid or expired token' }, 401);
+  // First: try Clerk JWT verification.
+  const userId = await verifyClerkToken(rawToken, c.env.CLERK_SECRET_KEY, c.env.KV);
+  if (userId) {
+    c.set('userId', userId);
+    await next();
+    return;
   }
 
-  c.set('userId', userId);
-  await next();
+  // Second: try impersonation token (HMAC-signed by SUPER_ADMIN_SECRET).
+  try {
+    const payload = await verifyImpersonationToken(rawToken, c.env.SUPER_ADMIN_SECRET);
+    Logger.log('AuthMiddleware:ImpersonationVerifySuccess', { sub: payload.sub, admin: payload.admin });
+    c.set('userId', payload.sub);
+    await next();
+    return;
+  } catch {
+    return c.json({ success: false, message: 'Invalid or expired token' }, 401);
+  }
 };
 
 // Tier 2 — Workspace ownership guard

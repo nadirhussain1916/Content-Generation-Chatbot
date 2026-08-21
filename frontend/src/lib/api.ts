@@ -24,3 +24,44 @@ export const api = {
     request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }, token),
   delete: <T>(path: string, token?: string) => request<T>(path, { method: 'DELETE' }, token),
 };
+
+// ─── Admin API ────────────────────────────────────────────────────────────────
+
+export interface AdminStats {
+  totalUsers: number;
+  totalWorkspaces: number;
+  totalThreads: number;
+}
+
+export interface AdminUser {
+  id: string;
+  onboarded: number;
+  created_at: number;
+  workspaceCount: number;
+  workspaceSlug: string | null;
+}
+
+export interface ImpersonateResponse {
+  token: string;
+  user: { id: string; onboarded: number; created_at: number };
+  workspaceSlug: string | null;
+}
+
+export const adminApi = {
+  getStats: (token: string) =>
+    request<{ success: boolean; data: AdminStats }>('/api/admin/stats', { method: 'GET' }, token),
+
+  getUsers: (token: string, search?: string) =>
+    request<{ success: boolean; data: AdminUser[] }>(
+      `/api/admin/users${search ? `?search=${encodeURIComponent(search)}` : ''}`,
+      { method: 'GET' },
+      token
+    ),
+
+  impersonate: (token: string, userId: string) =>
+    request<{ success: boolean; data: ImpersonateResponse }>(
+      `/api/admin/impersonate/${userId}`,
+      { method: 'POST' },
+      token
+    ),
+};

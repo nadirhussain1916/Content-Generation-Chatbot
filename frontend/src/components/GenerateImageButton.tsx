@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useAuth } from '@clerk/clerk-react';
+import { useAuthToken } from '../hooks/useAuthToken';
 import { api } from '../lib/api';
 import type { TfResponse, Asset, Message, ImagePostPackage, VideoPostPackage } from '../types';
 import { ImageIcon, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
@@ -28,7 +28,7 @@ const POLL_INTERVAL_MS = 3000;
 const POLL_TIMEOUT_MS = 120_000;
 
 export default function GenerateImageButton({ slug, threadId, message, existingAsset, onGenerated }: GenerateImageButtonProps) {
-  const { getToken } = useAuth();
+  const { getAuthToken } = useAuthToken();
   const [loading, setLoading] = useState(false);
   // only treat as done when the asset is actually ready — not failed/pending
   const [done, setDone] = useState(existingAsset?.status === 'ready');
@@ -54,7 +54,7 @@ export default function GenerateImageButton({ slug, threadId, message, existingA
     const deadline = Date.now() + POLL_TIMEOUT_MS;
     while (Date.now() < deadline) {
       await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
-      const freshToken = await getToken();
+      const freshToken = await getAuthToken();
       const res = await api.get<TfResponse<Asset>>(
         `/api/workspaces/${slug}/generate/assets/${assetId}/status`,
         freshToken ?? undefined
@@ -79,7 +79,7 @@ export default function GenerateImageButton({ slug, threadId, message, existingA
       // Force gpt-image-1 when edit mode is selected (DALL-E 3 has no edits endpoint)
       const effectiveModel = generationMode === 'edit' && imageModel === 'dall-e-3' ? 'gpt-image-1' : imageModel;
 
-      const token = await getToken();
+      const token = await getAuthToken();
       const res = await api.post<TfResponse<{ assetId: string; status: string }>>(
         `/api/workspaces/${slug}/generate/image`,
         {

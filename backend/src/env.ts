@@ -5,6 +5,7 @@ import type { PublishParams } from './workflows/publish';
 // Import from here — never directly from worker-configuration.d.ts (auto-generated).
 export type CloudflareBindings = __BaseEnv_Env & {
   MIGRATE_SECRET: string;
+  SUPER_ADMIN_SECRET: string;
   GENERATION_WORKFLOW: Workflow<GenerationParams>;
   PUBLISH_WORKFLOW: Workflow<PublishParams>;
   ASSETS_PUBLIC_URL: string;

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { useAuth, UserButton } from '@clerk/clerk-react';
+import { UserButton } from '@clerk/clerk-react';
+import { useAuthToken } from '../hooks/useAuthToken';
 import { api } from '../lib/api';
 import type { TfResponse, Workspace, Thread } from '../types';
 import { Zap, Plus, Settings, MessageSquare, ChevronDown, Loader2, Image } from 'lucide-react';
@@ -13,7 +14,7 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ onNewThread, refreshKey = 0 }: SidebarProps) {
-  const { getToken } = useAuth();
+  const { getAuthToken } = useAuthToken();
   const { slug, threadId } = useParams();
   const navigate = useNavigate();
 
@@ -25,7 +26,7 @@ export default function Sidebar({ onNewThread, refreshKey = 0 }: SidebarProps) {
   useEffect(() => {
     if (!slug) return;
     (async () => {
-      const token = await getToken();
+      const token = await getAuthToken();
       const [wsRes, threadsRes] = await Promise.all([
         api.get<TfResponse<Workspace[]>>('/api/workspaces', token ?? undefined),
         api.get<TfResponse<Thread[]>>(`/api/workspaces/${slug}/threads`, token ?? undefined),

@@ -109,4 +109,5 @@
   // TIKTOK_APP_SECRET
   // REPLICATE_API_TOKEN
   // SLACK_WEBHOOK_URL
+  // SUPER_ADMIN_SECRET  ← HMAC key for impersonation tokens (generate with: openssl rand -hex 32)
 }

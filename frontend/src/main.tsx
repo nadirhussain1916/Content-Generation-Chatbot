@@ -5,6 +5,7 @@ import { dark } from '@clerk/themes';
 import App from './App';
 import './index.css';
 import { ThemeProvider, useTheme } from './lib/theme';
+import { ImpersonationProvider } from './context/ImpersonationContext';
 
 const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 if (!PUBLISHABLE_KEY) throw new Error('Missing VITE_CLERK_PUBLISHABLE_KEY');
@@ -19,7 +20,9 @@ function Root() {
       signUpUrl='/'
       appearance={{ baseTheme: theme === 'dark' ? dark : undefined }}
     >
-      <App />
+      <ImpersonationProvider>
+        <App />
+      </ImpersonationProvider>
     </ClerkProvider>
   );
 }

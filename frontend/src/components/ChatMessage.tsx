@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { useAuth } from '@clerk/clerk-react';
+import { useAuthToken } from '../hooks/useAuthToken';
 import type { Message, PlannerResult, PlannerQuestion, ImagePostPackage, VideoPostPackage, Asset, WorkspaceUpload } from '../types';
 import { cn, formatMessageTime } from '../lib/utils';
 import { ChevronDown, ChevronUp, Copy, Check, Hash, Loader2, Share2, CheckCircle, AlertCircle, Star, X, Plus, Pencil } from 'lucide-react';
@@ -29,7 +29,7 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState(true);
   const { status: publishStatus, publish } = usePublishStatus(slug, asset?.id);
-  const { getToken } = useAuth();
+  const { getAuthToken } = useAuthToken();
 
   // Local post_package state for optimistic draft reference/content edits
   const [localPkg, setLocalPkg] = useState<(ImagePostPackage & VideoPostPackage) | null>(() => {
@@ -48,7 +48,7 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
 
   async function patchReferences(referenceUploadIds: string[], primaryReferenceUploadId: string | null) {
     if (!slug || !threadId) return;
-    const token = await getToken();
+    const token = await getAuthToken();
     try {
       await fetch(
         `${BACKEND}/api/workspaces/${slug}/threads/${threadId}/messages/${message.id}/references`,
@@ -66,7 +66,7 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
 
   async function savePackage(updatedPkg: ImagePostPackage | VideoPostPackage) {
     if (!slug || !threadId) return;
-    const token = await getToken();
+    const token = await getAuthToken();
     const prevPkg = localPkg;
     // Optimistic update
     setLocalPkg(updatedPkg as ImagePostPackage & VideoPostPackage);

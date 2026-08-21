@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@clerk/clerk-react';
+import { useAuthToken } from '../hooks/useAuthToken';
 import { api } from '../lib/api';
 import type { TfResponse } from '../types';
 
@@ -10,14 +11,15 @@ interface BootstrapData {
 }
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { getToken, isLoaded } = useAuth();
+  const { isLoaded } = useAuth();
+  const { getAuthToken } = useAuthToken();
   const navigate = useNavigate();
   const [checked, setChecked] = useState(false);
 
   useEffect(() => {
     if (!isLoaded) return;
     (async () => {
-      const token = await getToken();
+      const token = await getAuthToken();
       const res = await api.post<TfResponse<BootstrapData>>('/api/onboarding/bootstrap', {}, token ?? undefined);
       if (res.success && res.data) {
         // Redirect to onboarding only when the user has NO workspace yet.

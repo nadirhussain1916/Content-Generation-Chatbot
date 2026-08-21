@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useAuth } from '@clerk/clerk-react';
+import { useAuthToken } from './useAuthToken';
 import { api } from '../lib/api';
 import type { TfResponse, PublishRecord } from '../types';
 
@@ -9,7 +9,7 @@ const POLL_INTERVAL_MS = 4000;
 const POLL_MAX_ATTEMPTS = 30; // 30 × 4s = 2 min max
 
 export function usePublishStatus(slug: string | undefined, assetId: string | undefined) {
-  const { getToken } = useAuth();
+  const { getAuthToken: getToken } = useAuthToken();
   const [status, setStatus] = useState<Record<string, PlatformStatus>>({});
   const pollTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 

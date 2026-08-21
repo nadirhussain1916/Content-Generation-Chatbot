@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useLocation } from 'react-router-dom';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@clerk/clerk-react';
+import { useAuthToken } from '../hooks/useAuthToken';
 import { api } from '../lib/api';
 import type { TfResponse, Thread, Message, Asset } from '../types';
 import AppShell from '../components/AppShell';
@@ -18,7 +18,7 @@ const POLL_INTERVAL_MS = 8000; // poll every 8 s — video generation can take 2
 
 export default function ThreadPage() {
   const { slug, threadId } = useParams<{ slug: string; threadId: string }>();
-  const { getToken } = useAuth();
+  const { getAuthToken: getToken } = useAuthToken();
   const navigate = useNavigate();
   const location = useLocation();
 
