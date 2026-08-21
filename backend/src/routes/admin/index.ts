@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
-import { authAdminMiddleware, signImpersonationToken } from '../../middleware/auth';
+import { authMiddleware, signImpersonationToken } from '../../middleware/auth';
+import { superAdminMiddleware } from '../../middleware/superAdmin';
 import { runAllMigrations } from '../../migrations';
 import type { CloudflareBindings } from '../../env';
 import type { ContextVariables, TfResponse } from '../../types';
@@ -9,7 +10,10 @@ type Env = { Bindings: CloudflareBindings; Variables: ContextVariables };
 
 const adminRouter = new Hono<Env>();
 
-adminRouter.use('*', authAdminMiddleware);
+// All admin routes require a valid Clerk JWT + the hardcoded super-admin email.
+// Note: authMiddleware is used here (not the impersonation-aware one in the main app)
+// because admin access must always be from the real admin's Clerk session.
+adminRouter.use('*', authMiddleware, superAdminMiddleware);
 
 // POST /api/admin/migrate — run all DB migrations
 adminRouter.post('/migrate', async (c) => {
