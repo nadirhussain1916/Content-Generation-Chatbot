@@ -100,7 +100,11 @@ messagesRouter.post('/:threadId/messages', async (c) => {
       agent_instructions:       workspace.agent_instructions,
       default_image_size:       workspace.default_image_size,
       default_video_duration:   workspace.default_video_duration,
+      target_video_length:      workspace.target_video_length,
       default_video_dimensions: workspace.default_video_dimensions,
+      character_name:           workspace.character_name,
+      character_appearance:     workspace.character_appearance,
+      character_voice_id:       workspace.character_voice_id,
     };
 
     // 3. Run unified agent

@@ -17,7 +17,11 @@ function brandBlock(ws: {
   agent_instructions?: string | null;
   default_image_size?: string | null;
   default_video_duration?: number | null;
+  target_video_length?: number | null;
   default_video_dimensions?: string | null;
+  character_name?: string | null;
+  character_appearance?: string | null;
+  character_voice_id?: string | null;
 }): string {
   const lines: string[] = [];
   if (ws.brand_name)         lines.push(`Brand name: ${ws.brand_name}`);
@@ -26,7 +30,23 @@ function brandBlock(ws: {
   if (ws.target_audience)    lines.push(`Target audience: ${ws.target_audience}`);
   if (ws.default_image_size) lines.push(`Default image size: ${IMAGE_SIZE_LABELS[ws.default_image_size] ?? ws.default_image_size} — ALWAYS set imageSize to this value unless the user explicitly requests a different aspect ratio.`);
   if (ws.default_video_dimensions) lines.push(`Default video dimensions: ${VIDEO_DIM_LABELS[ws.default_video_dimensions] ?? ws.default_video_dimensions}`);
-  if (ws.default_video_duration)   lines.push(`Default video duration: ${ws.default_video_duration}s`);
+  if (ws.default_video_duration)   lines.push(`Max clip length: ${ws.default_video_duration}s per generated video clip.`);
+  if (ws.target_video_length) {
+    const targetSecs = ws.target_video_length;
+    const minWords = Math.round(targetSecs * 2.4 * 0.9);
+    const maxWords = Math.round(targetSecs * 2.4 * 1.1);
+    lines.push(
+      `Target video length: ${targetSecs}s — script spoken dialogue MUST be ${minWords}–${maxWords} words total (formula: ${targetSecs}s × 2.4 words/s). Count carefully before submitting.`
+    );
+  }
+  if (ws.character_name || ws.character_appearance) {
+    const charLines = ['\nLOCKED CHARACTER (inject into every video generation prompt, verbatim — never alter appearance):'];
+    if (ws.character_name)       charLines.push(`  Name: ${ws.character_name}`);
+    if (ws.character_appearance) charLines.push(`  Appearance: ${ws.character_appearance}`);
+    if (ws.character_voice_id)   charLines.push(`  Voice ID: ${ws.character_voice_id}`);
+    charLines.push('  The videoPrompt MUST begin with this character block before any other scene description.');
+    lines.push(charLines.join('\n'));
+  }
   if (ws.agent_instructions) lines.push(`\nCustom agent instructions (follow strictly):\n${ws.agent_instructions}`);
   return lines.length ? `\n\n--- WORKSPACE CONTEXT ---\n${lines.join('\n')}\n---` : '';
 }
@@ -39,7 +59,11 @@ export type WorkspaceBrand = {
   agent_instructions?: string | null;
   default_image_size?: string | null;
   default_video_duration?: number | null;
+  target_video_length?: number | null;
   default_video_dimensions?: string | null;
+  character_name?: string | null;
+  character_appearance?: string | null;
+  character_voice_id?: string | null;
 };
 
 export const AGENT_SYSTEM_PROMPT = (params: {

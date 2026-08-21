@@ -138,15 +138,25 @@ export const DURATION_MODEL_IDS: VideoModelId[] = [
 ];
 
 // ─── LTX 2.3 Pro extend chain options ────────────────────────────────────────
-// Initial clip is fixed at 10 s; each extend adds 20 s for near-seamless continuity.
-// Total = 10 + chainCount × 20 s.
+// Initial clip is fixed at 10 s. Each option specifies how many extend calls to
+// make and how many seconds to add per call.
+// Total ≈ 10 + chainCount × extendDuration.
 
-export const LTX_EXTEND_OPTIONS = [
-  { id: '0', label: 'No extend', desc: 'Single clip · up to 10s' },
-  { id: '1', label: '+20s',      desc: '~30s total · 1 extend' },
-  { id: '2', label: '+40s',      desc: '~50s total · 2 extends' },
-  { id: '3', label: '+60s',      desc: '~70s total · 3 extends' },
-  { id: '6', label: '+120s',     desc: '~130s total · 6 extends · ~2 min' },
+export type LtxExtendOption = {
+  id: string;
+  label: string;
+  desc: string;
+  chainCount: number;
+  extendDuration: number;
+};
+
+export const LTX_EXTEND_OPTIONS: readonly LtxExtendOption[] = [
+  { id: '0',   label: 'Single clip', desc: 'Up to 10s · No extend',        chainCount: 0, extendDuration: 0  },
+  { id: '30',  label: '~30s',        desc: '10s + 1×20s extend',            chainCount: 1, extendDuration: 20 },
+  { id: '45',  label: '~45s',        desc: '10s + 5×7s extends · Reels',    chainCount: 5, extendDuration: 7  },
+  { id: '50',  label: '~50s',        desc: '10s + 2×20s extends',           chainCount: 2, extendDuration: 20 },
+  { id: '70',  label: '~70s',        desc: '10s + 3×20s extends',           chainCount: 3, extendDuration: 20 },
+  { id: '130', label: '~130s',       desc: '10s + 6×20s extends · ~2 min',  chainCount: 6, extendDuration: 20 },
 ] as const;
 
 export const LTX_EXTEND_KEY = 'tf_ltx_extend';

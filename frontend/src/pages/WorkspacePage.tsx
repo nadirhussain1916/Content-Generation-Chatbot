@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
-import { useAuth } from '@clerk/clerk-react';
+import { useAuthToken } from '../hooks/useAuthToken';
 import { api } from '../lib/api';
 import type { TfResponse, Thread, Workspace } from '../types';
 import AppShell from '../components/AppShell';
@@ -12,26 +12,32 @@ import { DEFAULT_TEXT_MODEL, TEXT_MODEL_KEY, readPref, writePref } from '../lib/
 export default function WorkspacePage() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
-  const { getToken } = useAuth();
+  const { getAuthToken } = useAuthToken();
   const [creating, setCreating] = useState(false);
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [textModel, setTextModel] = useState<string>(() => readPref(TEXT_MODEL_KEY, DEFAULT_TEXT_MODEL));
 
   useEffect(() => {
     (async () => {
-      const token = await getToken();
+      const token = await getAuthToken();
       const res = await api.get<TfResponse<Workspace>>(`/api/workspaces/${slug}`, token ?? undefined);
       if (res.success && res.data) setWorkspace(res.data);
     })();
   }, [slug]);
 
-  const hasBrandContext = !!(workspace?.brand_description || workspace?.brand_name);
+  const hasBrandContext = !!(
+    workspace?.brand_name ||
+    workspace?.brand_description ||
+    workspace?.brand_voice ||
+    workspace?.target_audience ||
+    workspace?.agent_instructions
+  );
 
   async function handleSend(content: string, imageReferences: ImageReference[]) {
     if (!content || creating) return;
     setCreating(true);
     try {
-      const token = await getToken();
+      const token = await getAuthToken();
       const res = await api.post<TfResponse<Thread>>(
         `/api/workspaces/${slug}/threads`,
         {},

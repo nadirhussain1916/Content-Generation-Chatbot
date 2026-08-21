@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useAuth } from '@clerk/clerk-react';
+import { useAuthToken } from '../hooks/useAuthToken';
 import { api } from '../lib/api';
 import type { TfResponse, Asset, Message, ImagePostPackage, VideoPostPackage } from '../types';
 import { usePublishStatus } from '../hooks/usePublishStatus';
@@ -8,7 +8,7 @@ import AppShell from '../components/AppShell';
 import Sidebar from '../components/Sidebar';
 import {
   ImageIcon, VideoIcon, Loader2, AlertCircle, X,
-  Copy, Check, Hash, Share2, CheckCircle, ExternalLink, RefreshCw,
+  Copy, Check, Hash, Share2, CheckCircle, ExternalLink, RefreshCw, Download,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -17,7 +17,7 @@ const POLL_INTERVAL_MS = 5000; // re-fetch list every 5 s when any asset is in-p
 
 export default function GenerationsPage() {
   const { slug } = useParams<{ slug: string }>();
-  const { getToken } = useAuth();
+  const { getAuthToken: getToken } = useAuthToken();
   const navigate = useNavigate();
 
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -178,6 +178,54 @@ export default function GenerationsPage() {
 
 // ─── Asset card ───────────────────────────────────────────────────────────────
 
+async function downloadAsset(asset: Asset, blobUrl?: string, aiLabel = false) {
+  const href = blobUrl ?? asset.public_url;
+  if (!href) return;
+
+  const shortId = asset.id.slice(0, 8);
+
+  if (asset.type === 'image' && aiLabel) {
+    // Draw "AI Generated" overlay on a canvas then download as PNG
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    await new Promise<void>((resolve, reject) => { img.onload = () => resolve(); img.onerror = reject; img.src = href; });
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext('2d')!;
+    ctx.drawImage(img, 0, 0);
+    // Overlay banner
+    const bannerH = Math.max(28, Math.round(img.naturalHeight * 0.045));
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillRect(0, img.naturalHeight - bannerH, img.naturalWidth, bannerH);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `bold ${Math.round(bannerH * 0.52)}px system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('AI Generated', img.naturalWidth / 2, img.naturalHeight - bannerH / 2);
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ai-generated-image-${shortId}.png`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    }, 'image/png');
+    return;
+  }
+
+  // Video or non-labelled image — plain download, filename encodes disclosure
+  const ext = asset.type === 'video' ? 'mp4' : 'png';
+  const prefix = aiLabel ? 'AI-Generated-' : '';
+  const filename = `${prefix}${asset.type}-${shortId}.${ext}`;
+  const a = document.createElement('a');
+  a.href = href;
+  a.download = filename;
+  a.rel = 'noopener noreferrer';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+
 function AssetCard({
   asset, slug, blobUrl, isLoadingBlob, onVisible, onDetails,
 }: {
@@ -264,11 +312,11 @@ function AssetCard({
               Details
             </button>
             <button
-              onClick={() => navigate(`/workspaces/${slug}/threads/${asset.thread_id}`)}
-              className='flex-1 py-1.5 text-meta font-medium bg-surface-white border-2 border-brand text-brand hover:bg-brand/5 rounded-lg transition-colors flex items-center justify-center gap-1'
+              onClick={() => downloadAsset(asset, blobUrl, false)}
+              title='Download'
+              className='p-1.5 text-meta font-medium bg-surface-white border border-border-soft text-text-secondary hover:text-text-primary hover:border-ink/30 rounded-lg transition-colors flex items-center justify-center'
             >
-              <ExternalLink size={10} />
-              Thread
+              <Download size={11} />
             </button>
           </>
         ) : (
@@ -293,10 +341,11 @@ function DetailsModal({
   asset: Asset; slug: string; blobUrl?: string;
   onClose: () => void; onOpenThread: () => void;
 }) {
-  const { getToken } = useAuth();
+  const { getAuthToken: getToken } = useAuthToken();
   const [pkg, setPkg] = useState<(ImagePostPackage & VideoPostPackage) | null>(null);
   const [loadingPkg, setLoadingPkg] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [aiLabel, setAiLabel] = useState(false);
   const { status: publishStatus, publish: publishAsset } = usePublishStatus(slug, asset.id);
 
   useEffect(() => {
@@ -405,7 +454,34 @@ function DetailsModal({
         </div>
 
         {/* Publish footer */}
-        <div className='px-5 py-4 border-t border-border-soft flex items-center gap-3'>
+        <div className='px-5 py-4 border-t border-border-soft space-y-3'>
+          {/* AI disclosure toggle */}
+          <label className='flex items-center gap-2 cursor-pointer select-none'>
+            <div
+              onClick={() => setAiLabel((v) => !v)}
+              className={cn(
+                'relative w-8 h-4.5 rounded-full transition-colors flex-shrink-0',
+                aiLabel ? 'bg-ink' : 'bg-border-soft'
+              )}
+              style={{ height: '18px', width: '32px' }}
+            >
+              <span
+                className={cn(
+                  'absolute top-0.5 w-3.5 h-3.5 rounded-full bg-white shadow transition-transform',
+                  aiLabel ? 'translate-x-[14px]' : 'translate-x-0.5'
+                )}
+              />
+            </div>
+            <span className='text-meta text-text-secondary'>Label this video as AI-generated</span>
+          </label>
+          <div className='flex items-center gap-3'>
+          <button
+            onClick={() => downloadAsset(asset, blobUrl, aiLabel)}
+            className='flex items-center gap-1.5 px-3 py-2 rounded-full text-meta font-medium bg-surface-card hover:bg-surface border border-border-soft text-text-secondary hover:text-text-primary transition-colors'
+          >
+            <Download size={13} />
+            {aiLabel ? 'Download (Labelled)' : 'Download'}
+          </button>
           <span className='text-meta text-text-secondary flex-1'>Publish to</span>
           {(['instagram', 'tiktok'] as const).map((platform) => {
             const s = publishStatus[platform] ?? 'idle';
@@ -433,6 +509,7 @@ function DetailsModal({
               </button>
             );
           })}
+          </div>
         </div>
       </div>
     </div>

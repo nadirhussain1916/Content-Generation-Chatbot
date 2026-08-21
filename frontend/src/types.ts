@@ -20,8 +20,14 @@ export interface Workspace {
   agent_instructions: string | null;
   // Media generation defaults
   default_image_size: string; // e.g. '1024x1024', '1024x1792', '1792x1024', or custom 'WxH'
-  default_video_duration: number; // seconds
+  default_video_duration: number; // max clip length in seconds
+  target_video_length: number; // total finished video target length in seconds
   default_video_dimensions: string; // e.g. '1280x720', '720x1280', or custom 'WxH'
+  // Locked character
+  character_name: string | null;
+  character_appearance: string | null;
+  character_reference_ids: string; // JSON array of workspace_upload IDs
+  character_voice_id: string | null;
   created_at: number;
   updated_at: number;
 }

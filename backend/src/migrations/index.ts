@@ -10,6 +10,8 @@ import { migrateWorkspaceMediaDefaults } from './009_workspace_media_defaults';
 import { migrateAssetErrorColumn } from './010_asset_error';
 import { migrateWorkspaceUploadsTable } from './011_workspace_uploads';
 import { migrateMessageImageReferences } from './012_message_image_references';
+import { migrateWorkspaceTargetVideoLength } from './013_workspace_target_video_length';
+import { migrateWorkspaceCharacter } from './014_workspace_character';
 
 export async function runAllMigrations(db: D1Database): Promise<string[]> {
   const all: string[] = ['[Migrations] Starting...'];
@@ -27,6 +29,8 @@ export async function runAllMigrations(db: D1Database): Promise<string[]> {
     migrateAssetErrorColumn,
     migrateWorkspaceUploadsTable,
     migrateMessageImageReferences,
+    migrateWorkspaceTargetVideoLength,
+    migrateWorkspaceCharacter,
   ];
 
   for (const migrate of migrations) {

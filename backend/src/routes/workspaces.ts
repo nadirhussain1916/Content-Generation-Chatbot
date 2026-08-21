@@ -93,8 +93,14 @@ const UpdateWorkspaceSchema = z.object({
   agent_instructions: z.string().max(2000).optional().nullable(),
   // Media generation defaults
   default_image_size: z.enum(['1024x1024', '1024x1792', '1792x1024']).optional(),
-  default_video_duration: z.number().int().min(5).max(300).optional(),
+  default_video_duration: z.number().int().min(1).max(300).optional(),
+  target_video_length: z.number().int().min(10).max(600).optional(),
   default_video_dimensions: z.enum(['1280x720', '720x1280']).optional(),
+  // Locked character
+  character_name: z.string().max(120).optional().nullable(),
+  character_appearance: z.string().max(2000).optional().nullable(),
+  character_reference_ids: z.array(z.string().uuid()).max(8).optional(),
+  character_voice_id: z.string().max(120).optional().nullable(),
 });
 
 // PATCH /api/workspaces/:slug — update workspace settings
@@ -128,7 +134,13 @@ workspacesRouter.patch('/:slug', async (c) => {
     // Media generation defaults
     if (parsed.data.default_image_size) update.default_image_size = parsed.data.default_image_size;
     if (parsed.data.default_video_duration) update.default_video_duration = parsed.data.default_video_duration;
+    if (parsed.data.target_video_length) update.target_video_length = parsed.data.target_video_length;
     if (parsed.data.default_video_dimensions) update.default_video_dimensions = parsed.data.default_video_dimensions;
+    // Locked character
+    if ('character_name' in parsed.data) update.character_name = parsed.data.character_name ?? null;
+    if ('character_appearance' in parsed.data) update.character_appearance = parsed.data.character_appearance ?? null;
+    if ('character_reference_ids' in parsed.data) update.character_reference_ids = JSON.stringify(parsed.data.character_reference_ids ?? []);
+    if ('character_voice_id' in parsed.data) update.character_voice_id = parsed.data.character_voice_id ?? null;
 
     if (Object.keys(update).length > 0) {
       await updateWorkspace(c.env.DB, workspace.id, update as Parameters<typeof updateWorkspace>[2]);

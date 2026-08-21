@@ -1,20 +1,29 @@
 import { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { useAuth } from '@clerk/clerk-react';
+import { useAuthToken } from '../hooks/useAuthToken';
 import { api } from '../lib/api';
-import type { TfResponse, Workspace, SocialAccountSafe } from '../types';
+import type { TfResponse, Workspace, SocialAccountSafe, WorkspaceUpload } from '../types';
 import AppShell from '../components/AppShell';
 import Sidebar from '../components/Sidebar';
 import { useNavigate } from 'react-router-dom';
-import { CheckCircle, XCircle, Link2, Unlink, Loader2, Settings } from 'lucide-react';
+import { CheckCircle, XCircle, Link2, Unlink, Loader2, Settings, Upload, X } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 const BACKEND = import.meta.env.VITE_API_BASE_URL ?? '';
 
+const SHORT_FORM_PLATFORMS = new Set(['instagram', 'tiktok', 'youtube_shorts']);
+
+function deriveSizesFromPlatforms(platforms: string[]): { imageSize: string; videoDimensions: string } {
+  const hasShortForm = platforms.some((p) => SHORT_FORM_PLATFORMS.has(p));
+  return hasShortForm
+    ? { imageSize: '1024x1792', videoDimensions: '720x1280' }
+    : { imageSize: '1792x1024', videoDimensions: '1280x720' };
+}
+
 export default function SettingsPage() {
   const { slug } = useParams<{ slug: string }>();
   const [searchParams] = useSearchParams();
-  const { getToken } = useAuth();
+  const { getAuthToken: getToken } = useAuthToken();
   const navigate = useNavigate();
 
   const [, setWorkspace] = useState<Workspace | null>(null);
@@ -31,11 +40,21 @@ export default function SettingsPage() {
     brand_voice: '',
     target_audience: '',
     agent_instructions: '',
-    // Media defaults
+    // Platforms
+    platforms: ['instagram'] as string[],
+    // Media defaults (auto-derived from platforms)
     default_image_size: '1024x1024' as string,
     default_video_duration: 5 as number,
+    target_video_length: 45 as number,
     default_video_dimensions: '1280x720' as string,
+    // Locked character
+    character_name: '',
+    character_appearance: '',
+    character_reference_ids: [] as string[],
+    character_voice_id: '',
   });
+  const [characterUploads, setCharacterUploads] = useState<WorkspaceUpload[]>([]);
+  const [uploadingRef, setUploadingRef] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -46,6 +65,11 @@ export default function SettingsPage() {
       ]);
       if (wsRes.success && wsRes.data) {
         setWorkspace(wsRes.data);
+        let charRefIds: string[] = [];
+        try { charRefIds = JSON.parse(wsRes.data.character_reference_ids ?? '[]'); } catch { /* ignore */ }
+        let platforms: string[] = ['instagram'];
+        try { platforms = JSON.parse(wsRes.data.default_platforms ?? '["instagram"]'); } catch { /* ignore */ }
+        const derivedSizes = deriveSizesFromPlatforms(platforms);
         setForm({
           ai_tone: wsRes.data.ai_tone,
           default_caption_style: wsRes.data.default_caption_style,
@@ -54,10 +78,26 @@ export default function SettingsPage() {
           brand_voice: wsRes.data.brand_voice ?? '',
           target_audience: wsRes.data.target_audience ?? '',
           agent_instructions: wsRes.data.agent_instructions ?? '',
-          default_image_size: wsRes.data.default_image_size ?? '1024x1024',
+          platforms,
+          default_image_size: derivedSizes.imageSize,
           default_video_duration: wsRes.data.default_video_duration ?? 5,
-          default_video_dimensions: wsRes.data.default_video_dimensions ?? '1280x720',
+          target_video_length: wsRes.data.target_video_length ?? 45,
+          default_video_dimensions: derivedSizes.videoDimensions,
+          character_name: wsRes.data.character_name ?? '',
+          character_appearance: wsRes.data.character_appearance ?? '',
+          character_reference_ids: charRefIds,
+          character_voice_id: wsRes.data.character_voice_id ?? '',
         });
+        // Pre-load uploads for existing character refs
+        if (charRefIds.length > 0) {
+          const uploadsRes = await api.get<TfResponse<WorkspaceUpload[]>>(
+            `/api/workspaces/${slug}/uploads`,
+            token ?? undefined
+          );
+          if (uploadsRes.success && uploadsRes.data) {
+            setCharacterUploads(uploadsRes.data.filter((u) => charRefIds.includes(u.id)));
+          }
+        }
       }
       if (accountsRes.success) setAccounts(accountsRes.data ?? []);
       setLoading(false);
@@ -74,17 +114,25 @@ export default function SettingsPage() {
   async function saveSettings() {
     setSaving(true);
     const token = await getToken();
+    const derivedSizes = deriveSizesFromPlatforms(form.platforms);
     const payload = {
       ai_tone: form.ai_tone,
       default_caption_style: form.default_caption_style,
+      default_platforms: form.platforms.filter((p) => p === 'instagram' || p === 'tiktok') as ('instagram' | 'tiktok')[],
       brand_name: form.brand_name || null,
       brand_description: form.brand_description || null,
       brand_voice: form.brand_voice || null,
       target_audience: form.target_audience || null,
       agent_instructions: form.agent_instructions || null,
-      default_image_size: form.default_image_size,
+      default_image_size: derivedSizes.imageSize as '1024x1024' | '1024x1792' | '1792x1024',
       default_video_duration: form.default_video_duration,
-      default_video_dimensions: form.default_video_dimensions,
+      target_video_length: form.target_video_length,
+      default_video_dimensions: derivedSizes.videoDimensions as '1280x720' | '720x1280',
+      // Locked character
+      character_name: form.character_name || null,
+      character_appearance: form.character_appearance || null,
+      character_reference_ids: form.character_reference_ids,
+      character_voice_id: form.character_voice_id || null,
     };
     const res = await api.patch<TfResponse<Workspace>>(`/api/workspaces/${slug}`, payload, token ?? undefined);
     if (res.success) {
@@ -111,6 +159,33 @@ export default function SettingsPage() {
     const res = await api.post<TfResponse<{ id: string }>>(`/api/workspaces/${slug}/threads`, {}, token ?? undefined);
     if (res.success && res.data) navigate(`/workspaces/${slug}/threads/${res.data.id}`);
     else navigate(`/workspaces/${slug}`);
+  }
+
+  async function uploadCharacterRef(file: File) {
+    if (form.character_reference_ids.length >= 8) return;
+    setUploadingRef(true);
+    try {
+      const token = await getToken();
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch(`${BACKEND}/api/workspaces/${slug}/uploads`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      const data: TfResponse<WorkspaceUpload> = await res.json();
+      if (data.success && data.data) {
+        setCharacterUploads((prev) => [...prev, data.data!]);
+        setForm((f) => ({ ...f, character_reference_ids: [...f.character_reference_ids, data.data!.id] }));
+      }
+    } finally {
+      setUploadingRef(false);
+    }
+  }
+
+  function removeCharacterRef(uploadId: string) {
+    setCharacterUploads((prev) => prev.filter((u) => u.id !== uploadId));
+    setForm((f) => ({ ...f, character_reference_ids: f.character_reference_ids.filter((id) => id !== uploadId) }));
   }
 
   const igAccount = accounts.find((a) => a.platform === 'instagram');
@@ -196,94 +271,125 @@ export default function SettingsPage() {
               <section className={sectionClass}>
                 <div>
                   <h2 className={sectionHeadingClass}>Media Defaults</h2>
-                  <p className='text-meta text-text-secondary mt-1'>Set the default dimensions and duration used when generating images and videos for this workspace. The AI will always respect these unless you ask otherwise.</p>
+                  <p className='text-meta text-text-secondary mt-1'>Aspect ratio and image size are automatically set from your selected platforms. Duration settings are configured separately below.</p>
                 </div>
 
-                {/* Default image size */}
+                {/* Platform selection */}
                 {(() => {
-                  const imgPresets = ['1024x1024', '1024x1792', '1792x1024'];
-                  const isCustomImg = !imgPresets.includes(form.default_image_size);
-                  const [imgW, imgH] = form.default_image_size.split('x').map(Number);
-                  const inactiveImgBtn = 'bg-surface-white border-border-soft text-text-secondary hover:border-ink/30 hover:text-text-primary';
+                  const platformOptions = [
+                    { id: 'instagram', label: 'Instagram Reels', ratio: '9:16' },
+                    { id: 'tiktok',    label: 'TikTok',          ratio: '9:16' },
+                    { id: 'youtube_shorts', label: 'YouTube Shorts', ratio: '9:16' },
+                  ];
+                  const derivedSizes = deriveSizesFromPlatforms(form.platforms);
+                  const isPortrait = derivedSizes.videoDimensions === '720x1280';
                   return (
                     <div>
-                      <label className={cn(labelClass, 'mb-2')}>Default image size</label>
-                      <div className='grid grid-cols-4 gap-2'>
-                        {[
-                          { value: '1024x1024', label: '1:1', sub: 'Square · Instagram feed' },
-                          { value: '1024x1792', label: '9:16', sub: 'Portrait · Stories / TikTok' },
-                          { value: '1792x1024', label: '16:9', sub: 'Landscape · YouTube / Twitter' },
-                        ].map((opt) => (
-                          <button
-                            key={opt.value}
-                            onClick={() => setForm((f) => ({ ...f, default_image_size: opt.value }))}
-                            className={cn(
-                              'flex flex-col items-center gap-0.5 px-2 py-3 rounded-xl border text-message transition-all',
-                              form.default_image_size === opt.value
-                                ? 'bg-ink border-ink text-on-ink'
-                                : inactiveImgBtn
-                            )}
-                          >
-                            <span className='font-mono font-semibold'>{opt.label}</span>
-                            <span className='text-meta opacity-70 text-center leading-tight'>{opt.sub}</span>
-                          </button>
-                        ))}
-                        {/* Custom tile */}
-                        <button
-                          onClick={() => {
-                            if (!isCustomImg) setForm((f) => ({ ...f, default_image_size: '512x512' }));
-                          }}
-                          className={cn(
-                            'flex flex-col items-center gap-0.5 px-2 py-3 rounded-xl border text-message transition-all',
-                            isCustomImg
-                              ? 'bg-ink border-ink text-on-ink'
-                              : inactiveImgBtn
-                          )}
-                        >
-                          <span className='font-mono font-semibold'>✎</span>
-                          <span className='text-meta opacity-70 text-center leading-tight'>Custom</span>
-                        </button>
+                      <label className={cn(labelClass, 'mb-2')}>Target platforms</label>
+                      <div className='flex flex-wrap gap-2'>
+                        {platformOptions.map((opt) => {
+                          const active = form.platforms.includes(opt.id);
+                          return (
+                            <button
+                              key={opt.id}
+                              onClick={() => {
+                                const next = active
+                                  ? form.platforms.filter((p) => p !== opt.id)
+                                  : [...form.platforms, opt.id];
+                                const sizes = deriveSizesFromPlatforms(next);
+                                setForm((f) => ({
+                                  ...f,
+                                  platforms: next,
+                                  default_image_size: sizes.imageSize,
+                                  default_video_dimensions: sizes.videoDimensions,
+                                }));
+                              }}
+                              className={cn(
+                                'flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-message transition-all',
+                                active ? 'bg-ink border-ink text-on-ink' : inactiveButtonClass
+                              )}
+                            >
+                              {opt.label}
+                              <span className={cn('text-meta opacity-70', active && 'opacity-80')}>{opt.ratio}</span>
+                            </button>
+                          );
+                        })}
                       </div>
-                      {/* Custom dimension inputs */}
-                      {isCustomImg && (
-                        <div className='mt-2 flex items-center gap-2'>
-                          <input
-                            type='number'
-                            min={64}
-                            max={4096}
-                            step={8}
-                            value={imgW || ''}
-                            onChange={(e) => setForm((f) => ({ ...f, default_image_size: `${e.target.value}x${imgH || 512}` }))}
-                            placeholder='Width'
-                            className='w-24 bg-surface-white border border-border-soft rounded-lg px-2.5 py-1.5 text-message text-text-primary placeholder-text-muted focus:outline-none focus:border-ink transition-colors font-mono'
-                          />
-                          <span className='text-text-secondary text-message'>×</span>
-                          <input
-                            type='number'
-                            min={64}
-                            max={4096}
-                            step={8}
-                            value={imgH || ''}
-                            onChange={(e) => setForm((f) => ({ ...f, default_image_size: `${imgW || 512}x${e.target.value}` }))}
-                            placeholder='Height'
-                            className='w-24 bg-surface-white border border-border-soft rounded-lg px-2.5 py-1.5 text-message text-text-primary placeholder-text-muted focus:outline-none focus:border-ink transition-colors font-mono'
-                          />
-                          <span className='text-meta text-text-secondary'>px</span>
-                        </div>
-                      )}
-                      <p className='text-meta text-text-muted mt-1.5'>Current: <span className='font-mono text-text-secondary'>{form.default_image_size}</span></p>
+                      <div className='mt-2 flex items-center gap-3 text-meta text-text-muted'>
+                        <span>Derived defaults:</span>
+                        <span className='font-mono text-text-secondary'>image {isPortrait ? '9:16' : '16:9'}</span>
+                        <span>·</span>
+                        <span className='font-mono text-text-secondary'>video {isPortrait ? '9:16' : '16:9'}</span>
+                      </div>
                     </div>
                   );
                 })()}
 
-                {/* Default video duration */}
+                {/* Target video length */}
                 {(() => {
-                  const durationPresets = [5, 10];
-                  const isCustomDuration = !durationPresets.includes(form.default_video_duration);
-                  const inactiveVidBtn = 'bg-surface-white border-border-soft text-text-secondary hover:border-ink/30 hover:text-text-primary';
+                  const targetPresets = [30, 45, 60];
+                  const isCustomTarget = !targetPresets.includes(form.target_video_length);
+                  const minWords = Math.round(form.target_video_length * 2.4 * 0.9);
+                  const maxWords = Math.round(form.target_video_length * 2.4 * 1.1);
+                  const inactiveBtn = 'bg-surface-white border-border-soft text-text-secondary hover:border-ink/30 hover:text-text-primary';
                   return (
                     <div>
-                      <label className={cn(labelClass, 'mb-2')}>Default video duration</label>
+                      <label className={cn(labelClass, 'mb-1')}>Target video length</label>
+                      <p className='text-meta text-text-muted mb-2'>Sets script word count target. {form.target_video_length}s → <span className='font-mono'>{minWords}–{maxWords} words</span></p>
+                      <div className='flex gap-2'>
+                        {[30, 45, 60].map((d) => (
+                          <button
+                            key={d}
+                            onClick={() => setForm((f) => ({ ...f, target_video_length: d }))}
+                            className={cn(
+                              'flex-1 py-2 rounded-full border text-message font-medium transition-all',
+                              form.target_video_length === d
+                                ? 'bg-ink border-ink text-on-ink'
+                                : inactiveBtn
+                            )}
+                          >
+                            {d}s
+                          </button>
+                        ))}
+                        <button
+                          onClick={() => {
+                            if (!isCustomTarget) setForm((f) => ({ ...f, target_video_length: 90 }));
+                          }}
+                          className={cn(
+                            'flex-1 py-2 rounded-full border text-message font-medium transition-all',
+                            isCustomTarget ? 'bg-ink border-ink text-on-ink' : inactiveBtn
+                          )}
+                        >
+                          Custom
+                        </button>
+                      </div>
+                      {isCustomTarget && (
+                        <div className='mt-2 flex items-center gap-2'>
+                          <input
+                            type='number'
+                            min={10}
+                            max={600}
+                            step={5}
+                            value={form.target_video_length}
+                            onChange={(e) => setForm((f) => ({ ...f, target_video_length: Number(e.target.value) }))}
+                            className='w-24 bg-surface-white border border-border-soft rounded-lg px-2.5 py-1.5 text-message text-text-primary focus:outline-none focus:border-ink transition-colors font-mono'
+                          />
+                          <span className='text-meta text-text-secondary'>seconds</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Max clip length */}
+                {(() => {
+                  const clipPresets = [5, 10];
+                  const isCustomClip = !clipPresets.includes(form.default_video_duration);
+                  const inactiveBtn = 'bg-surface-white border-border-soft text-text-secondary hover:border-ink/30 hover:text-text-primary';
+                  return (
+                    <div>
+                      <label className={cn(labelClass, 'mb-1')}>Max clip length</label>
+                      <p className='text-meta text-text-muted mb-2'>Maximum duration of each individual generated video clip.</p>
                       <div className='flex gap-2'>
                         {[5, 10].map((d) => (
                           <button
@@ -293,34 +399,30 @@ export default function SettingsPage() {
                               'flex-1 py-2 rounded-full border text-message font-medium transition-all',
                               form.default_video_duration === d
                                 ? 'bg-ink border-ink text-on-ink'
-                                : inactiveVidBtn
+                                : inactiveBtn
                             )}
                           >
                             {d}s
                           </button>
                         ))}
-                        {/* Custom duration button */}
                         <button
                           onClick={() => {
-                            if (!isCustomDuration) setForm((f) => ({ ...f, default_video_duration: 15 }));
+                            if (!isCustomClip) setForm((f) => ({ ...f, default_video_duration: 15 }));
                           }}
                           className={cn(
                             'flex-1 py-2 rounded-full border text-message font-medium transition-all',
-                            isCustomDuration
-                              ? 'bg-ink border-ink text-on-ink'
-                              : inactiveVidBtn
+                            isCustomClip ? 'bg-ink border-ink text-on-ink' : inactiveBtn
                           )}
                         >
                           Custom
                         </button>
                       </div>
-                      {/* Custom duration input */}
-                      {isCustomDuration && (
+                      {isCustomClip && (
                         <div className='mt-2 flex items-center gap-2'>
                           <input
                             type='number'
                             min={1}
-                            max={300}
+                            max={60}
                             step={1}
                             value={form.default_video_duration}
                             onChange={(e) => setForm((f) => ({ ...f, default_video_duration: Number(e.target.value) }))}
@@ -329,85 +431,10 @@ export default function SettingsPage() {
                           <span className='text-meta text-text-secondary'>seconds</span>
                         </div>
                       )}
-                      <p className='text-meta text-text-muted mt-1.5'>Saved as a preference. Used to guide script length. AI video clip duration is model-dependent (max ~20s per clip).</p>
                     </div>
                   );
                 })()}
 
-                {/* Default video dimensions */}
-                {(() => {
-                  const vidPresets = ['1280x720', '720x1280'];
-                  const isCustomVid = !vidPresets.includes(form.default_video_dimensions);
-                  const [vidW, vidH] = form.default_video_dimensions.split('x').map(Number);
-                  const inactiveVidDimBtn = 'bg-surface-white border-border-soft text-text-secondary hover:border-ink/30 hover:text-text-primary';
-                  return (
-                    <div>
-                      <label className={cn(labelClass, 'mb-2')}>Default video dimensions</label>
-                      <div className='grid grid-cols-3 gap-2'>
-                        {[
-                          { value: '1280x720', label: '16:9', sub: 'Landscape · 1280×720' },
-                          { value: '720x1280', label: '9:16', sub: 'Portrait · 720×1280 · TikTok / Reels' },
-                        ].map((opt) => (
-                          <button
-                            key={opt.value}
-                            onClick={() => setForm((f) => ({ ...f, default_video_dimensions: opt.value }))}
-                            className={cn(
-                              'flex flex-col items-center gap-0.5 px-3 py-3 rounded-xl border text-message transition-all',
-                              form.default_video_dimensions === opt.value
-                                ? 'bg-ink border-ink text-on-ink'
-                                : inactiveVidDimBtn
-                            )}
-                          >
-                            <span className='font-mono font-semibold'>{opt.label}</span>
-                            <span className='text-meta opacity-70 text-center leading-tight'>{opt.sub}</span>
-                          </button>
-                        ))}
-                        {/* Custom tile */}
-                        <button
-                          onClick={() => {
-                            if (!isCustomVid) setForm((f) => ({ ...f, default_video_dimensions: '1080x1080' }));
-                          }}
-                          className={cn(
-                            'flex flex-col items-center gap-0.5 px-3 py-3 rounded-xl border text-message transition-all',
-                            isCustomVid
-                              ? 'bg-ink border-ink text-on-ink'
-                              : inactiveVidDimBtn
-                          )}
-                        >
-                          <span className='font-mono font-semibold'>✎</span>
-                          <span className='text-meta opacity-70 text-center leading-tight'>Custom</span>
-                        </button>
-                      </div>
-                      {/* Custom dimension inputs */}
-                      {isCustomVid && (
-                        <div className='mt-2 flex items-center gap-2'>
-                          <input
-                            type='number'
-                            min={64}
-                            max={4096}
-                            step={8}
-                            value={vidW || ''}
-                            onChange={(e) => setForm((f) => ({ ...f, default_video_dimensions: `${e.target.value}x${vidH || 720}` }))}
-                            placeholder='Width'
-                            className='w-24 bg-surface-white border border-border-soft rounded-lg px-2.5 py-1.5 text-message text-text-primary placeholder-text-muted focus:outline-none focus:border-ink transition-colors font-mono'
-                          />
-                          <span className='text-text-secondary text-message'>×</span>
-                          <input
-                            type='number'
-                            min={64}
-                            max={4096}
-                            step={8}
-                            value={vidH || ''}
-                            onChange={(e) => setForm((f) => ({ ...f, default_video_dimensions: `${vidW || 1280}x${e.target.value}` }))}
-                            placeholder='Height'
-                            className='w-24 bg-surface-white border border-border-soft rounded-lg px-2.5 py-1.5 text-message text-text-primary placeholder-text-muted focus:outline-none focus:border-ink transition-colors font-mono'
-                          />
-                          <span className='text-meta text-text-secondary'>px</span>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
 
                 <button
                   onClick={saveSettings}
@@ -494,6 +521,95 @@ export default function SettingsPage() {
                     className={cn(inputClass, 'resize-none font-mono')}
                   />
                   <p className='text-meta text-text-muted mt-1.5'>Each line is a separate instruction. Be specific and direct.</p>
+                </div>
+
+                <button
+                  onClick={saveSettings}
+                  disabled={saving}
+                  className='px-4 py-2 bg-brand hover:bg-brand-hover disabled:opacity-50 rounded-lg text-message font-medium transition-colors text-on-brand'
+                >
+                  {saving ? 'Saving...' : 'Save'}
+                </button>
+              </section>
+
+              {/* Locked Character */}
+              <section className={sectionClass}>
+                <div>
+                  <h2 className={sectionHeadingClass}>Locked Character</h2>
+                  <p className='text-meta text-text-secondary mt-1'>Define one character whose appearance is injected into every video generation prompt to maintain a consistent look across all clips.</p>
+                </div>
+
+                <div>
+                  <label className={cn(labelClass, 'mb-1.5')}>Character name</label>
+                  <input
+                    type='text'
+                    placeholder='e.g. Aria'
+                    value={form.character_name}
+                    onChange={(e) => setForm((f) => ({ ...f, character_name: e.target.value }))}
+                    className={inputClass}
+                  />
+                </div>
+
+                <div>
+                  <label className={cn(labelClass, 'mb-1.5')}>Appearance description</label>
+                  <textarea
+                    rows={4}
+                    placeholder='Describe physical appearance in detail: hair colour and style, eye colour, skin tone, facial features, typical wardrobe, distinguishing marks. Be specific — this is pasted verbatim into every video prompt.'
+                    value={form.character_appearance}
+                    onChange={(e) => setForm((f) => ({ ...f, character_appearance: e.target.value }))}
+                    className={cn(inputClass, 'resize-none')}
+                  />
+                </div>
+
+                <div>
+                  <label className={cn(labelClass, 'mb-1.5')}>Reference images <span className='text-text-muted font-normal'>({form.character_reference_ids.length}/8)</span></label>
+                  <p className='text-meta text-text-muted mb-2'>The first image will be used as the reference image for video generation.</p>
+                  <div className='flex flex-wrap gap-2'>
+                    {characterUploads.map((u, i) => (
+                      <div key={u.id} className='relative group'>
+                        <img
+                          src={u.public_url}
+                          alt={u.name}
+                          className='w-16 h-16 object-cover rounded-lg border border-border-soft'
+                        />
+                        {i === 0 && (
+                          <span className='absolute bottom-0.5 left-0.5 text-[9px] bg-ink/80 text-on-ink rounded px-1'>primary</span>
+                        )}
+                        <button
+                          onClick={() => removeCharacterRef(u.id)}
+                          className='absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity'
+                        >
+                          <X size={8} className='text-white' />
+                        </button>
+                      </div>
+                    ))}
+                    {form.character_reference_ids.length < 8 && (
+                      <label className={cn(
+                        'w-16 h-16 flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-border-soft text-text-muted cursor-pointer hover:border-ink/40 hover:text-text-secondary transition-colors',
+                        uploadingRef && 'opacity-50 pointer-events-none'
+                      )}>
+                        {uploadingRef ? <Loader2 size={14} className='animate-spin' /> : <Upload size={14} />}
+                        <span className='text-[10px] mt-1'>{uploadingRef ? 'Uploading' : 'Add'}</span>
+                        <input
+                          type='file'
+                          accept='image/*'
+                          className='sr-only'
+                          onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadCharacterRef(f); e.target.value = ''; }}
+                        />
+                      </label>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <label className={cn(labelClass, 'mb-1.5')}>Voice ID <span className='text-text-muted font-normal'>(optional)</span></label>
+                  <input
+                    type='text'
+                    placeholder='e.g. ElevenLabs voice ID'
+                    value={form.character_voice_id}
+                    onChange={(e) => setForm((f) => ({ ...f, character_voice_id: e.target.value }))}
+                    className={inputClass}
+                  />
                 </div>
 
                 <button

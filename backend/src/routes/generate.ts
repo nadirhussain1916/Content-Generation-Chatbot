@@ -155,10 +155,30 @@ generateRouter.post('/video', async (c) => {
     }
 
     // ── Resolve reference image for video generation ──────────────────────────
+    // Priority: explicit upload from the draft > first character reference image
     let videoReferenceImageUrl: string | undefined;
     if (body.referenceUploadId) {
       const refUploads = await getWorkspaceUploadsByIds(c.env.DB, [body.referenceUploadId], workspace.id);
       videoReferenceImageUrl = refUploads.results[0]?.public_url;
+    } else if (workspace.character_reference_ids) {
+      try {
+        const charRefIds: string[] = JSON.parse(workspace.character_reference_ids);
+        if (charRefIds.length > 0) {
+          const charUploads = await getWorkspaceUploadsByIds(c.env.DB, [charRefIds[0]], workspace.id);
+          videoReferenceImageUrl = charUploads.results[0]?.public_url;
+        }
+      } catch { /* malformed JSON — ignore */ }
+    }
+
+    // ── Prepend locked character block to video prompt ────────────────────────
+    let videoPrompt = body.prompt;
+    if (workspace.character_name || workspace.character_appearance) {
+      const charBlock = [
+        `CHARACTER (maintain consistent appearance throughout every scene):`,
+        workspace.character_name        ? `Name: ${workspace.character_name}` : '',
+        workspace.character_appearance  ? `Appearance: ${workspace.character_appearance}` : '',
+      ].filter(Boolean).join('\n');
+      videoPrompt = `${charBlock}\n\n${body.prompt}`;
     }
 
     // ── Per-model config ──────────────────────────────────────────────────────
@@ -294,7 +314,7 @@ generateRouter.post('/video', async (c) => {
           assetId,
           workspaceId: workspace.id,
           r2KeyPrefix,
-          prompt: body.prompt,
+          prompt: videoPrompt,
           aspectRatio: videoAspectRatio as '16:9' | '9:16',
           initialDuration: VALID_DURATIONS.has(videoDuration) ? videoDuration : 10,
           extendDuration,
@@ -321,7 +341,7 @@ generateRouter.post('/video', async (c) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          input: modelConfig.buildInput(body.prompt, videoAspectRatio, videoDuration, videoReferenceImageUrl),
+          input: modelConfig.buildInput(videoPrompt, videoAspectRatio, videoDuration, videoReferenceImageUrl),
         }),
       }
     );
@@ -364,7 +384,7 @@ generateRouter.post('/video', async (c) => {
         assetId,
         workspaceId: workspace.id,
         r2KeyPrefix,
-        prompt: body.prompt,
+        prompt: videoPrompt,
         predictionId: prediction.id,
         aspectRatio: videoAspectRatio as '16:9' | '9:16',
         referenceImageUrl: videoReferenceImageUrl,
