@@ -35,6 +35,8 @@ export interface AdminStats {
 
 export interface AdminUser {
   id: string;
+  email: string | null;
+  name: string | null;
   onboarded: number;
   created_at: number;
   workspaceCount: number;
@@ -43,7 +45,7 @@ export interface AdminUser {
 
 export interface ImpersonateResponse {
   token: string;
-  user: { id: string; onboarded: number; created_at: number };
+  user: { id: string; email: string | null; name: string | null; onboarded: number; created_at: number };
   workspaceSlug: string | null;
 }
 

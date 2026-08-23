@@ -13,9 +13,8 @@ export function ImpersonationBanner() {
     navigate('/admin');
   };
 
-  const displayId = impersonatedUser.id.length > 20
-    ? `${impersonatedUser.id.slice(0, 8)}…${impersonatedUser.id.slice(-6)}`
-    : impersonatedUser.id;
+  const displayName = impersonatedUser.name ?? impersonatedUser.email ?? impersonatedUser.id;
+  const subLabel = impersonatedUser.name && impersonatedUser.email ? impersonatedUser.email : null;
 
   return (
     <div className='fixed top-0 inset-x-0 z-[9999] flex items-center justify-between gap-3 bg-red-600 px-4 py-2 text-white shadow-lg'>
@@ -23,7 +22,10 @@ export function ImpersonationBanner() {
         <ShieldAlert className='w-4 h-4 shrink-0' />
         <span className='text-sm font-semibold truncate'>
           Impersonating{' '}
-          <span className='font-bold font-mono'>{displayId}</span>
+          <span className='font-bold'>{displayName}</span>
+          {subLabel && (
+            <span className='hidden sm:inline font-normal opacity-80 ml-1'>({subLabel})</span>
+          )}
         </span>
       </div>
       <button

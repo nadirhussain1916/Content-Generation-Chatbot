@@ -19,6 +19,7 @@ export interface TfPaginatedResponse<T> extends TfResponse<T> {
 export interface User {
   id: string;
   email: string | null;
+  name: string | null;
   onboarded: number;
   created_at: number;
   updated_at: number;

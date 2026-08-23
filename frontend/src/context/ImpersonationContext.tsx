@@ -2,6 +2,8 @@ import { createContext, useContext, useState, useCallback, type ReactNode } from
 
 interface ImpersonatedUser {
   id: string;
+  email: string | null;
+  name: string | null;
   onboarded: number;
   created_at: number;
 }

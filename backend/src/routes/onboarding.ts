@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
-import { upsertUser, getUser, setUserOnboarded, updateUserEmail, createWorkspace, getWorkspacesByOwner } from '../db/queries';
+import { upsertUser, getUser, setUserOnboarded, updateUserProfile, createWorkspace, getWorkspacesByOwner } from '../db/queries';
 import type { CloudflareBindings } from '../env';
 import type { ContextVariables, TfResponse, Workspace } from '../types';
 import { Logger } from '../utils/Logger';
@@ -22,27 +22,38 @@ onboardingRouter.post('/bootstrap', async (c) => {
       getWorkspacesByOwner(c.env.DB, userId),
     ]);
 
-    // Populate email on first bootstrap after migration (or if missing for any reason).
-    if (user && !user.email) {
+    // Populate name/email from Clerk on first bootstrap (or if either is missing).
+    if (user && (!user.email || !user.name)) {
       try {
         const clerkRes = await fetch(`https://api.clerk.com/v1/users/${userId}`, {
           headers: { Authorization: `Bearer ${c.env.CLERK_SECRET_KEY}` },
         });
         if (clerkRes.ok) {
           const data = await clerkRes.json() as {
+            first_name?: string | null;
+            last_name?: string | null;
+            username?: string | null;
             primary_email_address_id?: string;
             email_addresses?: { id: string; email_address: string }[];
           };
+
           const primary = data.email_addresses?.find(
             (e) => e.id === data.primary_email_address_id
           );
-          if (primary?.email_address) {
-            await updateUserEmail(c.env.DB, userId, primary.email_address);
+          const email = primary?.email_address ?? undefined;
+          const fullName = [data.first_name, data.last_name].filter(Boolean).join(' ') || data.username || undefined;
+
+          const profile: { email?: string; name?: string } = {};
+          if (!user.email && email) profile.email = email;
+          if (!user.name && fullName) profile.name = fullName;
+
+          if (Object.keys(profile).length > 0) {
+            await updateUserProfile(c.env.DB, userId, profile);
           }
         }
-      } catch (emailErr) {
+      } catch (profileErr) {
         // Non-fatal — don't block the bootstrap response
-        Logger.log('OnboardingEmailFetchError', { userId }, emailErr);
+        Logger.log('OnboardingProfileFetchError', { userId }, profileErr);
       }
     }
 

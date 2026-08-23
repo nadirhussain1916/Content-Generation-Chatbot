@@ -37,6 +37,8 @@ interface AdminStats {
 
 interface AdminUser {
   id: string;
+  email: string | null;
+  name: string | null;
   onboarded: number;
   created_at: number;
   workspaceCount: number;
@@ -76,16 +78,16 @@ adminRouter.get('/users', async (c) => {
 
     const result = await c.env.DB
       .prepare(
-        `SELECT u.id, u.onboarded, u.created_at,
+        `SELECT u.id, u.email, u.name, u.onboarded, u.created_at,
                 COUNT(w.id) as workspaceCount,
                 MIN(w.slug) as workspaceSlug
          FROM users u
          LEFT JOIN workspaces w ON w.owner_id = u.id
-         ${like ? 'WHERE u.id LIKE ?' : ''}
+         ${like ? 'WHERE u.id LIKE ? OR u.email LIKE ? OR u.name LIKE ?' : ''}
          GROUP BY u.id
          ORDER BY u.created_at DESC`
       )
-      .bind(...(like ? [like] : []))
+      .bind(...(like ? [like, like, like] : []))
       .all<AdminUser>();
 
     return c.json<TfResponse<AdminUser[]>>({ success: true, data: result.results });
@@ -107,9 +109,9 @@ adminRouter.post('/impersonate/:userId', async (c) => {
     }
 
     const [targetUser, targetWorkspace] = await Promise.all([
-      c.env.DB.prepare('SELECT id, onboarded, created_at FROM users WHERE id = ?')
+      c.env.DB.prepare('SELECT id, email, name, onboarded, created_at FROM users WHERE id = ?')
         .bind(targetUserId)
-        .first<{ id: string; onboarded: number; created_at: number }>(),
+        .first<{ id: string; email: string | null; name: string | null; onboarded: number; created_at: number }>(),
       c.env.DB.prepare('SELECT slug FROM workspaces WHERE owner_id = ? LIMIT 1')
         .bind(targetUserId)
         .first<{ slug: string }>(),

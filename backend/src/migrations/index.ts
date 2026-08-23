@@ -13,6 +13,7 @@ import { migrateMessageImageReferences } from './012_message_image_references';
 import { migrateWorkspaceTargetVideoLength } from './013_workspace_target_video_length';
 import { migrateWorkspaceCharacter } from './014_workspace_character';
 import { migrateUserEmail } from './015_user_email';
+import { migrateUserName } from './016_user_name';
 
 export async function runAllMigrations(db: D1Database): Promise<string[]> {
   const all: string[] = ['[Migrations] Starting...'];
@@ -33,6 +34,7 @@ export async function runAllMigrations(db: D1Database): Promise<string[]> {
     migrateWorkspaceTargetVideoLength,
     migrateWorkspaceCharacter,
     migrateUserEmail,
+    migrateUserName,
   ];
 
   for (const migrate of migrations) {

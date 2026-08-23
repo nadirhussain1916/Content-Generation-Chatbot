@@ -18,10 +18,12 @@ export async function setUserOnboarded(db: D1Database, id: string) {
   ).bind(id).run();
 }
 
-export async function updateUserEmail(db: D1Database, id: string, email: string) {
+export async function updateUserProfile(db: D1Database, id: string, profile: { email?: string; name?: string }) {
+  const fields = Object.entries(profile).map(([k]) => `${k} = ?`).join(', ');
+  const values = Object.values(profile);
   return db.prepare(
-    'UPDATE users SET email = ?, updated_at = unixepoch() WHERE id = ?'
-  ).bind(email, id).run();
+    `UPDATE users SET ${fields}, updated_at = unixepoch() WHERE id = ?`
+  ).bind(...values, id).run();
 }
 
 // ─── Workspaces ──────────────────────────────────────────────────────────────
