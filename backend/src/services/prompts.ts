@@ -9,7 +9,7 @@ const VIDEO_DIM_LABELS: Record<string, string> = {
   '720x1280': '720x1280 portrait 9:16 — best for TikTok / Reels',
 };
 
-function brandBlock(ws: {
+export function brandBlock(ws: {
   brand_name?: string | null;
   brand_description?: string | null;
   brand_voice?: string | null;

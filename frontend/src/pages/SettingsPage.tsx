@@ -11,72 +11,15 @@ import { cn } from '../lib/utils';
 
 const BACKEND = import.meta.env.VITE_API_BASE_URL ?? '';
 
-// ─── Per-platform settings types ─────────────────────────────────────────────
-
-type AspectRatio = '9:16' | '16:9' | '1:1' | '4:3' | '3:4';
-
-interface PlatformConfig {
-  enabled: boolean;
-  aspectRatio: AspectRatio;
-}
-
-type PlatformSettings = Record<string, PlatformConfig>;
-
-const PLATFORM_DEFS: { id: string; label: string; icon: string; defaultRatio: AspectRatio }[] = [
-  { id: 'instagram',      label: 'Instagram Reels', icon: 'IG', defaultRatio: '9:16' },
-  { id: 'tiktok',         label: 'TikTok',          icon: 'TT', defaultRatio: '9:16' },
-  { id: 'youtube_shorts', label: 'YouTube Shorts',  icon: 'YS', defaultRatio: '9:16' },
-  { id: 'youtube',        label: 'YouTube',          icon: 'YT', defaultRatio: '16:9' },
-  { id: 'twitter',        label: 'Twitter / X',      icon: '𝕏',  defaultRatio: '16:9' },
-  { id: 'linkedin',       label: 'LinkedIn',         icon: 'in', defaultRatio: '1:1'  },
-];
-
-const DEFAULT_PLATFORM_SETTINGS: PlatformSettings = Object.fromEntries(
-  PLATFORM_DEFS.map((p) => [p.id, { enabled: p.id === 'instagram', aspectRatio: p.defaultRatio }])
-);
-
-function parsePlatformSettings(raw: string | null | undefined): PlatformSettings {
-  if (!raw) return { ...DEFAULT_PLATFORM_SETTINGS };
-  try {
-    const parsed = JSON.parse(raw) as Record<string, Partial<PlatformConfig>>;
-    // Merge with defaults so new platforms always appear
-    const merged: PlatformSettings = { ...DEFAULT_PLATFORM_SETTINGS };
-    for (const [id, cfg] of Object.entries(parsed)) {
-      if (cfg && typeof cfg === 'object') {
-        merged[id] = {
-          enabled: cfg.enabled ?? false,
-          aspectRatio: (cfg.aspectRatio as AspectRatio) ?? DEFAULT_PLATFORM_SETTINGS[id]?.aspectRatio ?? '9:16',
-        };
-      }
-    }
-    return merged;
-  } catch {
-    return { ...DEFAULT_PLATFORM_SETTINGS };
-  }
-}
-
-const RATIO_IMAGE_SIZE: Record<AspectRatio, string> = {
-  '9:16': '1024×1792',
-  '16:9': '1792×1024',
-  '1:1':  '1024×1024',
-  '4:3':  '1365×1024',
-  '3:4':  '1024×1365',
-};
-
-const RATIO_VIDEO_DIMS: Record<AspectRatio, string> = {
-  '9:16': '720×1280',
-  '16:9': '1280×720',
-  '1:1':  '1080×1080',
-  '4:3':  '1280×960',
-  '3:4':  '960×1280',
-};
-
-/** Returns the image/video sizes of the first enabled platform, for the "derived defaults" hint. */
-function derivedSizesFromSettings(settings: PlatformSettings): { imageSize: string; videoDimensions: string; aspectRatio: AspectRatio } {
-  const primary = PLATFORM_DEFS.find((p) => settings[p.id]?.enabled);
-  const ratio: AspectRatio = primary ? (settings[primary.id]?.aspectRatio ?? '9:16') : '9:16';
-  return { imageSize: RATIO_IMAGE_SIZE[ratio], videoDimensions: RATIO_VIDEO_DIMS[ratio], aspectRatio: ratio };
-}
+import {
+  type AspectRatio,
+  type PlatformConfig,
+  type PlatformSettings,
+  PLATFORM_DEFS,
+  DEFAULT_PLATFORM_SETTINGS,
+  parsePlatformSettings,
+  derivedSizesFromSettings,
+} from '../lib/platform';
 
 export default function SettingsPage() {
   const { slug } = useParams<{ slug: string }>();
