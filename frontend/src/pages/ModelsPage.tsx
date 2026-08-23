@@ -1,10 +1,10 @@
-import { useNavigate, useParams, Link } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import AppShell from '../components/AppShell';
 import Sidebar from '../components/Sidebar';
 import { cn } from '../lib/utils';
 import {
-  MessageSquare, ImageIcon, VideoIcon, Zap, DollarSign,
-  CheckCircle, AlertCircle, ArrowRight, Sparkles,
+  MessageSquare, ImageIcon, VideoIcon, DollarSign,
+  CheckCircle, AlertCircle, Sparkles,
 } from 'lucide-react';
 
 // ─── Data ─────────────────────────────────────────────────────────────────────

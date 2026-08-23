@@ -11,11 +11,6 @@ import { cn } from '../lib/utils';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function shortId(id: string): string {
-  if (id.length <= 16) return id;
-  return `${id.slice(0, 8)}…${id.slice(-6)}`;
-}
-
 function formatDate(ts: number): string {
   return new Date(ts * 1000).toLocaleDateString(undefined, { dateStyle: 'medium' });
 }

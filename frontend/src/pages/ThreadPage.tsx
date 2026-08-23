@@ -198,6 +198,10 @@ export default function ThreadPage() {
       content: content.trim(),
       post_package: null,
       image_references: imageReferences.length > 0 ? JSON.stringify(imageReferences) : null,
+      model: null,
+      cost_usd: null,
+      input_tokens: null,
+      output_tokens: null,
       created_at: Math.floor(Date.now() / 1000),
     };
     if (imageReferences.length > 0) {
