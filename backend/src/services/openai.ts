@@ -63,11 +63,13 @@ export type PlannerQuestion = {
   allowMultiple: boolean;
 };
 
+export type AgentUsage = { inputTokens: number; outputTokens: number };
+
 export type AgentResult =
-  | { action: 'chat'; reply: string }
-  | { action: 'questions'; reply: string; questions: PlannerQuestion[] }
-  | { action: 'image_draft'; reply: string; package: ImagePostPackage }
-  | { action: 'video_script'; reply: string; package: VideoPostPackage };
+  | { action: 'chat'; reply: string; usage: AgentUsage }
+  | { action: 'questions'; reply: string; questions: PlannerQuestion[]; usage: AgentUsage }
+  | { action: 'image_draft'; reply: string; package: ImagePostPackage; usage: AgentUsage }
+  | { action: 'video_script'; reply: string; package: VideoPostPackage; usage: AgentUsage };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -246,10 +248,15 @@ export async function runAgent(params: {
     throw err; // re-throw so messages.ts returns a 500
   });
 
+  const usage: AgentUsage = {
+    inputTokens: result.usage?.inputTokens ?? 0,
+    outputTokens: result.usage?.outputTokens ?? 0,
+  };
+
   Logger.log('AgentComplete', {
     stepCount: result.steps.length,
-    totalInputTokens: result.usage?.inputTokens,
-    totalOutputTokens: result.usage?.outputTokens,
+    totalInputTokens: usage.inputTokens,
+    totalOutputTokens: usage.outputTokens,
     finishReason: result.finishReason,
   });
 
@@ -272,22 +279,23 @@ export async function runAgent(params: {
       Logger.log('AgentTerminalTool', { toolName, stepIndex: i });
 
       if (toolName === 'chat_reply') {
-        return { action: 'chat', reply: String(input.reply ?? '') };
+        return { action: 'chat', reply: String(input.reply ?? ''), usage };
       }
       if (toolName === 'ask_questions') {
         return {
           action: 'questions',
           reply: String(input.reply ?? ''),
           questions: (input.questions as PlannerQuestion[]) ?? [],
+          usage,
         };
       }
       if (toolName === 'generate_image_draft') {
         const { reply, ...pkg } = input;
-        return { action: 'image_draft', reply: String(reply ?? ''), package: pkg as unknown as ImagePostPackage };
+        return { action: 'image_draft', reply: String(reply ?? ''), package: pkg as unknown as ImagePostPackage, usage };
       }
       if (toolName === 'generate_video_script') {
         const { reply, ...pkg } = input;
-        return { action: 'video_script', reply: String(reply ?? ''), package: pkg as unknown as VideoPostPackage };
+        return { action: 'video_script', reply: String(reply ?? ''), package: pkg as unknown as VideoPostPackage, usage };
       }
     }
   }
@@ -300,6 +308,7 @@ export async function runAgent(params: {
   return {
     action: 'chat',
     reply: result.text || "I'm here to help! What would you like to create?",
+    usage,
   };
 }
 

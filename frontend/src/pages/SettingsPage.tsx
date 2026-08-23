@@ -11,13 +11,71 @@ import { cn } from '../lib/utils';
 
 const BACKEND = import.meta.env.VITE_API_BASE_URL ?? '';
 
-const SHORT_FORM_PLATFORMS = new Set(['instagram', 'tiktok', 'youtube_shorts']);
+// ─── Per-platform settings types ─────────────────────────────────────────────
 
-function deriveSizesFromPlatforms(platforms: string[]): { imageSize: string; videoDimensions: string } {
-  const hasShortForm = platforms.some((p) => SHORT_FORM_PLATFORMS.has(p));
-  return hasShortForm
-    ? { imageSize: '1024x1792', videoDimensions: '720x1280' }
-    : { imageSize: '1792x1024', videoDimensions: '1280x720' };
+type AspectRatio = '9:16' | '16:9' | '1:1' | '4:3' | '3:4';
+
+interface PlatformConfig {
+  enabled: boolean;
+  aspectRatio: AspectRatio;
+}
+
+type PlatformSettings = Record<string, PlatformConfig>;
+
+const PLATFORM_DEFS: { id: string; label: string; icon: string; defaultRatio: AspectRatio }[] = [
+  { id: 'instagram',      label: 'Instagram Reels', icon: 'IG', defaultRatio: '9:16' },
+  { id: 'tiktok',         label: 'TikTok',          icon: 'TT', defaultRatio: '9:16' },
+  { id: 'youtube_shorts', label: 'YouTube Shorts',  icon: 'YS', defaultRatio: '9:16' },
+  { id: 'youtube',        label: 'YouTube',          icon: 'YT', defaultRatio: '16:9' },
+  { id: 'twitter',        label: 'Twitter / X',      icon: '𝕏',  defaultRatio: '16:9' },
+  { id: 'linkedin',       label: 'LinkedIn',         icon: 'in', defaultRatio: '1:1'  },
+];
+
+const DEFAULT_PLATFORM_SETTINGS: PlatformSettings = Object.fromEntries(
+  PLATFORM_DEFS.map((p) => [p.id, { enabled: p.id === 'instagram', aspectRatio: p.defaultRatio }])
+);
+
+function parsePlatformSettings(raw: string | null | undefined): PlatformSettings {
+  if (!raw) return { ...DEFAULT_PLATFORM_SETTINGS };
+  try {
+    const parsed = JSON.parse(raw) as Record<string, Partial<PlatformConfig>>;
+    // Merge with defaults so new platforms always appear
+    const merged: PlatformSettings = { ...DEFAULT_PLATFORM_SETTINGS };
+    for (const [id, cfg] of Object.entries(parsed)) {
+      if (cfg && typeof cfg === 'object') {
+        merged[id] = {
+          enabled: cfg.enabled ?? false,
+          aspectRatio: (cfg.aspectRatio as AspectRatio) ?? DEFAULT_PLATFORM_SETTINGS[id]?.aspectRatio ?? '9:16',
+        };
+      }
+    }
+    return merged;
+  } catch {
+    return { ...DEFAULT_PLATFORM_SETTINGS };
+  }
+}
+
+const RATIO_IMAGE_SIZE: Record<AspectRatio, string> = {
+  '9:16': '1024×1792',
+  '16:9': '1792×1024',
+  '1:1':  '1024×1024',
+  '4:3':  '1365×1024',
+  '3:4':  '1024×1365',
+};
+
+const RATIO_VIDEO_DIMS: Record<AspectRatio, string> = {
+  '9:16': '720×1280',
+  '16:9': '1280×720',
+  '1:1':  '1080×1080',
+  '4:3':  '1280×960',
+  '3:4':  '960×1280',
+};
+
+/** Returns the image/video sizes of the first enabled platform, for the "derived defaults" hint. */
+function derivedSizesFromSettings(settings: PlatformSettings): { imageSize: string; videoDimensions: string; aspectRatio: AspectRatio } {
+  const primary = PLATFORM_DEFS.find((p) => settings[p.id]?.enabled);
+  const ratio: AspectRatio = primary ? (settings[primary.id]?.aspectRatio ?? '9:16') : '9:16';
+  return { imageSize: RATIO_IMAGE_SIZE[ratio], videoDimensions: RATIO_VIDEO_DIMS[ratio], aspectRatio: ratio };
 }
 
 export default function SettingsPage() {
@@ -40,13 +98,11 @@ export default function SettingsPage() {
     brand_voice: '',
     target_audience: '',
     agent_instructions: '',
-    // Platforms
-    platforms: ['instagram'] as string[],
-    // Media defaults (auto-derived from platforms)
-    default_image_size: '1024x1024' as string,
+    // Per-platform settings
+    platformSettings: DEFAULT_PLATFORM_SETTINGS as PlatformSettings,
+    // Duration settings (independent of platform)
     default_video_duration: 5 as number,
     target_video_length: 45 as number,
-    default_video_dimensions: '1280x720' as string,
     // Locked character
     character_name: '',
     character_appearance: '',
@@ -66,9 +122,7 @@ export default function SettingsPage() {
         setWorkspace(wsRes.data);
         let charRefIds: string[] = [];
         try { charRefIds = JSON.parse(wsRes.data.character_reference_ids ?? '[]'); } catch { /* ignore */ }
-        let platforms: string[] = ['instagram'];
-        try { platforms = JSON.parse(wsRes.data.default_platforms ?? '["instagram"]'); } catch { /* ignore */ }
-        const derivedSizes = deriveSizesFromPlatforms(platforms);
+        const platformSettings = parsePlatformSettings(wsRes.data.platform_settings);
         setForm({
           ai_tone: wsRes.data.ai_tone,
           default_caption_style: wsRes.data.default_caption_style,
@@ -77,11 +131,9 @@ export default function SettingsPage() {
           brand_voice: wsRes.data.brand_voice ?? '',
           target_audience: wsRes.data.target_audience ?? '',
           agent_instructions: wsRes.data.agent_instructions ?? '',
-          platforms,
-          default_image_size: derivedSizes.imageSize,
+          platformSettings,
           default_video_duration: wsRes.data.default_video_duration ?? 5,
           target_video_length: wsRes.data.target_video_length ?? 45,
-          default_video_dimensions: derivedSizes.videoDimensions,
           character_name: wsRes.data.character_name ?? '',
           character_appearance: wsRes.data.character_appearance ?? '',
           character_reference_ids: charRefIds,
@@ -112,20 +164,17 @@ export default function SettingsPage() {
   async function saveSettings() {
     setSaving(true);
     const token = await getToken();
-    const derivedSizes = deriveSizesFromPlatforms(form.platforms);
     const payload = {
       ai_tone: form.ai_tone,
       default_caption_style: form.default_caption_style,
-      default_platforms: form.platforms.filter((p) => p === 'instagram' || p === 'tiktok') as ('instagram' | 'tiktok')[],
+      platform_settings: JSON.stringify(form.platformSettings),
       brand_name: form.brand_name || null,
       brand_description: form.brand_description || null,
       brand_voice: form.brand_voice || null,
       target_audience: form.target_audience || null,
       agent_instructions: form.agent_instructions || null,
-      default_image_size: derivedSizes.imageSize as '1024x1024' | '1024x1792' | '1792x1024',
       default_video_duration: form.default_video_duration,
       target_video_length: form.target_video_length,
-      default_video_dimensions: derivedSizes.videoDimensions as '1280x720' | '720x1280',
       // Locked character
       character_name: form.character_name || null,
       character_appearance: form.character_appearance || null,
@@ -268,56 +317,96 @@ export default function SettingsPage() {
               <section className={sectionClass}>
                 <div>
                   <h2 className={sectionHeadingClass}>Media Defaults</h2>
-                  <p className='text-meta text-text-secondary mt-1'>Aspect ratio and image size are automatically set from your selected platforms. Duration settings are configured separately below.</p>
+                  <p className='text-meta text-text-secondary mt-1'>Enable each platform and pick its aspect ratio. Each platform has its own independent settings.</p>
                 </div>
 
-                {/* Platform selection */}
-                {(() => {
-                  const platformOptions = [
-                    { id: 'instagram', label: 'Instagram Reels', ratio: '9:16' },
-                    { id: 'tiktok',    label: 'TikTok',          ratio: '9:16' },
-                    { id: 'youtube_shorts', label: 'YouTube Shorts', ratio: '9:16' },
-                  ];
-                  const derivedSizes = deriveSizesFromPlatforms(form.platforms);
-                  const isPortrait = derivedSizes.videoDimensions === '720x1280';
-                  return (
-                    <div>
-                      <label className={cn(labelClass, 'mb-2')}>Target platforms</label>
-                      <div className='flex flex-wrap gap-2'>
-                        {platformOptions.map((opt) => {
-                          const active = form.platforms.includes(opt.id);
-                          return (
-                            <button
-                              key={opt.id}
-                              onClick={() => {
-                                const next = active
-                                  ? form.platforms.filter((p) => p !== opt.id)
-                                  : [...form.platforms, opt.id];
-                                const sizes = deriveSizesFromPlatforms(next);
-                                setForm((f) => ({
+                {/* Per-platform cards */}
+                <div className='space-y-2'>
+                  {PLATFORM_DEFS.map((platform) => {
+                    const cfg = form.platformSettings[platform.id] ?? { enabled: false, aspectRatio: platform.defaultRatio };
+                    return (
+                      <div
+                        key={platform.id}
+                        className={cn(
+                          'flex items-center gap-3 px-3 py-3 rounded-xl border transition-all',
+                          cfg.enabled ? 'bg-surface-white border-ink/20' : 'bg-surface border-border-soft opacity-70'
+                        )}
+                      >
+                        {/* Icon */}
+                        <div className={cn(
+                          'w-8 h-8 rounded-lg flex items-center justify-center text-[11px] font-bold flex-shrink-0',
+                          cfg.enabled ? 'bg-ink text-on-ink' : 'bg-surface-card text-text-muted border border-border-soft'
+                        )}>
+                          {platform.icon}
+                        </div>
+
+                        {/* Label */}
+                        <span className={cn('flex-1 text-message font-medium', cfg.enabled ? 'text-text-primary' : 'text-text-secondary')}>
+                          {platform.label}
+                        </span>
+
+                        {/* Aspect ratio chips — only when enabled */}
+                        {cfg.enabled && (
+                          <div className='flex items-center gap-1'>
+                            {(['9:16', '16:9', '1:1', '4:3', '3:4'] as AspectRatio[]).map((ratio) => (
+                              <button
+                                key={ratio}
+                                onClick={() => setForm((f) => ({
                                   ...f,
-                                  platforms: next,
-                                  default_image_size: sizes.imageSize,
-                                  default_video_dimensions: sizes.videoDimensions,
-                                }));
-                              }}
-                              className={cn(
-                                'flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-message transition-all',
-                                active ? 'bg-ink border-ink text-on-ink' : inactiveButtonClass
-                              )}
-                            >
-                              {opt.label}
-                              <span className={cn('text-meta opacity-70', active && 'opacity-80')}>{opt.ratio}</span>
-                            </button>
-                          );
-                        })}
+                                  platformSettings: {
+                                    ...f.platformSettings,
+                                    [platform.id]: { ...cfg, aspectRatio: ratio },
+                                  },
+                                }))}
+                                className={cn(
+                                  'px-2 py-0.5 rounded-full text-meta font-mono transition-all border',
+                                  cfg.aspectRatio === ratio
+                                    ? 'bg-ink text-on-ink border-ink'
+                                    : 'bg-surface-white text-text-secondary border-border-soft hover:border-ink/30'
+                                )}
+                              >
+                                {ratio}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Enable toggle */}
+                        <button
+                          onClick={() => setForm((f) => ({
+                            ...f,
+                            platformSettings: {
+                              ...f.platformSettings,
+                              [platform.id]: { ...cfg, enabled: !cfg.enabled },
+                            },
+                          }))}
+                          className={cn(
+                            'relative flex-shrink-0 transition-colors rounded-full focus:outline-none p-0',
+                            cfg.enabled ? 'bg-ink' : 'bg-surface-card border border-border-soft'
+                          )}
+                          style={{ width: 40, height: 22 }}
+                          aria-label={cfg.enabled ? 'Disable' : 'Enable'}
+                        >
+                          <span className={cn(
+                            'absolute top-[3px] left-[3px] w-4 h-4 rounded-full shadow-sm transition-transform duration-200',
+                            cfg.enabled ? 'bg-white translate-x-[18px]' : 'bg-text-muted translate-x-0'
+                          )} />
+                        </button>
                       </div>
-                      <div className='mt-2 flex items-center gap-3 text-meta text-text-muted'>
-                        <span>Derived defaults:</span>
-                        <span className='font-mono text-text-secondary'>image {isPortrait ? '9:16' : '16:9'}</span>
-                        <span>·</span>
-                        <span className='font-mono text-text-secondary'>video {isPortrait ? '9:16' : '16:9'}</span>
-                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Derived defaults hint */}
+                {(() => {
+                  const { imageSize, videoDimensions, aspectRatio } = derivedSizesFromSettings(form.platformSettings);
+                  const enabledPlatforms = PLATFORM_DEFS.filter((p) => form.platformSettings[p.id]?.enabled);
+                  if (enabledPlatforms.length === 0) return null;
+                  return (
+                    <div className='flex items-center gap-2 text-meta text-text-muted flex-wrap pt-1'>
+                      <span>Primary defaults ({enabledPlatforms[0].label}):</span>
+                      <span className='font-mono text-text-secondary bg-surface-card px-2 py-0.5 rounded'>{aspectRatio} · image {imageSize}</span>
+                      <span className='font-mono text-text-secondary bg-surface-card px-2 py-0.5 rounded'>video {videoDimensions}</span>
                     </div>
                   );
                 })()}

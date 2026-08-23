@@ -8,9 +8,40 @@ import AppShell from '../components/AppShell';
 import Sidebar from '../components/Sidebar';
 import {
   ImageIcon, VideoIcon, Loader2, AlertCircle, X,
-  Copy, Check, Hash, Share2, CheckCircle, ExternalLink, RefreshCw, Download,
+  Copy, Check, Hash, Share2, CheckCircle, ExternalLink, RefreshCw, Download, Cpu, DollarSign,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+
+// ─── Model display helpers ─────────────────────────────────────────────────────
+
+const MODEL_LABELS: Record<string, string> = {
+  'lightricks/ltx-2.3-fast':    'LTX Fast',
+  'lightricks/ltx-2.3-pro':     'LTX Pro',
+  'bytedance/seedance-2.0':     'Seedance 2.0',
+  'bytedance/seedance-2.0-fast': 'Seedance Fast',
+  'wan-video/wan-2.7-t2v':      'Wan T2V',
+  'wan-video/wan-2.7-i2v':      'Wan I2V',
+  'google/veo-2':               'Veo 2',
+  'gpt-image-1':                'GPT Image 1',
+  'dall-e-3':                   'DALL-E 3',
+  'gpt-4o':                     'GPT-4o',
+  'gpt-4o-mini':                'GPT-4o mini',
+  'gpt-4.1':                    'GPT-4.1',
+  'gpt-4.1-mini':               'GPT-4.1 mini',
+};
+
+function shortModelLabel(model: string | null): string {
+  if (!model) return 'Unknown model';
+  return MODEL_LABELS[model] ?? model.split('/').pop() ?? model;
+}
+
+function formatCost(cost: number | null): string | null {
+  if (cost == null || cost <= 0) return null;
+  if (cost < 0.001) return `< $0.001`;
+  if (cost < 0.01)  return `$${cost.toFixed(4)}`;
+  if (cost < 1)     return `$${cost.toFixed(3)}`;
+  return `$${cost.toFixed(2)}`;
+}
 
 const BACKEND = import.meta.env.VITE_API_BASE_URL ?? '';
 const POLL_INTERVAL_MS = 5000; // re-fetch list every 5 s when any asset is in-progress
@@ -301,6 +332,23 @@ function AssetCard({
         )}
       </div>
 
+      {/* Model + cost */}
+      {(asset.model || asset.cost_usd != null) && asset.status !== 'failed' && (
+        <div className='px-2 pt-1.5 flex items-center gap-1.5 flex-wrap'>
+          {asset.model && (
+            <span className='flex items-center gap-1 text-meta px-1.5 py-0.5 rounded-full bg-surface-white border border-border-soft text-text-muted'>
+              <Cpu size={8} />
+              {shortModelLabel(asset.model)}
+            </span>
+          )}
+          {formatCost(asset.cost_usd) && (
+            <span className='flex items-center gap-0.5 text-meta px-1.5 py-0.5 rounded-full bg-surface-white border border-border-soft text-text-muted'>
+              {formatCost(asset.cost_usd)}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Action buttons */}
       <div className='p-2 flex gap-1.5'>
         {asset.status === 'ready' ? (
@@ -414,6 +462,24 @@ function DetailsModal({
                 <video src={blobUrl} controls className='w-full max-h-64 object-contain' />
               ) : (
                 <img src={blobUrl} alt='Generated' className='w-full max-h-64 object-contain' />
+              )}
+            </div>
+          )}
+
+          {/* Generation info — model + cost */}
+          {(asset.model || asset.cost_usd != null) && (
+            <div className='flex items-center gap-3 flex-wrap'>
+              {asset.model && (
+                <div className='flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-card border border-border-soft'>
+                  <Cpu size={12} className='text-text-muted' />
+                  <span className='text-meta text-text-secondary font-medium'>{shortModelLabel(asset.model)}</span>
+                </div>
+              )}
+              {formatCost(asset.cost_usd) && (
+                <div className='flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-card border border-border-soft'>
+                  <DollarSign size={12} className='text-text-muted' />
+                  <span className='text-meta text-text-secondary font-medium'>{formatCost(asset.cost_usd)} estimated cost</span>
+                </div>
               )}
             </div>
           )}

@@ -50,6 +50,8 @@ export interface Workspace {
   character_appearance: string | null;
   character_reference_ids: string; // JSON array of workspace_upload IDs (up to 8)
   character_voice_id: string | null;
+  // Per-platform settings — JSON: Record<string, { enabled: boolean; aspectRatio: '9:16'|'16:9'|'1:1' }>
+  platform_settings: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -74,6 +76,10 @@ export interface Message {
   content: string;
   post_package: string | null; // JSON: ImagePostPackage | VideoPostPackage
   image_references: string | null; // JSON: { uploadId, publicUrl, name }[]
+  model: string | null;
+  cost_usd: number | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
   created_at: number;
 }
 
@@ -89,6 +95,8 @@ export interface Asset {
   prompt: string | null;
   prediction_id: string | null;
   error_message: string | null;
+  model: string | null;
+  cost_usd: number | null;
   created_at: number;
 }
 

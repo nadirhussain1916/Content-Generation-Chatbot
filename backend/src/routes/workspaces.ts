@@ -79,11 +79,53 @@ workspacesRouter.get('/:slug', async (c) => {
   }
 });
 
+// ─── Platform settings helpers ────────────────────────────────────────────────
+
+type AspectRatio = '9:16' | '16:9' | '1:1' | '4:3' | '3:4' | '21:9' | '9:21';
+interface PlatformConfig { enabled: boolean; aspectRatio: AspectRatio }
+
+/** Derive workspace-level image size from an aspect ratio. */
+function imageSizeFromRatio(ratio: AspectRatio): '1024x1024' | '1024x1792' | '1792x1024' {
+  if (ratio === '9:16' || ratio === '3:4' || ratio === '9:21') return '1024x1792';
+  if (ratio === '16:9' || ratio === '4:3' || ratio === '21:9') return '1792x1024';
+  return '1024x1024';
+}
+
+/** Derive workspace-level video dimensions from an aspect ratio. */
+function videoDimsFromRatio(ratio: AspectRatio): '1280x720' | '720x1280' | '1080x1080' {
+  if (ratio === '9:16' || ratio === '3:4' || ratio === '9:21') return '720x1280';
+  if (ratio === '16:9' || ratio === '4:3' || ratio === '21:9') return '1280x720';
+  return '1080x1080';
+}
+
+const PLATFORM_ORDER = ['instagram', 'tiktok', 'youtube_shorts', 'youtube', 'twitter', 'linkedin'];
+
+/**
+ * Given a parsed platform_settings map, derive the three legacy workspace columns
+ * that the generation pipeline and LLM prompt still rely on.
+ */
+function deriveFromPlatformSettings(settings: Record<string, PlatformConfig>): {
+  default_platforms: string;
+  default_image_size: '1024x1024' | '1024x1792' | '1792x1024';
+  default_video_dimensions: '1280x720' | '720x1280' | '1080x1080';
+} {
+  const enabled = PLATFORM_ORDER.filter((id) => settings[id]?.enabled);
+  // Primary = first enabled platform in canonical order
+  const primary = enabled[0];
+  const primaryRatio: AspectRatio = primary ? (settings[primary]?.aspectRatio ?? '9:16') : '9:16';
+  return {
+    default_platforms: JSON.stringify(enabled),
+    default_image_size: imageSizeFromRatio(primaryRatio),
+    default_video_dimensions: videoDimsFromRatio(primaryRatio),
+  };
+}
+
+// ─── Zod schema ───────────────────────────────────────────────────────────────
+
 const UpdateWorkspaceSchema = z.object({
   name: z.string().min(1).max(60).optional(),
   ai_tone: z.enum(['professional', 'casual', 'witty', 'formal', 'inspirational']).optional(),
   default_caption_style: z.enum(['short', 'medium', 'long']).optional(),
-  default_platforms: z.array(z.enum(['instagram', 'tiktok'])).optional(),
   avatar_url: z.string().url().optional().nullable(),
   // Brand context
   brand_name: z.string().max(120).optional().nullable(),
@@ -91,11 +133,11 @@ const UpdateWorkspaceSchema = z.object({
   brand_voice: z.string().max(500).optional().nullable(),
   target_audience: z.string().max(300).optional().nullable(),
   agent_instructions: z.string().max(2000).optional().nullable(),
-  // Media generation defaults
-  default_image_size: z.enum(['1024x1024', '1024x1792', '1792x1024']).optional(),
+  // Per-platform settings (replaces default_platforms / sizes)
+  platform_settings: z.string().optional(), // stringified JSON
+  // Duration settings (remain independent of platform)
   default_video_duration: z.number().int().min(1).max(300).optional(),
   target_video_length: z.number().int().min(10).max(600).optional(),
-  default_video_dimensions: z.enum(['1280x720', '720x1280']).optional(),
   // Locked character
   character_name: z.string().max(120).optional().nullable(),
   character_appearance: z.string().max(2000).optional().nullable(),
@@ -122,7 +164,6 @@ workspacesRouter.patch('/:slug', async (c) => {
     if (parsed.data.name) update.name = parsed.data.name;
     if (parsed.data.ai_tone) update.ai_tone = parsed.data.ai_tone;
     if (parsed.data.default_caption_style) update.default_caption_style = parsed.data.default_caption_style;
-    if (parsed.data.default_platforms) update.default_platforms = JSON.stringify(parsed.data.default_platforms);
     if ('avatar_url' in parsed.data) update.avatar_url = parsed.data.avatar_url;
     // Brand context (nullable fields)
     if ('brand_name' in parsed.data) update.brand_name = parsed.data.brand_name ?? null;
@@ -130,11 +171,22 @@ workspacesRouter.patch('/:slug', async (c) => {
     if ('brand_voice' in parsed.data) update.brand_voice = parsed.data.brand_voice ?? null;
     if ('target_audience' in parsed.data) update.target_audience = parsed.data.target_audience ?? null;
     if ('agent_instructions' in parsed.data) update.agent_instructions = parsed.data.agent_instructions ?? null;
-    // Media generation defaults
-    if (parsed.data.default_image_size) update.default_image_size = parsed.data.default_image_size;
+    // Per-platform settings — save raw JSON and derive legacy columns automatically
+    if (parsed.data.platform_settings) {
+      try {
+        const settings = JSON.parse(parsed.data.platform_settings) as Record<string, PlatformConfig>;
+        update.platform_settings = parsed.data.platform_settings;
+        const derived = deriveFromPlatformSettings(settings);
+        update.default_platforms = derived.default_platforms;
+        update.default_image_size = derived.default_image_size;
+        update.default_video_dimensions = derived.default_video_dimensions;
+      } catch {
+        return c.json<TfResponse<null>>({ success: false, message: 'platform_settings must be valid JSON' }, 400);
+      }
+    }
+    // Duration settings
     if (parsed.data.default_video_duration) update.default_video_duration = parsed.data.default_video_duration;
     if (parsed.data.target_video_length) update.target_video_length = parsed.data.target_video_length;
-    if (parsed.data.default_video_dimensions) update.default_video_dimensions = parsed.data.default_video_dimensions;
     // Locked character
     if ('character_name' in parsed.data) update.character_name = parsed.data.character_name ?? null;
     if ('character_appearance' in parsed.data) update.character_appearance = parsed.data.character_appearance ?? null;

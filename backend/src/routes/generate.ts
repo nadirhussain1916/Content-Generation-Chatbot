@@ -7,6 +7,7 @@ import { Logger } from '../utils/Logger';
 import { withPublicUrl } from '../services/r2';
 import { kvRateLimiter } from '../middleware/rateLimiter';
 import { analyzeImageForDescription } from '../services/openai';
+import { calcImageCost, calcVideoClipCost, calcLtxChainCost } from '../services/costs';
 
 type Env = { Bindings: CloudflareBindings; Variables: ContextVariables };
 
@@ -53,6 +54,7 @@ generateRouter.post('/image', async (c) => {
 
     // Use explicit size from request, then workspace default, then global default
     const imageSize = body.size ?? workspace.default_image_size ?? '1024x1024';
+    const imageModel = body.imageModel ?? 'gpt-image-1';
 
     const assetId = crypto.randomUUID();
     await createAsset(c.env.DB, {
@@ -62,6 +64,8 @@ generateRouter.post('/image', async (c) => {
       type: 'image',
       message_id: body.messageId,
       prompt: body.prompt,
+      model: imageModel,
+      cost_usd: calcImageCost(imageModel, imageSize),
     });
 
     // Write initial KV status
@@ -107,7 +111,7 @@ generateRouter.post('/image', async (c) => {
         r2KeyPrefix: `${workspace.id}/${body.threadId}/${assetId}`,
         prompt: body.prompt,
         size: imageSize as '1024x1024' | '1024x1792' | '1792x1024',
-        imageModel: body.imageModel,
+        imageModel,
         referenceImageUrl,
         referenceVisionDescription,
         generationMode: body.generationMode,
@@ -261,7 +265,7 @@ generateRouter.post('/video', async (c) => {
     const modelConfig = VIDEO_MODEL_CONFIGS[modelId] ?? VIDEO_MODEL_CONFIGS['lightricks/ltx-2.3-fast'];
 
     // Aspect ratio: prefer explicit body param, fall back to workspace default
-    const VALID_ASPECT_RATIOS = new Set(['16:9', '9:16', '1:1', '4:3', '3:4']);
+    const VALID_ASPECT_RATIOS = new Set(['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', '9:21']);
     let videoAspectRatio = '9:16';
     if (body.aspectRatio && VALID_ASPECT_RATIOS.has(body.aspectRatio)) {
       videoAspectRatio = body.aspectRatio;
@@ -292,6 +296,7 @@ generateRouter.post('/video', async (c) => {
         ? Math.min(Math.round(body.extendDuration), 20)
         : 20;
 
+      const initialDuration = VALID_DURATIONS.has(videoDuration) ? videoDuration : 10;
       await createAsset(c.env.DB, {
         id: assetId,
         thread_id: body.threadId,
@@ -299,6 +304,8 @@ generateRouter.post('/video', async (c) => {
         type: 'video',
         message_id: body.messageId,
         prompt: body.prompt,
+        model: modelId,
+        cost_usd: calcLtxChainCost(modelId, initialDuration, chainCount, extendDuration),
       });
 
       await c.env.KV.put(
@@ -316,7 +323,7 @@ generateRouter.post('/video', async (c) => {
           r2KeyPrefix,
           prompt: videoPrompt,
           aspectRatio: videoAspectRatio as '16:9' | '9:16',
-          initialDuration: VALID_DURATIONS.has(videoDuration) ? videoDuration : 10,
+          initialDuration,
           extendDuration,
           chainCount,
           referenceImageUrl: videoReferenceImageUrl,
@@ -369,6 +376,8 @@ generateRouter.post('/video', async (c) => {
       message_id: body.messageId,
       prompt: body.prompt,
       prediction_id: prediction.id,
+      model: modelId,
+      cost_usd: calcVideoClipCost(modelId, videoDuration),
     });
 
     await c.env.KV.put(

@@ -12,6 +12,9 @@ import { migrateWorkspaceUploadsTable } from './011_workspace_uploads';
 import { migrateMessageImageReferences } from './012_message_image_references';
 import { migrateWorkspaceTargetVideoLength } from './013_workspace_target_video_length';
 import { migrateWorkspaceCharacter } from './014_workspace_character';
+import { migrateAssetModelCost } from './015_asset_model_cost';
+import { migrateMessageModelCost } from './016_message_model_cost';
+import { migrateWorkspacePlatformSettings } from './017_workspace_platform_settings';
 import { migrateUserEmail } from './015_user_email';
 import { migrateUserName } from './016_user_name';
 
@@ -35,6 +38,9 @@ export async function runAllMigrations(db: D1Database): Promise<string[]> {
     migrateWorkspaceCharacter,
     migrateUserEmail,
     migrateUserName,
+    migrateAssetModelCost,
+    migrateMessageModelCost,
+    migrateWorkspacePlatformSettings,
   ];
 
   for (const migrate of migrations) {

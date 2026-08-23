@@ -5,6 +5,7 @@ import {
   getWorkspaceUploads, getWorkspaceUploadsByIds, updateWorkspaceUploadVisionDescription, updateMessage,
 } from '../db/queries';
 import { runAgent, type AgentResult } from '../services/openai';
+import { calcTextCost } from '../services/costs';
 import type { CloudflareBindings } from '../env';
 import type { ContextVariables, TfResponse, Thread, Message } from '../types';
 import { Logger } from '../utils/Logger';
@@ -253,8 +254,9 @@ messagesRouter.post('/:threadId/messages', async (c) => {
       }
     }
 
-    // 5. Persist assistant message
+    // 5. Persist assistant message (with model name and cost)
     const assistantMsgId = crypto.randomUUID();
+    const agentCost = calcTextCost(textModel, agentResult.usage.inputTokens, agentResult.usage.outputTokens);
     await createMessage(c.env.DB, {
       id: assistantMsgId,
       thread_id: threadId,
@@ -262,6 +264,10 @@ messagesRouter.post('/:threadId/messages', async (c) => {
       type: messageType,
       content: assistantContent,
       post_package: postPackageJson,
+      model: textModel,
+      cost_usd: agentCost,
+      input_tokens: agentResult.usage.inputTokens,
+      output_tokens: agentResult.usage.outputTokens,
     });
 
     // 6. Update thread state
@@ -294,6 +300,10 @@ messagesRouter.post('/:threadId/messages', async (c) => {
           content: assistantContent,
           post_package: postPackageJson ?? null,
           image_references: null,
+          model: textModel,
+          cost_usd: agentCost,
+          input_tokens: agentResult.usage.inputTokens,
+          output_tokens: agentResult.usage.outputTokens,
           created_at: Math.floor(Date.now() / 1000),
         },
       },

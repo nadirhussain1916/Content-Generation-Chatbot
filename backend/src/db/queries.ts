@@ -94,11 +94,19 @@ export async function getMessages(db: D1Database, threadId: string) {
 export async function createMessage(db: D1Database, data: {
   id: string; thread_id: string; role: 'user' | 'assistant';
   type: 'chat' | 'draft' | 'followup'; content: string; post_package?: string;
-  image_references?: string;
+  image_references?: string; model?: string; cost_usd?: number;
+  input_tokens?: number; output_tokens?: number;
 }) {
   return db.prepare(
-    'INSERT INTO messages (id, thread_id, role, type, content, post_package, image_references) VALUES (?, ?, ?, ?, ?, ?, ?)'
-  ).bind(data.id, data.thread_id, data.role, data.type, data.content, data.post_package ?? null, data.image_references ?? null).run();
+    `INSERT INTO messages
+       (id, thread_id, role, type, content, post_package, image_references, model, cost_usd, input_tokens, output_tokens)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(
+    data.id, data.thread_id, data.role, data.type, data.content,
+    data.post_package ?? null, data.image_references ?? null,
+    data.model ?? null, data.cost_usd ?? null,
+    data.input_tokens ?? null, data.output_tokens ?? null,
+  ).run();
 }
 
 // ─── Assets ──────────────────────────────────────────────────────────────────
@@ -124,10 +132,15 @@ export async function getAssetsByThread(db: D1Database, threadId: string) {
 export async function createAsset(db: D1Database, data: {
   id: string; thread_id: string; workspace_id: string; type: 'image' | 'video';
   message_id?: string; prompt?: string; prediction_id?: string;
+  model?: string; cost_usd?: number;
 }) {
   return db.prepare(
-    'INSERT INTO assets (id, thread_id, workspace_id, message_id, type, status, prompt, prediction_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-  ).bind(data.id, data.thread_id, data.workspace_id, data.message_id ?? null, data.type, 'generating', data.prompt ?? null, data.prediction_id ?? null).run();
+    'INSERT INTO assets (id, thread_id, workspace_id, message_id, type, status, prompt, prediction_id, model, cost_usd) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).bind(
+    data.id, data.thread_id, data.workspace_id, data.message_id ?? null,
+    data.type, 'generating', data.prompt ?? null, data.prediction_id ?? null,
+    data.model ?? null, data.cost_usd ?? null,
+  ).run();
 }
 
 export async function updateAsset(db: D1Database, id: string, data: Partial<Pick<Asset, 'status' | 'r2_key' | 'public_url' | 'prediction_id' | 'error_message'>>) {

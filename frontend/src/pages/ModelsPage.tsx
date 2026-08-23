@@ -148,7 +148,7 @@ const VIDEO_MODELS = [
     priceLevel: 1,
     speed: 'Fastest',
     maxDuration: 'Up to 20s',
-    aspectRatios: ['9:16', '16:9'],
+    aspectRatios: ['9:16', '16:9', '1:1', '4:3', '3:4', '21:9', '9:21'],
     supportsChain: false,
     supportsReference: true,
     tags: ['Daily drafts', 'Portrait', 'Audio'],
@@ -173,7 +173,7 @@ const VIDEO_MODELS = [
     priceLevel: 2,
     speed: 'Medium',
     maxDuration: '~130s (extend chain)',
-    aspectRatios: ['9:16', '16:9'],
+    aspectRatios: ['9:16', '16:9', '1:1', '4:3', '3:4', '21:9', '9:21'],
     supportsChain: true,
     supportsReference: true,
     tags: ['Full-length videos', 'Extend chain', 'High quality'],
@@ -198,7 +198,7 @@ const VIDEO_MODELS = [
     priceLevel: 3,
     speed: 'Medium',
     maxDuration: 'Up to 15s',
-    aspectRatios: ['9:16', '16:9'],
+    aspectRatios: ['9:16', '16:9', '1:1', '4:3', '3:4'],
     supportsChain: false,
     supportsReference: true,
     tags: ['4K', 'Cinematic', 'Product close-ups'],
@@ -223,7 +223,7 @@ const VIDEO_MODELS = [
     priceLevel: 2,
     speed: 'Fast',
     maxDuration: 'Up to 15s',
-    aspectRatios: ['9:16', '16:9'],
+    aspectRatios: ['9:16', '16:9', '1:1', '4:3', '3:4'],
     supportsChain: false,
     supportsReference: true,
     tags: ['Balanced quality', 'Social clips', 'Affordable'],
@@ -247,7 +247,7 @@ const VIDEO_MODELS = [
     priceLevel: 1,
     speed: 'Fast',
     maxDuration: 'Up to 15s',
-    aspectRatios: ['9:16', '16:9'],
+    aspectRatios: ['9:16', '16:9', '1:1', '4:3', '3:4'],
     supportsChain: false,
     supportsReference: false,
     tags: ['Abstract', 'Ambient', 'Environment shots'],
@@ -272,7 +272,7 @@ const VIDEO_MODELS = [
     priceLevel: 1,
     speed: 'Fast',
     maxDuration: 'Up to 15s',
-    aspectRatios: ['9:16', '16:9'],
+    aspectRatios: ['9:16', '16:9', '1:1', '4:3', '3:4'],
     supportsChain: false,
     supportsReference: true,
     tags: ['Animate stills', 'Product photos', 'Portraits'],
@@ -301,6 +301,7 @@ const VIDEO_MODELS = [
     supportsChain: false,
     supportsReference: true,
     tags: ['High quality', 'Expensive', 'Short clips'],
+    aspectRatioNote: '9:16 and 16:9 only',
     description:
       'Google DeepMind\'s video model. Produces strong results but at the highest cost in the lineup — roughly 8× LTX Fast per second. Limited to 8s clips. Not the default; use only when other models fall short.',
     bestFor: [
@@ -460,6 +461,7 @@ type ModelCardProps = {
   // video-only
   maxDuration?: string;
   aspectRatios?: string[];
+  aspectRatioNote?: string;
   supportsChain?: boolean;
   supportsReference?: boolean;
 };
@@ -468,7 +470,7 @@ function ModelCard(props: ModelCardProps) {
   const {
     name, badge, badgeColor, price, priceLevel, speed, tags,
     description, bestFor, watchOut, type,
-    maxDuration, aspectRatios, supportsChain, supportsReference,
+    maxDuration, aspectRatios, aspectRatioNote, supportsChain, supportsReference,
   } = props;
 
   return (
@@ -499,7 +501,14 @@ function ModelCard(props: ModelCardProps) {
       {type === 'video' && (
         <div className='flex flex-wrap gap-x-4 gap-y-1 text-meta text-text-secondary'>
           {maxDuration && <span>⏱ {maxDuration}</span>}
-          {aspectRatios && <span>📐 {aspectRatios.join(' · ')}</span>}
+          {aspectRatios && (
+            <span>
+              📐 {aspectRatios.join(' · ')}
+              {aspectRatioNote && (
+                <span className='ml-1.5 text-amber-600 dark:text-amber-400'>({aspectRatioNote})</span>
+              )}
+            </span>
+          )}
           {supportsChain !== undefined && (
             <span className={supportsChain ? 'text-brand' : 'text-text-muted'}>
               {supportsChain ? '✓ Extend chain (multi-clip)' : '✗ Single clip only'}
