@@ -100,7 +100,6 @@ const UpdateWorkspaceSchema = z.object({
   character_name: z.string().max(120).optional().nullable(),
   character_appearance: z.string().max(2000).optional().nullable(),
   character_reference_ids: z.array(z.string().uuid()).max(8).optional(),
-  character_voice_id: z.string().max(120).optional().nullable(),
 });
 
 // PATCH /api/workspaces/:slug — update workspace settings
@@ -140,7 +139,6 @@ workspacesRouter.patch('/:slug', async (c) => {
     if ('character_name' in parsed.data) update.character_name = parsed.data.character_name ?? null;
     if ('character_appearance' in parsed.data) update.character_appearance = parsed.data.character_appearance ?? null;
     if ('character_reference_ids' in parsed.data) update.character_reference_ids = JSON.stringify(parsed.data.character_reference_ids ?? []);
-    if ('character_voice_id' in parsed.data) update.character_voice_id = parsed.data.character_voice_id ?? null;
 
     if (Object.keys(update).length > 0) {
       await updateWorkspace(c.env.DB, workspace.id, update as Parameters<typeof updateWorkspace>[2]);

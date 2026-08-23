@@ -21,7 +21,6 @@ function brandBlock(ws: {
   default_video_dimensions?: string | null;
   character_name?: string | null;
   character_appearance?: string | null;
-  character_voice_id?: string | null;
 }): string {
   const lines: string[] = [];
   if (ws.brand_name)         lines.push(`Brand name: ${ws.brand_name}`);
@@ -43,7 +42,6 @@ function brandBlock(ws: {
     const charLines = ['\nLOCKED CHARACTER (inject into every video generation prompt, verbatim — never alter appearance):'];
     if (ws.character_name)       charLines.push(`  Name: ${ws.character_name}`);
     if (ws.character_appearance) charLines.push(`  Appearance: ${ws.character_appearance}`);
-    if (ws.character_voice_id)   charLines.push(`  Voice ID: ${ws.character_voice_id}`);
     charLines.push('  The videoPrompt MUST begin with this character block before any other scene description.');
     lines.push(charLines.join('\n'));
   }
@@ -63,7 +61,6 @@ export type WorkspaceBrand = {
   default_video_dimensions?: string | null;
   character_name?: string | null;
   character_appearance?: string | null;
-  character_voice_id?: string | null;
 };
 
 export const AGENT_SYSTEM_PROMPT = (params: {

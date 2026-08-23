@@ -51,7 +51,6 @@ export default function SettingsPage() {
     character_name: '',
     character_appearance: '',
     character_reference_ids: [] as string[],
-    character_voice_id: '',
   });
   const [characterUploads, setCharacterUploads] = useState<WorkspaceUpload[]>([]);
   const [uploadingRef, setUploadingRef] = useState(false);
@@ -86,7 +85,6 @@ export default function SettingsPage() {
           character_name: wsRes.data.character_name ?? '',
           character_appearance: wsRes.data.character_appearance ?? '',
           character_reference_ids: charRefIds,
-          character_voice_id: wsRes.data.character_voice_id ?? '',
         });
         // Pre-load uploads for existing character refs
         if (charRefIds.length > 0) {
@@ -132,7 +130,6 @@ export default function SettingsPage() {
       character_name: form.character_name || null,
       character_appearance: form.character_appearance || null,
       character_reference_ids: form.character_reference_ids,
-      character_voice_id: form.character_voice_id || null,
     };
     const res = await api.patch<TfResponse<Workspace>>(`/api/workspaces/${slug}`, payload, token ?? undefined);
     if (res.success) {
@@ -599,17 +596,6 @@ export default function SettingsPage() {
                       </label>
                     )}
                   </div>
-                </div>
-
-                <div>
-                  <label className={cn(labelClass, 'mb-1.5')}>Voice ID <span className='text-text-muted font-normal'>(optional)</span></label>
-                  <input
-                    type='text'
-                    placeholder='e.g. ElevenLabs voice ID'
-                    value={form.character_voice_id}
-                    onChange={(e) => setForm((f) => ({ ...f, character_voice_id: e.target.value }))}
-                    className={inputClass}
-                  />
                 </div>
 
                 <button
