@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": ["vitest/globals"]
+  },
+  "include": [
+    "./**/*.ts",
+    "../backend/src/services/costs.ts",
+    "../backend/src/services/prompts.ts",
+    "../backend/src/utils/platform.ts",
+    "../frontend/src/lib/display.ts",
+    "../frontend/src/lib/platform.ts",
+    "../frontend/src/lib/models.ts"
+  ]
+}
