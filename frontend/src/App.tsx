@@ -8,6 +8,7 @@ import WorkspacePage from './pages/WorkspacePage';
 import ThreadPage from './pages/ThreadPage';
 import SettingsPage from './pages/SettingsPage';
 import GenerationsPage from './pages/GenerationsPage';
+import ModelsPage from './pages/ModelsPage';
 import AdminPage from './pages/AdminPage';
 import AuthGuard from './components/AuthGuard';
 import TermsPage from './pages/TermsPage';
@@ -92,6 +93,16 @@ export default function App() {
             <SignedIn>
               <AuthGuard>
                 <GenerationsPage />
+              </AuthGuard>
+            </SignedIn>
+          }
+        />
+        <Route
+          path='/workspaces/:slug/models'
+          element={
+            <SignedIn>
+              <AuthGuard>
+                <ModelsPage />
               </AuthGuard>
             </SignedIn>
           }

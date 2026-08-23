@@ -4,7 +4,7 @@ import { UserButton } from '@clerk/clerk-react';
 import { useAuthToken } from '../hooks/useAuthToken';
 import { api } from '../lib/api';
 import type { TfResponse, Workspace, Thread } from '../types';
-import { Zap, Plus, Settings, MessageSquare, ChevronDown, Loader2, Image } from 'lucide-react';
+import { Zap, Plus, Settings, MessageSquare, ChevronDown, Loader2, Image, Cpu } from 'lucide-react';
 import { cn, formatRelativeTime } from '../lib/utils';
 import ThemeToggle from './ThemeToggle';
 
@@ -162,6 +162,13 @@ export default function Sidebar({ onNewThread, refreshKey = 0 }: SidebarProps) {
             title='Generations'
           >
             <Image size={16} />
+          </Link>
+          <Link
+            to={`/workspaces/${slug}/models`}
+            className='p-2 text-text-muted hover:text-text-primary hover:bg-surface-card rounded-full transition-colors'
+            title='Models guide'
+          >
+            <Cpu size={16} />
           </Link>
           <Link
             to={`/workspaces/${slug}/settings`}
