@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { useAuth } from '@clerk/clerk-react';
 import { useImpersonation } from '../context/ImpersonationContext';
 
@@ -9,10 +10,10 @@ export function useAuthToken() {
   const { getToken } = useAuth();
   const { isImpersonating, impersonationToken } = useImpersonation();
 
-  const getAuthToken = async (): Promise<string | null> => {
+  const getAuthToken = useCallback(async (): Promise<string | null> => {
     if (isImpersonating && impersonationToken) return impersonationToken;
     return getToken();
-  };
+  }, [getToken, isImpersonating, impersonationToken]);
 
   return { getAuthToken };
 }
