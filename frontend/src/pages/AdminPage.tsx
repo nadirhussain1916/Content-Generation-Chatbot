@@ -5,7 +5,7 @@ import { useImpersonation } from '../context/ImpersonationContext';
 import { adminApi, type AdminStats, type AdminUser } from '../lib/api';
 import {
   Users, Layers, GitBranch, Search, X,
-  ShieldCheck, UserCheck, ChevronRight, Loader2, ArrowLeft, Mail,
+  ShieldCheck, UserCheck, ChevronRight, Loader2, ArrowLeft,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -198,15 +198,12 @@ export default function AdminPage() {
 
                     {/* Info */}
                     <div className='flex-1 min-w-0'>
-                      <p className='text-text-primary text-message font-medium truncate'>
-                        {user.name ?? <span className='font-mono text-text-muted'>{shortId(user.id)}</span>}
+                      <p className='text-text-primary text-message font-semibold truncate'>
+                        {user.name ?? <span className='text-text-muted font-normal italic'>No name</span>}
                       </p>
-                      {user.email && (
-                        <div className='flex items-center gap-1 text-text-muted text-meta truncate'>
-                          <Mail className='w-3 h-3 shrink-0' />
-                          <span className='truncate'>{user.email}</span>
-                        </div>
-                      )}
+                      <p className='text-text-secondary text-meta truncate'>
+                        {user.email ?? <span className='text-text-muted italic'>No email</span>}
+                      </p>
                       <p className='text-text-muted text-meta'>
                         {user.workspaceCount} workspace{user.workspaceCount !== 1 ? 's' : ''} · joined {formatDate(user.created_at)}
                         {!user.onboarded ? ' · not onboarded' : ''}
