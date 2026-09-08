@@ -48,7 +48,7 @@ export default function Sidebar({ onNewThread, refreshKey = 0 }: SidebarProps) {
       script_ready: 'bg-purple-500',
       media_pending: 'bg-orange-500',
       ready: 'bg-green-500',
-      published: 'bg-gray-500',
+      published: 'bg-text-muted',
     };
     return map[status];
   }
@@ -100,7 +100,7 @@ export default function Sidebar({ onNewThread, refreshKey = 0 }: SidebarProps) {
       <div className='p-3'>
         <button
           onClick={onNewThread}
-          className='w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-brand hover:bg-brand-hover transition-colors rounded-lg text-message font-medium text-on-brand shadow-[0_4px_14px_rgba(58,122,114,0.25)]'
+          className='w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-brand hover:bg-brand-hover transition-colors rounded-lg text-message font-medium text-on-brand shadow-[0_4px_14px_rgba(15,118,110,0.25)]'
         >
           <Plus size={15} />
           New thread

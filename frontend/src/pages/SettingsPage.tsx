@@ -14,7 +14,6 @@ const BACKEND = import.meta.env.VITE_API_BASE_URL ?? '';
 
 import {
   type AspectRatio,
-  type PlatformConfig,
   type PlatformSettings,
   PLATFORM_DEFS,
   DEFAULT_PLATFORM_SETTINGS,

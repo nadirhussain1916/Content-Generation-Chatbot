@@ -292,7 +292,7 @@ export default function ThreadPage() {
     script_ready: 'text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 border-purple-300 dark:border-purple-700/30',
     media_pending: 'text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 border-orange-300 dark:border-orange-700/30',
     ready: 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700/30',
-    published: 'text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-700',
+    published: 'text-text-secondary bg-surface-card border-border-soft',
   };
 
   return (

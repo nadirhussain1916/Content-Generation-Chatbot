@@ -72,16 +72,16 @@ export default function EditDraftModal({ open, onClose, pkg, isVideo, onSave }: 
       onClick={(e) => { if (e.target === backdropRef.current) onClose(); }}
       className='fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4'
     >
-      <div className='bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col'>
+      <div className='bg-surface-white border border-border-soft rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col'>
         {/* Header */}
-        <div className='flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-800 flex-shrink-0'>
+        <div className='flex items-center justify-between px-5 py-4 border-b border-border-soft flex-shrink-0'>
           <div className='flex items-center gap-2'>
-            <div className='w-2 h-2 rounded-full bg-violet-500' />
-            <span className='font-semibold text-sm text-gray-900 dark:text-white'>
+            <div className='w-2 h-2 rounded-full bg-brand' />
+            <span className='font-semibold text-sm text-text-primary'>
               Edit {isVideo ? 'Video Script' : 'Image Post'} Draft
             </span>
           </div>
-          <button onClick={onClose} className='text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors'>
+          <button onClick={onClose} className='text-text-muted hover:text-text-primary transition-colors'>
             <X size={18} />
           </button>
         </div>
@@ -172,8 +172,8 @@ export default function EditDraftModal({ open, onClose, pkg, isVideo, onSave }: 
           {/* ── Video-specific fields ─────────────────────────────────────── */}
           {isVideo && form.script && (
             <>
-              <div className='border-t border-gray-100 dark:border-gray-800 pt-4'>
-                <p className='text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3'>Script</p>
+              <div className='border-t border-border-soft pt-4'>
+                <p className='text-xs font-semibold text-text-secondary uppercase tracking-wide mb-3'>Script</p>
                 <div className='space-y-4'>
                   <Field label='Hook (opening 3-5 seconds)'>
                     <textarea
@@ -231,23 +231,23 @@ export default function EditDraftModal({ open, onClose, pkg, isVideo, onSave }: 
         </div>
 
         {/* Footer */}
-        <div className='flex items-center justify-between px-5 py-4 border-t border-gray-200 dark:border-gray-800 flex-shrink-0'>
+        <div className='flex items-center justify-between px-5 py-4 border-t border-border-soft flex-shrink-0'>
           {error ? (
             <p className='text-xs text-red-500'>{error}</p>
           ) : (
-            <span className='text-xs text-gray-400'>Changes are saved to the draft immediately.</span>
+            <span className='text-xs text-text-muted'>Changes are saved to the draft immediately.</span>
           )}
           <div className='flex items-center gap-2'>
             <button
               onClick={onClose}
-              className='px-4 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors'
+              className='px-4 py-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors'
             >
               Cancel
             </button>
             <button
               onClick={handleSave}
               disabled={saving}
-              className='flex items-center gap-1.5 px-4 py-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors'
+              className='flex items-center gap-1.5 px-4 py-1.5 bg-brand hover:bg-brand-hover disabled:opacity-50 text-on-brand text-sm font-medium rounded-lg transition-colors'
             >
               {saving ? <Loader2 size={14} className='animate-spin' /> : <Save size={14} />}
               {saving ? 'Saving…' : 'Save'}
@@ -270,9 +270,9 @@ function Field({
 }) {
   return (
     <div>
-      <label className='block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5'>
+      <label className='block text-xs font-semibold text-text-secondary uppercase tracking-wide mb-1.5'>
         {label}
-        {hint && <span className='ml-1.5 font-normal normal-case text-gray-400'>{hint}</span>}
+        {hint && <span className='ml-1.5 font-normal normal-case text-text-muted'>{hint}</span>}
       </label>
       {children}
     </div>
@@ -282,14 +282,14 @@ function Field({
 function CharCount({ current, max }: { current: number; max: number }) {
   const near = current > max * 0.9;
   return (
-    <p className={cn('text-right text-xs mt-1', near ? 'text-amber-500' : 'text-gray-400')}>
+    <p className={cn('text-right text-xs mt-1', near ? 'text-amber-500' : 'text-text-muted')}>
       {current}/{max}
     </p>
   );
 }
 
 const fieldClass =
-  'w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 ' +
-  'rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white ' +
-  'placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-500 ' +
+  'w-full bg-surface-card border border-border-soft ' +
+  'rounded-lg px-3 py-2 text-sm text-text-primary ' +
+  'placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-brand ' +
   'focus:border-transparent transition-all resize-none';

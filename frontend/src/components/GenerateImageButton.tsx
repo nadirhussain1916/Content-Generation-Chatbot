@@ -158,7 +158,7 @@ export default function GenerateImageButton({ slug, threadId, message, existingA
           {/* Reference mode toggle — only shown when a primary reference is set */}
           {hasReference && (
             <div className='flex items-center gap-1.5'>
-              <span className='text-xs text-gray-500'>Reference</span>
+              <span className='text-xs text-text-secondary'>Reference</span>
               <div className='flex gap-1'>
                 {(['inspire', 'edit'] as const).map((mode) => (
                   <button
@@ -175,8 +175,8 @@ export default function GenerateImageButton({ slug, threadId, message, existingA
                     className={cn(
                       'px-2.5 py-1 text-xs rounded-lg border transition-all capitalize',
                       generationMode === mode
-                        ? 'bg-violet-600 border-violet-500 text-white'
-                        : 'bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-violet-500 hover:text-violet-600',
+                        ? 'bg-brand border-brand text-on-brand'
+                        : 'bg-surface-card border-border-soft text-text-secondary hover:border-brand hover:text-brand',
                       loading && 'cursor-not-allowed opacity-50'
                     )}
                   >

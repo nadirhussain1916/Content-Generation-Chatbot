@@ -145,7 +145,7 @@ export default function ChatInput({
       />
 
       <div className={cn(
-        'bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 focus-within:border-violet-500 transition-colors',
+        'bg-surface-card border border-border-soft focus-within:border-brand transition-colors',
         roundedClass,
         rounded === '2xl' && 'shadow-xl'
       )}>
@@ -160,17 +160,17 @@ export default function ChatInput({
                   className={cn(
                     'w-10 h-10 object-cover border-2',
                     roundedClass,
-                    idx === 0 ? 'border-violet-500' : 'border-gray-300 dark:border-gray-700'
+                    idx === 0 ? 'border-brand' : 'border-border-soft'
                   )}
                 />
                 {idx === 0 && (
-                  <span className='absolute -top-1.5 -left-1.5 text-[10px] bg-violet-600 text-white rounded px-1 leading-4'>
+                  <span className='absolute -top-1.5 -left-1.5 text-[10px] bg-brand text-on-brand rounded px-1 leading-4'>
                     1st
                   </span>
                 )}
                 <button
                   onClick={() => removeRef(ref.uploadId)}
-                  className='absolute -top-1.5 -right-1.5 bg-gray-800 dark:bg-gray-200 text-white dark:text-gray-900 rounded-full p-px opacity-0 group-hover:opacity-100 transition-opacity'
+                  className='absolute -top-1.5 -right-1.5 bg-ink text-on-ink rounded-full p-px opacity-0 group-hover:opacity-100 transition-opacity'
                 >
                   <X size={10} />
                 </button>
@@ -181,20 +181,20 @@ export default function ChatInput({
 
         {/* Picker popover */}
         {pickerOpen && (
-          <div className='mx-3 mt-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3 max-h-60 overflow-y-auto'>
+          <div className='mx-3 mt-2 bg-surface-white border border-border-soft rounded-lg shadow-lg p-3 max-h-60 overflow-y-auto'>
             <div className='flex items-center justify-between mb-2'>
-              <span className='text-xs font-medium text-gray-500 dark:text-gray-400'>Pick a reference</span>
+              <span className='text-xs font-medium text-text-secondary'>Pick a reference</span>
               <button onClick={() => setPickerOpen(false)}>
-                <X size={14} className='text-gray-400' />
+                <X size={14} className='text-text-muted' />
               </button>
             </div>
             {uploads.length === 0 && imageAssets.length === 0 ? (
-              <p className='text-xs text-gray-400 text-center py-4'>No uploads yet. Use the paperclip to upload an image.</p>
+              <p className='text-xs text-text-muted text-center py-4'>No uploads yet. Use the paperclip to upload an image.</p>
             ) : (
               <>
                 {uploads.length > 0 && (
                   <>
-                    <p className='text-[10px] text-gray-400 mb-1.5 uppercase tracking-wide'>Uploads</p>
+                    <p className='text-[10px] text-text-muted mb-1.5 uppercase tracking-wide'>Uploads</p>
                     <div className='flex flex-wrap gap-2 mb-2'>
                       {uploads.map((u) => (
                         <button key={u.id} onClick={() => attachUpload(u)} title={u.name}>
@@ -204,8 +204,8 @@ export default function ChatInput({
                             className={cn(
                               'w-14 h-14 object-cover rounded-lg border-2 transition-all',
                               attachedRefs.some((r) => r.uploadId === u.id)
-                                ? 'border-violet-500'
-                                : 'border-gray-200 dark:border-gray-700 hover:border-violet-400'
+                                ? 'border-brand'
+                                : 'border-border-soft hover:border-brand'
                             )}
                           />
                         </button>
@@ -215,7 +215,7 @@ export default function ChatInput({
                 )}
                 {imageAssets.length > 0 && (
                   <>
-                    <p className='text-[10px] text-gray-400 mb-1.5 uppercase tracking-wide'>Generated images</p>
+                    <p className='text-[10px] text-text-muted mb-1.5 uppercase tracking-wide'>Generated images</p>
                     <div className='flex flex-wrap gap-2'>
                       {imageAssets.map((a) => a.public_url && (
                         <button
@@ -229,8 +229,8 @@ export default function ChatInput({
                             className={cn(
                               'w-14 h-14 object-cover rounded-lg border-2 transition-all',
                               attachedRefs.some((r) => r.uploadId === a.id)
-                                ? 'border-violet-500'
-                                : 'border-gray-200 dark:border-gray-700 hover:border-violet-400'
+                                ? 'border-brand'
+                                : 'border-border-soft hover:border-brand'
                             )}
                           />
                         </button>
@@ -254,7 +254,7 @@ export default function ChatInput({
             placeholder={effectivePlaceholder}
             disabled={disabled}
             autoFocus={autoFocus}
-            className='flex-1 bg-transparent text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 resize-none focus:outline-none max-h-32 overflow-y-auto leading-relaxed'
+            className='flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted resize-none focus:outline-none max-h-32 overflow-y-auto leading-relaxed'
             style={{ height: 'auto' }}
             onInput={(e) => {
               const el = e.currentTarget;
@@ -266,7 +266,7 @@ export default function ChatInput({
             onClick={submit}
             disabled={!value.trim() || sending || disabled}
             className={cn(
-              'flex-shrink-0 flex items-center justify-center bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg transition-all',
+              'flex-shrink-0 flex items-center justify-center bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed rounded-lg transition-all',
               arrowSend ? 'mb-0.5 w-8 h-8' : 'p-1.5'
             )}
           >
@@ -286,7 +286,7 @@ export default function ChatInput({
             onClick={() => !atRefCap && fileInputRef.current?.click()}
             disabled={uploading || disabled || atRefCap}
             title={atRefCap ? 'Only 1 reference image per generation' : 'Upload reference image'}
-            className='text-gray-400 hover:text-violet-500 disabled:opacity-40 transition-colors'
+            className='text-text-muted hover:text-brand disabled:opacity-40 transition-colors'
           >
             {uploading ? <Loader2 size={15} className='animate-spin' /> : <Paperclip size={15} />}
           </button>
@@ -297,12 +297,12 @@ export default function ChatInput({
             title={atRefCap ? 'Only 1 reference image per generation' : 'Pick reference from uploads (type / to open)'}
             className={cn(
               'transition-colors',
-              pickerOpen ? 'text-violet-500' : atRefCap ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed' : 'text-gray-400 hover:text-violet-500'
+              pickerOpen ? 'text-brand' : atRefCap ? 'text-text-muted cursor-not-allowed' : 'text-text-muted hover:text-brand'
             )}
           >
             <AtSign size={15} />
           </button>
-          <span className='text-xs text-gray-400 dark:text-gray-600'>Model</span>
+          <span className='text-xs text-text-muted'>Model</span>
           <ModelPicker
             options={TEXT_MODELS}
             value={textModel}

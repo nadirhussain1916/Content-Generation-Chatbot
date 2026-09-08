@@ -58,7 +58,7 @@ export default function OnboardingPage() {
         background: 'linear-gradient(135deg, var(--color-atmo-a) 0%, var(--color-atmo-b) 50%, var(--color-atmo-c) 100%)',
       }}
     >
-      <div className='w-full max-w-md bg-surface-white border border-black/[0.04] dark:border-white/[0.06] rounded-3xl shadow-[0_30px_80px_rgba(40,70,70,0.16)] px-6 py-8 sm:px-10 sm:py-10'>
+      <div className='w-full max-w-md bg-surface-white border border-black/[0.04] dark:border-white/[0.06] rounded-3xl shadow-[0_30px_80px_rgba(15,37,59,0.16)] px-6 py-8 sm:px-10 sm:py-10'>
         {/* Logo */}
         <div className='flex justify-center mb-8'>
           <div className='w-12 h-12 rounded-2xl bg-ink flex items-center justify-center'>

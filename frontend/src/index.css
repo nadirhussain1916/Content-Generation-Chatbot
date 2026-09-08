@@ -22,7 +22,7 @@ body {
   border-radius: 4px;
 }
 .dark ::-webkit-scrollbar-thumb {
-  background: #2d3f3b;
+  background: #35505E;
 }
 
 /* ── Clerk inline form overrides (landing page) ── */

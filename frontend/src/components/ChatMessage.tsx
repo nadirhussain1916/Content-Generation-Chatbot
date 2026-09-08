@@ -141,7 +141,7 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
   // Markdown component overrides — styled to match the dark ink bubble
   const mdComponents: React.ComponentProps<typeof ReactMarkdown>['components'] = {
     p:      ({ children }) => <p className='mb-2 last:mb-0'>{children}</p>,
-    strong: ({ children }) => <strong className='font-semibold text-white'>{children}</strong>,
+    strong: ({ children }) => <strong className='font-semibold text-text-primary'>{children}</strong>,
     em:     ({ children }) => <em className='italic opacity-90'>{children}</em>,
     ul:     ({ children }) => <ul className='list-disc list-inside mb-2 space-y-0.5'>{children}</ul>,
     ol:     ({ children }) => <ol className='list-decimal list-inside mb-2 space-y-0.5'>{children}</ol>,
@@ -149,8 +149,8 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
     h1:     ({ children }) => <h1 className='text-base font-bold mb-1'>{children}</h1>,
     h2:     ({ children }) => <h2 className='text-sm font-bold mb-1'>{children}</h2>,
     h3:     ({ children }) => <h3 className='text-sm font-semibold mb-1'>{children}</h3>,
-    code:   ({ children }) => <code className='bg-white/10 rounded px-1 py-0.5 text-meta font-mono'>{children}</code>,
-    pre:    ({ children }) => <pre className='bg-white/10 rounded-lg p-3 mb-2 overflow-x-auto text-meta font-mono'>{children}</pre>,
+    code:   ({ children }) => <code className='bg-black/[0.06] dark:bg-white/10 rounded px-1 py-0.5 text-meta font-mono'>{children}</code>,
+    pre:    ({ children }) => <pre className='bg-black/[0.06] dark:bg-white/10 rounded-lg p-3 mb-2 overflow-x-auto text-meta font-mono'>{children}</pre>,
     a:      ({ href, children }) => <a href={href} target='_blank' rel='noopener noreferrer' className='underline underline-offset-2 opacity-80 hover:opacity-100'>{children}</a>,
   };
 
@@ -188,7 +188,7 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
                   src={img.publicUrl}
                   alt={img.name}
                   title={img.name}
-                  className='w-12 h-12 object-cover rounded-lg border-2 border-violet-400/60'
+                  className='w-12 h-12 object-cover rounded-lg border-2 border-brand/60'
                 />
               ))}
             </div>
@@ -209,7 +209,7 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
     return (
       <div className='flex justify-start'>
         <div className='max-w-[85%] space-y-3'>
-          <div className='bg-ink text-on-ink rounded-2xl rounded-tl-none px-4 py-3 text-message leading-relaxed'>
+          <div className='bg-surface-card text-text-primary border border-border-soft rounded-2xl rounded-tl-none px-4 py-3 text-message leading-relaxed'>
             <ReactMarkdown components={mdComponents}>{plannerData.reply}</ReactMarkdown>
           </div>
           {plannerData.questions && plannerData.questions.length > 0 && (
@@ -426,7 +426,7 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
               {/* ── References section ── */}
               {(refIds.length > 0 || (uploads.length > 0 || imageAssets.length > 0)) && (
                 <div>
-                  <p className='text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2'>References</p>
+                  <p className='text-xs font-semibold text-text-secondary uppercase tracking-wide mb-2'>References</p>
                   <div className='flex flex-wrap gap-2 items-start'>
                     {refIds.map((id) => {
                       const url = getRefUrl(id);
@@ -444,17 +444,17 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
                               className={cn(
                                 'w-14 h-14 object-cover rounded-lg border-2 transition-all',
                                 isPrimary
-                                  ? 'border-violet-500'
-                                  : 'border-gray-200 dark:border-gray-700 hover:border-violet-400'
+                                  ? 'border-brand'
+                                  : 'border-border-soft hover:border-brand'
                               )}
                             />
                           </button>
                           {isPrimary && (
-                            <Star size={12} className='absolute -top-1.5 -left-1.5 fill-violet-500 text-violet-500' />
+                            <Star size={12} className='absolute -top-1.5 -left-1.5 fill-brand text-brand' />
                           )}
                           <button
                             onClick={() => removeRef(id)}
-                            className='absolute -top-1.5 -right-1.5 bg-gray-800 dark:bg-gray-200 text-white dark:text-gray-900 rounded-full p-px opacity-0 group-hover:opacity-100 transition-opacity'
+                            className='absolute -top-1.5 -right-1.5 bg-ink text-on-ink rounded-full p-px opacity-0 group-hover:opacity-100 transition-opacity'
                           >
                             <X size={10} />
                           </button>
@@ -468,35 +468,35 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
                         Wan 2.7 T2V is text-only — references are not supported
                       </p>
                     ) : refAtCap ? (
-                      <p className='text-xs text-gray-400 dark:text-gray-500 self-center'>
+                      <p className='text-xs text-text-muted self-center'>
                         Max {refCap} reference for this model
                       </p>
                     ) : (
                       <div className='relative'>
                         <button
                           onClick={() => setRefPickerOpen((o) => !o)}
-                          className='w-14 h-14 flex items-center justify-center rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-700 text-gray-400 hover:border-violet-500 hover:text-violet-500 transition-colors'
+                          className='w-14 h-14 flex items-center justify-center rounded-lg border-2 border-dashed border-border-soft text-text-muted hover:border-brand hover:text-brand transition-colors'
                           title='Add reference'
                         >
                           <Plus size={16} />
                         </button>
                         {refPickerOpen && (
-                          <div className='absolute bottom-16 left-0 z-20 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3 w-56 max-h-52 overflow-y-auto'>
+                          <div className='absolute bottom-16 left-0 z-20 bg-surface-white border border-border-soft rounded-lg shadow-lg p-3 w-56 max-h-52 overflow-y-auto'>
                             <div className='flex items-center justify-between mb-2'>
-                              <span className='text-xs font-medium text-gray-500'>Pick a reference</span>
+                              <span className='text-xs font-medium text-text-secondary'>Pick a reference</span>
                               <button onClick={() => setRefPickerOpen(false)}>
-                                <X size={12} className='text-gray-400' />
+                                <X size={12} className='text-text-muted' />
                               </button>
                             </div>
                             <div className='flex flex-wrap gap-2'>
                               {uploads.map((u) => (
                                 <button key={u.id} onClick={() => addRef(u)} title={u.name}>
-                                  <img src={u.public_url} alt={u.name} className={cn('w-12 h-12 object-cover rounded-lg border-2 transition-all', refIds.includes(u.id) ? 'border-violet-500' : 'border-gray-200 dark:border-gray-700 hover:border-violet-400')} />
+                                  <img src={u.public_url} alt={u.name} className={cn('w-12 h-12 object-cover rounded-lg border-2 transition-all', refIds.includes(u.id) ? 'border-brand' : 'border-border-soft hover:border-brand')} />
                                 </button>
                               ))}
                               {imageAssets.map((a) => a.public_url && (
                                 <button key={a.id} onClick={() => addRef({ id: a.id, name: a.id, public_url: a.public_url!, workspace_id: '', thread_id: null, mime_type: null, vision_description: null, created_at: 0 })} title='Generated image'>
-                                  <img src={a.public_url} alt='Generated' className={cn('w-12 h-12 object-cover rounded-lg border-2 transition-all', refIds.includes(a.id) ? 'border-violet-500' : 'border-gray-200 dark:border-gray-700 hover:border-violet-400')} />
+                                  <img src={a.public_url} alt='Generated' className={cn('w-12 h-12 object-cover rounded-lg border-2 transition-all', refIds.includes(a.id) ? 'border-brand' : 'border-border-soft hover:border-brand')} />
                                 </button>
                               ))}
                             </div>
@@ -522,7 +522,7 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
   return (
     <div className='flex justify-start'>
       <div className='max-w-[85%] space-y-1'>
-        <div className='bg-ink text-on-ink rounded-2xl rounded-tl-none px-4 py-2.5 text-message leading-relaxed'>
+        <div className='bg-surface-card text-text-primary border border-border-soft rounded-2xl rounded-tl-none px-4 py-2.5 text-message leading-relaxed'>
           <ReactMarkdown components={mdComponents}>{message.content}</ReactMarkdown>
         </div>
         <p className='text-[10px] text-text-muted px-1'>

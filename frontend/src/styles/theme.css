@@ -29,8 +29,8 @@
   --text-chat-title--letter-spacing: -0.02em;
   --text-chat-title--font-weight: 600;
 
-  --text-message: 14px;
-  --text-message--line-height: 1.55;
+  --text-message: 15px;
+  --text-message--line-height: 1.6;
   --text-message--font-weight: 400;
 
   --text-meta: 11px;
@@ -46,78 +46,78 @@
   --radius-2xl: 22px;
   --radius-3xl: 30px;
 
-  /* ── Color palette ────────────────────────────────────────────── */
-  /* Ink: the black CTA / AI-bubble color. Inverts in dark mode (see .dark below)
-     so it always reads as "black + white contrast" rather than disappearing. */
-  --color-ink: #050505;
-  --color-on-ink: #ffffff;
-  --color-ink-hover: #1a1a1a;
+  /* ── Color palette (Variation 2 brand: teal + navy slate) ──────── */
+  /* Ink: the primary CTA / AI-bubble color — Navy Slate. Inverts in dark mode
+     (see .dark below) so it always reads as strong contrast, never disappears. */
+  --color-ink: #0F253B;
+  --color-on-ink: #F8FAFC;
+  --color-ink-hover: #1B3A50;
 
-  /* Atmospheric background gradient stops (soft mint/seafoam, never saturated) */
-  --color-atmo-a: #91b1bf;
-  --color-atmo-b: #a4c4c0;
-  --color-atmo-c: #b5d2c8;
+  /* Atmospheric background gradient stops (soft teal/mint tints, never saturated) */
+  --color-atmo-a: #8FCFC8;
+  --color-atmo-b: #A9DCD5;
+  --color-atmo-c: #C7E8E2;
 
   /* Brand teal — the standard CTA button color for text-labeled action buttons
-     (primary filled + secondary outline pair), drawn from the same
-     seafoam/teal family as --color-atmo-* and --color-glass-*, just deepened
+     (primary filled + secondary outline pair), drawn from the Variation 2
+     teal family (--color-atmo-* / --color-glass-*), deepened to Deep Teal
      for button-strength contrast. Icon-only circular controls (send,
      avatars) stay on --color-ink instead: a separate, intentional pattern. */
-  --color-brand: #3a7a72;
-  --color-brand-hover: #2e6259;
-  --color-on-brand: #ffffff;
+  --color-brand: #0F766E;
+  --color-brand-hover: #0B5A53;
+  --color-on-brand: #F8FAFC;
 
-  /* App-wide "glass" background — light greenish, glows from the bottom-left
-     corner and fades toward warm white. Sidebar/main panels sit on top of
+  /* App-wide "glass" background — light teal, glows from the bottom-left
+     corner and fades toward off-white. Sidebar/main panels sit on top of
      this as translucent, blurred glass (see bg-surface/NN + backdrop-blur
      usage in Sidebar/ThreadPage/etc). */
-  --color-glass-a: #a9dfbc;
-  --color-glass-b: #cdeacf;
-  --color-glass-c: #eef6ee;
+  --color-glass-a: #A9E3DC;
+  --color-glass-b: #CDECE7;
+  --color-glass-c: #EAF6F3;
 
   /* Surfaces */
-  --color-surface: #f7f6f0;
-  --color-surface-chat: #eef5f2;
-  --color-surface-card: #f1f5f1;
-  --color-surface-white: #ffffff;
+  --color-surface: #F8FAFC;
+  --color-surface-chat: #EEF6F4;
+  --color-surface-card: #E8EEF3;
+  --color-surface-white: #FFFFFF;
 
   /* Text */
-  --color-text-primary: #111111;
-  --color-text-secondary: #777777;
-  --color-text-muted: #a0a0a0;
+  --color-text-primary: #0F253B;
+  --color-text-secondary: #5F6E82;
+  --color-text-muted: #9AA6B4;
 
   /* Border + status */
-  --color-border-soft: #e1e8e4;
+  --color-border-soft: #DCE4EC;
   --color-success: #75c94a;
 }
 
 /* Dark counterparts — same token names, overridden via the .dark cascade. */
 .dark {
-  --color-ink: #f5f4ef;
-  --color-on-ink: #0a0a0a;
+  --color-ink: #F8FAFC;
+  --color-on-ink: #0F253B;
   --color-ink-hover: #ffffff;
 
-  --color-atmo-a: #0a1412;
-  --color-atmo-b: #0d1d19;
-  --color-atmo-c: #0b1e1a;
+  --color-atmo-a: #0A1A22;
+  --color-atmo-b: #0C222C;
+  --color-atmo-c: #0E2833;
 
-  --color-brand: #4e9389;
-  --color-brand-hover: #5fa79c;
-  --color-on-brand: #ffffff;
+  --color-brand: #2FA7A0;
+  --color-brand-hover: #47D1C0;
+  --color-on-brand: #F8FAFC;
 
-  --color-glass-a: #1f4536;
-  --color-glass-b: #16302a;
-  --color-glass-c: #121e1a;
+  --color-glass-a: #123F3A;
+  --color-glass-b: #0E302C;
+  --color-glass-c: #0C2420;
 
-  --color-surface: #101816;
-  --color-surface-chat: #101816;
-  --color-surface-card: #232d2a;
-  --color-surface-white: #3d4b46;
+  --color-surface: #0A1B24;
+  --color-surface-chat: #0A1B24;
+  --color-surface-card: #16323F;
+  --color-surface-white: #1E3A47;
 
-  --color-text-primary: #f5f7f5;
-  --color-text-secondary: #d7dedb;
-  --color-text-muted: #b7c1bd;
+  --color-text-primary: #F5F8FB;
+  --color-text-secondary: #C3D0D6;
+  --color-text-muted: #8CA0AE;
 
-  --color-border-soft: #647469;
+  --color-border-soft: #35505E;
   --color-success: #8ed966;
 }
