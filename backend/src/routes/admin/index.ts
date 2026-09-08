@@ -2,7 +2,8 @@ import { Hono } from 'hono';
 import { authMiddleware, signImpersonationToken } from '../../middleware/auth';
 import { superAdminMiddleware } from '../../middleware/superAdmin';
 import { runAllMigrations } from '../../migrations';
-import { getAllUsersAssetUsage, getAllUsersMessageUsage } from '../../db/queries';
+import { getAllWorkspacesAssetUsage, getAllWorkspacesMessageUsage } from '../../db/queries';
+import { parseDateRange } from '../billing';
 import type { CloudflareBindings } from '../../env';
 import type { ContextVariables, TfResponse } from '../../types';
 import { Logger } from '../../utils/Logger';
@@ -100,6 +101,21 @@ adminRouter.get('/users', async (c) => {
 
 // ─── GET /api/admin/usage ─────────────────────────────────────────────────────
 
+interface WorkspaceUsage {
+  workspaceId: string;
+  name: string;
+  slug: string;
+  textCost: number;
+  imageCost: number;
+  videoCost: number;
+  totalCost: number;
+  messageCount: number;
+  imageCount: number;
+  videoCount: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+
 interface AdminUsageUser {
   userId: string;
   email: string | null;
@@ -113,6 +129,7 @@ interface AdminUsageUser {
   videoCount: number;
   inputTokens: number;
   outputTokens: number;
+  workspaces: WorkspaceUsage[];
 }
 
 interface AdminUsageResponse {
@@ -129,57 +146,90 @@ interface AdminUsageResponse {
   users: AdminUsageUser[];
 }
 
+function emptyWorkspaceUsage(workspaceId: string, name: string, slug: string): WorkspaceUsage {
+  return {
+    workspaceId, name, slug,
+    textCost: 0, imageCost: 0, videoCost: 0, totalCost: 0,
+    messageCount: 0, imageCount: 0, videoCount: 0,
+    inputTokens: 0, outputTokens: 0,
+  };
+}
+
 adminRouter.get('/usage', async (c) => {
+  const range = parseDateRange(c.req.query('from'), c.req.query('to'));
   try {
-    const [users, assetUsage, messageUsage] = await Promise.all([
+    const [users, workspaces, assetUsage, messageUsage] = await Promise.all([
       c.env.DB.prepare('SELECT id, email, name FROM users').all<{ id: string; email: string | null; name: string | null }>(),
-      getAllUsersAssetUsage(c.env.DB),
-      getAllUsersMessageUsage(c.env.DB),
+      c.env.DB.prepare('SELECT id, owner_id, name, slug FROM workspaces').all<{ id: string; owner_id: string; name: string; slug: string }>(),
+      getAllWorkspacesAssetUsage(c.env.DB, range),
+      getAllWorkspacesMessageUsage(c.env.DB, range),
     ]);
 
-    // Seed a row for every user so the table lists everyone.
-    const byUser = new Map<string, AdminUsageUser>();
-    for (const u of users.results) {
-      byUser.set(u.id, {
-        userId: u.id, email: u.email, name: u.name,
-        textCost: 0, imageCost: 0, videoCost: 0, totalCost: 0,
-        messageCount: 0, imageCount: 0, videoCount: 0,
-        inputTokens: 0, outputTokens: 0,
-      });
-    }
+    // User rows (seeded so everyone is listed) + a nested workspace map per user.
+    const userMeta = new Map<string, { email: string | null; name: string | null }>();
+    for (const u of users.results) userMeta.set(u.id, { email: u.email, name: u.name });
 
-    const ensure = (userId: string): AdminUsageUser => {
-      let row = byUser.get(userId);
-      if (!row) {
-        // Usage attributed to a workspace whose owner is missing from users — still surface it.
-        row = {
-          userId, email: null, name: null,
-          textCost: 0, imageCost: 0, videoCost: 0, totalCost: 0,
-          messageCount: 0, imageCount: 0, videoCount: 0,
-          inputTokens: 0, outputTokens: 0,
-        };
-        byUser.set(userId, row);
-      }
-      return row;
+    const wsByUser = new Map<string, Map<string, WorkspaceUsage>>();
+
+    const ensureUserMap = (userId: string): Map<string, WorkspaceUsage> => {
+      let m = wsByUser.get(userId);
+      if (!m) { m = new Map(); wsByUser.set(userId, m); }
+      return m;
     };
 
+    const ensureWorkspace = (userId: string, workspaceId: string, name: string, slug: string): WorkspaceUsage => {
+      const m = ensureUserMap(userId);
+      let ws = m.get(workspaceId);
+      if (!ws) { ws = emptyWorkspaceUsage(workspaceId, name, slug); m.set(workspaceId, ws); }
+      return ws;
+    };
+
+    // Seed every user (even with no workspaces) and every workspace (even with no usage).
+    for (const u of users.results) ensureUserMap(u.id);
+    for (const w of workspaces.results) ensureWorkspace(w.owner_id, w.id, w.name, w.slug);
+
     for (const row of assetUsage.results) {
-      const u = ensure(row.userId);
+      const ws = ensureWorkspace(row.userId, row.workspaceId, row.name, row.slug);
       const cost = row.cost ?? 0;
-      if (row.type === 'video') { u.videoCost += cost; u.videoCount += row.count; }
-      else { u.imageCost += cost; u.imageCount += row.count; }
+      if (row.type === 'video') { ws.videoCost += cost; ws.videoCount += row.count; }
+      else { ws.imageCost += cost; ws.imageCount += row.count; }
     }
 
     for (const row of messageUsage.results) {
-      const u = ensure(row.userId);
-      u.textCost += row.cost ?? 0;
-      u.messageCount += row.count;
-      u.inputTokens += row.input_tokens ?? 0;
-      u.outputTokens += row.output_tokens ?? 0;
+      const ws = ensureWorkspace(row.userId, row.workspaceId, row.name, row.slug);
+      ws.textCost += row.cost ?? 0;
+      ws.messageCount += row.count;
+      ws.inputTokens += row.input_tokens ?? 0;
+      ws.outputTokens += row.output_tokens ?? 0;
     }
 
-    const usersList = [...byUser.values()];
-    for (const u of usersList) u.totalCost = u.textCost + u.imageCost + u.videoCost;
+    // Roll workspace usage up into per-user totals.
+    const usersList: AdminUsageUser[] = [...wsByUser.entries()].map(([userId, wsMap]) => {
+      const meta = userMeta.get(userId) ?? { email: null, name: null };
+      const workspaceList = [...wsMap.values()];
+      for (const ws of workspaceList) ws.totalCost = ws.textCost + ws.imageCost + ws.videoCost;
+      workspaceList.sort((a, b) => b.totalCost - a.totalCost);
+
+      const u: AdminUsageUser = {
+        userId, email: meta.email, name: meta.name,
+        textCost: 0, imageCost: 0, videoCost: 0, totalCost: 0,
+        messageCount: 0, imageCount: 0, videoCount: 0,
+        inputTokens: 0, outputTokens: 0,
+        workspaces: workspaceList,
+      };
+      for (const ws of workspaceList) {
+        u.textCost += ws.textCost;
+        u.imageCost += ws.imageCost;
+        u.videoCost += ws.videoCost;
+        u.messageCount += ws.messageCount;
+        u.imageCount += ws.imageCount;
+        u.videoCount += ws.videoCount;
+        u.inputTokens += ws.inputTokens;
+        u.outputTokens += ws.outputTokens;
+      }
+      u.totalCost = u.textCost + u.imageCost + u.videoCost;
+      return u;
+    });
     usersList.sort((a, b) => b.totalCost - a.totalCost);
 
     const totals = usersList.reduce(

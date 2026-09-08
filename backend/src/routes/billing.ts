@@ -3,10 +3,21 @@ import { authMiddleware, workspaceMiddleware } from '../middleware/auth';
 import {
   getWorkspaceMessageUsage,
   getWorkspaceAssetUsage,
+  type DateRange,
 } from '../db/queries';
 import type { CloudflareBindings } from '../env';
 import type { ContextVariables, TfResponse } from '../types';
 import { Logger } from '../utils/Logger';
+
+/** Parses ?from=&to= unix-second query params into a DateRange (ignores invalid values). */
+export function parseDateRange(from?: string, to?: string): DateRange {
+  const range: DateRange = {};
+  const f = from ? Number(from) : NaN;
+  const t = to ? Number(to) : NaN;
+  if (Number.isFinite(f)) range.from = f;
+  if (Number.isFinite(t)) range.to = t;
+  return range;
+}
 
 type Env = { Bindings: CloudflareBindings; Variables: ContextVariables };
 
@@ -44,10 +55,11 @@ export interface UsageSummary {
 
 billingRouter.get('/', async (c) => {
   const workspace = c.get('workspace');
+  const range = parseDateRange(c.req.query('from'), c.req.query('to'));
   try {
     const [messageUsage, assetUsage] = await Promise.all([
-      getWorkspaceMessageUsage(c.env.DB, workspace.id),
-      getWorkspaceAssetUsage(c.env.DB, workspace.id),
+      getWorkspaceMessageUsage(c.env.DB, workspace.id, range),
+      getWorkspaceAssetUsage(c.env.DB, workspace.id, range),
     ]);
 
     // Text (messages)

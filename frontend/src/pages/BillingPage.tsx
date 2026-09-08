@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuthToken } from '../hooks/useAuthToken';
-import { api } from '../lib/api';
+import { api, rangeQuery } from '../lib/api';
 import type { TfResponse } from '../types';
-import type { UsageSummary, CategoryUsage, ModelUsage } from '../lib/api';
+import type { UsageSummary, CategoryUsage, ModelUsage, DateRange } from '../lib/api';
 import AppShell from '../components/AppShell';
 import Sidebar from '../components/Sidebar';
+import DateRangePicker from '../components/DateRangePicker';
 import { shortModelLabel, formatUsd, formatTokens } from '../lib/display';
 import { cn } from '../lib/utils';
 import {
@@ -28,19 +29,20 @@ export default function BillingPage() {
 
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [range, setRange] = useState<DateRange>({});
 
   useEffect(() => {
     (async () => {
       setLoading(true);
       const token = await getToken();
       const res = await api.get<TfResponse<UsageSummary>>(
-        `/api/workspaces/${slug}/billing`,
+        `/api/workspaces/${slug}/billing${rangeQuery(range)}`,
         token ?? undefined
       );
       if (res.success && res.data) setUsage(res.data);
       setLoading(false);
     })();
-  }, [slug]);
+  }, [slug, range]);
 
   return (
     <AppShell>
@@ -68,6 +70,8 @@ export default function BillingPage() {
               <ArrowRight size={13} />
             </Link>
           </div>
+
+          <DateRangePicker onChange={setRange} className='mb-6' />
 
           {loading ? (
             <div className='flex justify-center py-16'>

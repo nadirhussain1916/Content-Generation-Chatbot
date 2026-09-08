@@ -25,6 +25,22 @@ export const api = {
   delete: <T>(path: string, token?: string) => request<T>(path, { method: 'DELETE' }, token),
 };
 
+// ─── Date range ─────────────────────────────────────────────────────────────
+
+export interface DateRange {
+  from?: number; // unix seconds, inclusive
+  to?: number;   // unix seconds, exclusive
+}
+
+/** Serialises a DateRange to a `?from=&to=` query string (empty when unbounded). */
+export function rangeQuery(range?: DateRange): string {
+  const params = new URLSearchParams();
+  if (range?.from != null) params.set('from', String(range.from));
+  if (range?.to != null) params.set('to', String(range.to));
+  const s = params.toString();
+  return s ? `?${s}` : '';
+}
+
 // ─── Admin API ────────────────────────────────────────────────────────────────
 
 export interface AdminStats {
@@ -67,8 +83,8 @@ export const adminApi = {
       token
     ),
 
-  getUsage: (token: string) =>
-    request<{ success: boolean; data: AdminUsageResponse }>('/api/admin/usage', { method: 'GET' }, token),
+  getUsage: (token: string, range?: DateRange) =>
+    request<{ success: boolean; data: AdminUsageResponse }>(`/api/admin/usage${rangeQuery(range)}`, { method: 'GET' }, token),
 };
 
 // ─── Billing / usage ──────────────────────────────────────────────────────────
@@ -96,6 +112,21 @@ export interface UsageSummary {
   video: CategoryUsage;
 }
 
+export interface WorkspaceUsage {
+  workspaceId: string;
+  name: string;
+  slug: string;
+  textCost: number;
+  imageCost: number;
+  videoCost: number;
+  totalCost: number;
+  messageCount: number;
+  imageCount: number;
+  videoCount: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export interface AdminUsageUser {
   userId: string;
   email: string | null;
@@ -109,6 +140,7 @@ export interface AdminUsageUser {
   videoCount: number;
   inputTokens: number;
   outputTokens: number;
+  workspaces: WorkspaceUsage[];
 }
 
 export interface AdminUsageResponse {

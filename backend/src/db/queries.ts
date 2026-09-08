@@ -300,6 +300,20 @@ export async function updateMessage(db: D1Database, id: string, data: { post_pac
 
 // ─── Usage / billing aggregation ──────────────────────────────────────────────
 
+export interface DateRange {
+  from?: number; // unix seconds, inclusive
+  to?: number;   // unix seconds, exclusive
+}
+
+/** Builds an optional `AND col >= ? AND col < ?` clause + bind params. */
+function dateClause(col: string, range?: DateRange): { sql: string; params: number[] } {
+  const parts: string[] = [];
+  const params: number[] = [];
+  if (range?.from != null) { parts.push(`${col} >= ?`); params.push(range.from); }
+  if (range?.to != null) { parts.push(`${col} < ?`); params.push(range.to); }
+  return { sql: parts.length ? ` AND ${parts.join(' AND ')}` : '', params };
+}
+
 export interface ModelUsageRow {
   model: string | null;
   count: number;
@@ -316,7 +330,8 @@ export interface AssetUsageRow {
 }
 
 /** Per-model text (message) usage for one workspace. */
-export async function getWorkspaceMessageUsage(db: D1Database, workspaceId: string) {
+export async function getWorkspaceMessageUsage(db: D1Database, workspaceId: string, range?: DateRange) {
+  const { sql, params } = dateClause('m.created_at', range);
   return db.prepare(
     `SELECT m.model as model,
             COUNT(*) as count,
@@ -325,53 +340,63 @@ export async function getWorkspaceMessageUsage(db: D1Database, workspaceId: stri
             SUM(m.output_tokens) as output_tokens
        FROM messages m
        JOIN threads t ON t.id = m.thread_id
-      WHERE t.workspace_id = ? AND m.cost_usd IS NOT NULL
+      WHERE t.workspace_id = ? AND m.cost_usd IS NOT NULL${sql}
       GROUP BY m.model
       ORDER BY cost DESC`
-  ).bind(workspaceId).all<ModelUsageRow>();
+  ).bind(workspaceId, ...params).all<ModelUsageRow>();
 }
 
 /** Per-type/model image+video (asset) usage for one workspace. */
-export async function getWorkspaceAssetUsage(db: D1Database, workspaceId: string) {
+export async function getWorkspaceAssetUsage(db: D1Database, workspaceId: string, range?: DateRange) {
+  const { sql, params } = dateClause('created_at', range);
   return db.prepare(
     `SELECT type, model, COUNT(*) as count, SUM(cost_usd) as cost
        FROM assets
-      WHERE workspace_id = ? AND cost_usd IS NOT NULL
+      WHERE workspace_id = ? AND cost_usd IS NOT NULL${sql}
       GROUP BY type, model
       ORDER BY cost DESC`
-  ).bind(workspaceId).all<AssetUsageRow>();
+  ).bind(workspaceId, ...params).all<AssetUsageRow>();
 }
 
-export interface UserAssetUsageRow {
+export interface WorkspaceAssetUsageRow {
   userId: string;
+  workspaceId: string;
+  name: string;
+  slug: string;
   type: 'image' | 'video';
   count: number;
   cost: number | null;
 }
 
-export interface UserMessageUsageRow {
+export interface WorkspaceMessageUsageRow {
   userId: string;
+  workspaceId: string;
+  name: string;
+  slug: string;
   count: number;
   cost: number | null;
   input_tokens: number | null;
   output_tokens: number | null;
 }
 
-/** Image+video asset usage grouped by workspace owner (all users). */
-export async function getAllUsersAssetUsage(db: D1Database) {
+/** Image+video asset usage grouped by workspace (with owner), across all users. */
+export async function getAllWorkspacesAssetUsage(db: D1Database, range?: DateRange) {
+  const { sql, params } = dateClause('a.created_at', range);
   return db.prepare(
-    `SELECT w.owner_id as userId, a.type as type, COUNT(*) as count, SUM(a.cost_usd) as cost
+    `SELECT w.owner_id as userId, w.id as workspaceId, w.name as name, w.slug as slug,
+            a.type as type, COUNT(*) as count, SUM(a.cost_usd) as cost
        FROM assets a
        JOIN workspaces w ON w.id = a.workspace_id
-      WHERE a.cost_usd IS NOT NULL
-      GROUP BY w.owner_id, a.type`
-  ).all<UserAssetUsageRow>();
+      WHERE a.cost_usd IS NOT NULL${sql}
+      GROUP BY w.id, a.type`
+  ).bind(...params).all<WorkspaceAssetUsageRow>();
 }
 
-/** Text message usage grouped by workspace owner (all users). */
-export async function getAllUsersMessageUsage(db: D1Database) {
+/** Text message usage grouped by workspace (with owner), across all users. */
+export async function getAllWorkspacesMessageUsage(db: D1Database, range?: DateRange) {
+  const { sql, params } = dateClause('m.created_at', range);
   return db.prepare(
-    `SELECT w.owner_id as userId,
+    `SELECT w.owner_id as userId, w.id as workspaceId, w.name as name, w.slug as slug,
             COUNT(*) as count,
             SUM(m.cost_usd) as cost,
             SUM(m.input_tokens) as input_tokens,
@@ -379,7 +404,7 @@ export async function getAllUsersMessageUsage(db: D1Database) {
        FROM messages m
        JOIN threads t ON t.id = m.thread_id
        JOIN workspaces w ON w.id = t.workspace_id
-      WHERE m.cost_usd IS NOT NULL
-      GROUP BY w.owner_id`
-  ).all<UserMessageUsageRow>();
+      WHERE m.cost_usd IS NOT NULL${sql}
+      GROUP BY w.id`
+  ).bind(...params).all<WorkspaceMessageUsageRow>();
 }

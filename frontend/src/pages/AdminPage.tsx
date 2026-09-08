@@ -5,8 +5,10 @@ import { useImpersonation } from '../context/ImpersonationContext';
 import { adminApi, type AdminStats, type AdminUser } from '../lib/api';
 import {
   Users, Layers, GitBranch, Search, X,
-  ShieldCheck, UserCheck, ChevronRight, Loader2, ArrowLeft, CreditCard,
+  UserCheck, ChevronRight, Loader2,
 } from 'lucide-react';
+import AppShell from '../components/AppShell';
+import AdminSidebar from '../components/AdminSidebar';
 import { cn } from '../lib/utils';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -117,35 +119,20 @@ export default function AdminPage() {
   }
 
   return (
-    <div className='flex flex-col min-h-screen bg-surface'>
-      {/* Header */}
-      <header className='sticky top-0 z-10 border-b border-border-soft bg-surface/90 backdrop-blur-md px-4 h-14 flex items-center gap-3'>
-        <button
-          onClick={() => navigate('/')}
-          className='text-text-muted hover:text-text-primary transition-colors p-1 -ml-1 rounded-lg'
-        >
-          <ArrowLeft size={22} />
-        </button>
-        <h1 className='text-text-primary font-bold text-lg leading-tight flex items-center gap-2'>
-          <ShieldCheck className='w-5 h-5 text-brand' />
-          Super Admin
-        </h1>
-        <button
-          onClick={() => navigate('/admin/usage')}
-          className='ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-meta font-medium border border-border-soft bg-surface-card text-text-secondary hover:border-brand/50 hover:text-brand transition-all'
-        >
-          <CreditCard className='w-4 h-4' />
-          <span className='hidden sm:inline'>Usage &amp; Billing</span>
-        </button>
-      </header>
+    <AppShell>
+      <AdminSidebar />
 
-      <div className='flex-1 overflow-y-auto'>
-        <div className='p-4 space-y-4 max-w-3xl mx-auto'>
+      <main className='flex-1 overflow-y-auto bg-surface-chat/40 backdrop-blur-xl'>
+        <div className='max-w-4xl mx-auto px-6 py-8 space-y-4'>
+          <div className='mb-2'>
+            <h1 className='text-heading text-text-primary'>Users</h1>
+            <p className='text-meta text-text-secondary mt-0.5'>All registered users and their workspaces.</p>
+          </div>
 
           {/* Stats */}
           <div className='grid grid-cols-3 gap-3'>
             <StatCard label='Total Users'      value={statsLoading ? undefined : (stats?.totalUsers ?? 0)}      icon={Users}      color='bg-brand/10 text-brand' />
-            <StatCard label='Workspaces'       value={statsLoading ? undefined : (stats?.totalWorkspaces ?? 0)} icon={Layers}     color='bg-violet-500/10 text-violet-500' />
+            <StatCard label='Workspaces'       value={statsLoading ? undefined : (stats?.totalWorkspaces ?? 0)} icon={Layers}     color='bg-brand/10 text-brand' />
             <StatCard label='Threads'          value={statsLoading ? undefined : (stats?.totalThreads ?? 0)}    icon={GitBranch}  color='bg-amber-500/10 text-amber-500' />
           </div>
 
@@ -245,7 +232,7 @@ export default function AdminPage() {
           </div>
 
         </div>
-      </div>
-    </div>
+      </main>
+    </AppShell>
   );
 }

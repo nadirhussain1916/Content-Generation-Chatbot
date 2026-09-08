@@ -1,11 +1,13 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Fragment, useEffect, useState } from 'react';
 import { useAuth } from '@clerk/clerk-react';
-import { adminApi, type AdminUsageResponse, type AdminUsageUser } from '../lib/api';
+import { adminApi, type AdminUsageResponse, type AdminUsageUser, type DateRange } from '../lib/api';
 import { formatUsd, formatTokens } from '../lib/display';
+import AppShell from '../components/AppShell';
+import AdminSidebar from '../components/AdminSidebar';
+import DateRangePicker from '../components/DateRangePicker';
 import {
-  ArrowLeft, ShieldCheck, DollarSign, MessageSquare, ImageIcon, VideoIcon,
-  Users, Search, X, Loader2,
+  DollarSign, MessageSquare, ImageIcon, VideoIcon,
+  Users, Search, X, Loader2, ChevronRight, Layers,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -33,22 +35,29 @@ function StatCard({
 
 export default function AdminUsagePage() {
   const { getToken } = useAuth();
-  const navigate = useNavigate();
 
   const [data, setData] = useState<AdminUsageResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [range, setRange] = useState<DateRange>({});
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
-  // Lazy-load once on first render (mirrors AdminPage pattern).
-  if (!loaded) {
-    setLoaded(true);
-    setLoading(true);
+  function toggleExpand(userId: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  }
+
+  useEffect(() => {
     (async () => {
+      setLoading(true);
       try {
         const token = await getToken();
         if (!token) throw new Error('Not authenticated');
-        const res = await adminApi.getUsage(token);
+        const res = await adminApi.getUsage(token, range);
         if (res.data) setData(res.data);
       } catch (err) {
         console.error(err);
@@ -56,7 +65,7 @@ export default function AdminUsagePage() {
         setLoading(false);
       }
     })();
-  }
+  }, [range]);
 
   const totals = data?.totals;
 
@@ -71,23 +80,19 @@ export default function AdminUsagePage() {
   });
 
   return (
-    <div className='flex flex-col min-h-screen bg-surface'>
-      {/* Header */}
-      <header className='sticky top-0 z-10 border-b border-border-soft bg-surface/90 backdrop-blur-md px-4 h-14 flex items-center gap-3'>
-        <button
-          onClick={() => navigate('/admin')}
-          className='text-text-muted hover:text-text-primary transition-colors p-1 -ml-1 rounded-lg'
-        >
-          <ArrowLeft size={22} />
-        </button>
-        <h1 className='text-text-primary font-bold text-lg leading-tight flex items-center gap-2'>
-          <ShieldCheck className='w-5 h-5 text-brand' />
-          Usage &amp; Billing
-        </h1>
-      </header>
+    <AppShell>
+      <AdminSidebar />
 
-      <div className='flex-1 overflow-y-auto'>
-        <div className='p-4 space-y-4 max-w-6xl mx-auto'>
+      <main className='flex-1 overflow-y-auto bg-surface-chat/40 backdrop-blur-xl'>
+        <div className='max-w-6xl mx-auto px-6 py-8 space-y-4'>
+          <div className='flex items-center justify-between gap-3 flex-wrap'>
+            <div>
+              <h1 className='text-heading text-text-primary'>Usage &amp; Billing</h1>
+              <p className='text-meta text-text-secondary mt-0.5'>Spend across all users and workspaces.</p>
+            </div>
+            <DateRangePicker onChange={setRange} />
+          </div>
+
           {/* Totals */}
           <div className='grid grid-cols-2 lg:grid-cols-4 gap-3'>
             <StatCard label='Total spend'  value={loading ? undefined : formatUsd(totals?.totalCost)} icon={DollarSign}    color='bg-brand/10 text-brand' />
@@ -141,50 +146,93 @@ export default function AdminUsagePage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filtered.map((u) => (
-                      <tr key={u.userId} className='border-t border-border-soft hover:bg-surface-card/50 transition-colors'>
-                        <td className='px-4 py-3'>
-                          <div className='flex items-center gap-2.5 min-w-0'>
-                            <div className='w-8 h-8 rounded-full bg-brand/10 flex items-center justify-center shrink-0'>
-                              <Users className='w-3.5 h-3.5 text-brand' />
-                            </div>
-                            <div className='min-w-0'>
-                              <p className='text-message font-medium text-text-primary truncate'>
-                                {u.name ?? <span className='text-text-muted font-normal italic'>No name</span>}
-                              </p>
-                              <p className='text-meta text-text-muted truncate'>
-                                {u.email ?? u.userId}
-                              </p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className='px-4 py-3 text-right text-message text-text-secondary tabular-nums'>
-                          {formatUsd(u.textCost)}
-                          <span className='block text-meta text-text-muted'>{formatTokens(u.inputTokens + u.outputTokens)} tok</span>
-                        </td>
-                        <td className='px-4 py-3 text-right text-message text-text-secondary tabular-nums'>
-                          {formatUsd(u.imageCost)}
-                          <span className='block text-meta text-text-muted'>{u.imageCount}</span>
-                        </td>
-                        <td className='px-4 py-3 text-right text-message text-text-secondary tabular-nums'>
-                          {formatUsd(u.videoCost)}
-                          <span className='block text-meta text-text-muted'>{u.videoCount}</span>
-                        </td>
-                        <td className='px-4 py-3 text-right text-message text-text-secondary tabular-nums'>
-                          {u.messageCount + u.imageCount + u.videoCount}
-                        </td>
-                        <td className='px-4 py-3 text-right text-message font-bold text-text-primary tabular-nums'>
-                          {formatUsd(u.totalCost)}
-                        </td>
-                      </tr>
-                    ))}
+                    {filtered.map((u) => {
+                      const isOpen = expanded.has(u.userId);
+                      const wsCount = u.workspaces.length;
+                      const canExpand = wsCount > 0;
+                      return (
+                        <Fragment key={u.userId}>
+                          <tr
+                            className={cn(
+                              'border-t border-border-soft transition-colors',
+                              canExpand && 'cursor-pointer hover:bg-surface-card/50'
+                            )}
+                            onClick={canExpand ? () => toggleExpand(u.userId) : undefined}
+                          >
+                            <td className='px-4 py-3'>
+                              <div className='flex items-center gap-2 min-w-0'>
+                                <ChevronRight
+                                  size={15}
+                                  className={cn(
+                                    'shrink-0 text-text-muted transition-transform',
+                                    !canExpand && 'opacity-0',
+                                    isOpen && 'rotate-90'
+                                  )}
+                                />
+                                <div className='w-8 h-8 rounded-full bg-brand/10 flex items-center justify-center shrink-0'>
+                                  <Users className='w-3.5 h-3.5 text-brand' />
+                                </div>
+                                <div className='min-w-0'>
+                                  <p className='text-message font-medium text-text-primary truncate'>
+                                    {u.name ?? <span className='text-text-muted font-normal italic'>No name</span>}
+                                  </p>
+                                  <p className='text-meta text-text-muted truncate'>
+                                    {u.email ?? u.userId}
+                                    {canExpand && <> · {wsCount} workspace{wsCount !== 1 ? 's' : ''}</>}
+                                  </p>
+                                </div>
+                              </div>
+                            </td>
+                            <td className='px-4 py-3 text-right text-message text-text-secondary tabular-nums'>
+                              {formatUsd(u.textCost)}
+                              <span className='block text-meta text-text-muted'>{formatTokens(u.inputTokens + u.outputTokens)} tok</span>
+                            </td>
+                            <td className='px-4 py-3 text-right text-message text-text-secondary tabular-nums'>
+                              {formatUsd(u.imageCost)}
+                              <span className='block text-meta text-text-muted'>{u.imageCount}</span>
+                            </td>
+                            <td className='px-4 py-3 text-right text-message text-text-secondary tabular-nums'>
+                              {formatUsd(u.videoCost)}
+                              <span className='block text-meta text-text-muted'>{u.videoCount}</span>
+                            </td>
+                            <td className='px-4 py-3 text-right text-message text-text-secondary tabular-nums'>
+                              {u.messageCount + u.imageCount + u.videoCount}
+                            </td>
+                            <td className='px-4 py-3 text-right text-message font-bold text-text-primary tabular-nums'>
+                              {formatUsd(u.totalCost)}
+                            </td>
+                          </tr>
+
+                          {isOpen && u.workspaces.map((ws) => (
+                            <tr key={ws.workspaceId} className='border-t border-border-soft/50 bg-surface-card/40'>
+                              <td className='px-4 py-2.5'>
+                                <div className='flex items-center gap-2 min-w-0 pl-[23px]'>
+                                  <Layers size={13} className='shrink-0 text-text-muted' />
+                                  <div className='min-w-0'>
+                                    <p className='text-message text-text-primary truncate'>{ws.name}</p>
+                                    <p className='text-meta text-text-muted truncate font-mono'>{ws.slug}</p>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className='px-4 py-2.5 text-right text-meta text-text-secondary tabular-nums'>{formatUsd(ws.textCost)}</td>
+                              <td className='px-4 py-2.5 text-right text-meta text-text-secondary tabular-nums'>{formatUsd(ws.imageCost)}</td>
+                              <td className='px-4 py-2.5 text-right text-meta text-text-secondary tabular-nums'>{formatUsd(ws.videoCost)}</td>
+                              <td className='px-4 py-2.5 text-right text-meta text-text-secondary tabular-nums'>
+                                {ws.messageCount + ws.imageCount + ws.videoCount}
+                              </td>
+                              <td className='px-4 py-2.5 text-right text-message font-semibold text-text-primary tabular-nums'>{formatUsd(ws.totalCost)}</td>
+                            </tr>
+                          ))}
+                        </Fragment>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
             )}
           </div>
         </div>
-      </div>
-    </div>
+      </main>
+    </AppShell>
   );
 }
