@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
 
 interface ImpersonatedUser {
   id: string;
@@ -8,8 +8,11 @@ interface ImpersonatedUser {
   created_at: number;
 }
 
-// Persist to sessionStorage (not localStorage) so impersonation survives a page
-// refresh but still dies when the tab is closed — the token must not outlive the tab.
+// Persist to localStorage so impersonation survives a page refresh AND carries
+// across tabs/windows (e.g. opening a workspace link in a new tab). This is safe
+// because the impersonation token is HMAC-signed with a hard 1-hour server-side
+// expiry (see signImpersonationToken / verifyImpersonationToken on the backend),
+// so it cannot outlive that TTL regardless of where it is stored.
 const STORAGE_KEY = 'tf.impersonation';
 
 interface PersistedImpersonation {
@@ -19,7 +22,7 @@ interface PersistedImpersonation {
 
 function readPersisted(): PersistedImpersonation | null {
   try {
-    const raw = sessionStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as PersistedImpersonation;
     if (!parsed?.user || !parsed?.token) return null;
@@ -41,7 +44,7 @@ interface ImpersonationContextValue {
 const ImpersonationContext = createContext<ImpersonationContextValue | null>(null);
 
 export function ImpersonationProvider({ children }: { children: ReactNode }) {
-  // Rehydrate from sessionStorage so impersonation persists across refresh (but not tab close).
+  // Rehydrate from localStorage so impersonation persists across refresh and new tabs.
   const persisted = readPersisted();
   const [impersonatedUser, setImpersonatedUser] = useState<ImpersonatedUser | null>(persisted?.user ?? null);
   const [impersonationToken, setImpersonationToken] = useState<string | null>(persisted?.token ?? null);
@@ -50,7 +53,7 @@ export function ImpersonationProvider({ children }: { children: ReactNode }) {
     setImpersonatedUser(user);
     setImpersonationToken(token);
     try {
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ user, token }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ user, token }));
     } catch {
       // Ignore storage failures (e.g. private mode); in-memory state still works for this tab.
     }
@@ -60,10 +63,23 @@ export function ImpersonationProvider({ children }: { children: ReactNode }) {
     setImpersonatedUser(null);
     setImpersonationToken(null);
     try {
-      sessionStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(STORAGE_KEY);
     } catch {
       // Ignore storage failures.
     }
+  }, []);
+
+  // Keep tabs in sync: if impersonation is started/stopped in another tab, mirror
+  // that change here. The `storage` event only fires in *other* tabs of the origin.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== STORAGE_KEY) return;
+      const next = readPersisted();
+      setImpersonatedUser(next?.user ?? null);
+      setImpersonationToken(next?.token ?? null);
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
   }, []);
 
   return (
