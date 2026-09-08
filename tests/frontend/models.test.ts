@@ -48,8 +48,8 @@ describe('IMAGE_MODELS', () => {
 });
 
 describe('VIDEO_MODELS', () => {
-  it('contains all 7 video models', () => {
-    expect(VIDEO_MODELS).toHaveLength(7);
+  it('contains all 5 video models', () => {
+    expect(VIDEO_MODELS).toHaveLength(5);
   });
 
   it('DEFAULT_VIDEO_MODEL is in VIDEO_MODELS', () => {

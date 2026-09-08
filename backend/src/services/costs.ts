@@ -37,9 +37,7 @@ const VIDEO_COST_PER_SEC: Record<string, number> = {
   'lightricks/ltx-2.3-fast':    0.06,
   'lightricks/ltx-2.3-pro':     0.08,
   'bytedance/seedance-2.0':     0.18,
-  'bytedance/seedance-2.0-fast': 0.10,
   'wan-video/wan-2.7-t2v':      0.09,
-  'wan-video/wan-2.7-i2v':      0.09,
   'google/veo-2':               0.50,
 };
 
