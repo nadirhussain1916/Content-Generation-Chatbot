@@ -41,7 +41,8 @@ generateRouter.post('/image', async (c) => {
       threadId: string; prompt: string; messageId?: string;
       size?: '1024x1024' | '1024x1792' | '1792x1024';
       imageModel?: string;
-      referenceUploadId?: string;
+      referenceUploadId?: string;      // legacy single reference
+      referenceUploadIds?: string[];   // draft references (preferred)
       generationMode?: 'edit' | 'inspire';
       includeCharacter?: boolean;
     };
@@ -78,56 +79,74 @@ generateRouter.post('/image', async (c) => {
       { expirationTtl: 60 * 60 * 24 }
     );
 
-    // Trigger Workflow — durable, retriable, no 30 s CPU limit
-    // Resolve reference image + generation mode.
-    // Priority: an explicit per-draft reference wins; otherwise, when the
-    // "include character" toggle is on, fall back to the workspace character's
-    // reference image (used via gpt-image-1 edit mode to lock the appearance).
-    let referenceImageUrl: string | undefined;
+    // ── Resolve reference images (character pixels + draft references) ──────────
+    // gpt-image-2 accepts up to 16 input images on /edits and can composite them
+    // (e.g. drop the locked character into an uploaded scene). We combine:
+    //   • ALL workspace character reference images (when "include character" is on)
+    //   • the draft's own reference uploads
+    // Draft refs in "edit" mode are sent as pixels; in "inspire" mode they are
+    // folded into the prompt as a text description instead — the character images
+    // still go as pixels either way, so identity is preserved.
+    const mode: 'edit' | 'inspire' = body.generationMode ?? 'edit';
+    const pixelImageUrls: string[] = [];
+    const imageRoles: string[] = []; // parallel to pixelImageUrls — drives the compositing preamble
     let referenceVisionDescription: string | undefined;
-    let generationMode = body.generationMode;
-    if (body.referenceUploadId) {
-      const uploads = await getWorkspaceUploadsByIds(c.env.DB, [body.referenceUploadId], workspace.id);
-      const upload = uploads.results[0];
-      if (upload) {
-        referenceImageUrl = upload.public_url;
-        if (body.generationMode === 'inspire') {
-          if (upload.vision_description) {
-            referenceVisionDescription = upload.vision_description;
-          } else {
-            try {
-              referenceVisionDescription = await analyzeImageForDescription({
-                apiKey: c.env.OPENAI_API_KEY,
-                imageUrl: upload.public_url,
-              });
-              await updateWorkspaceUploadVisionDescription(c.env.DB, upload.id, referenceVisionDescription);
-            } catch (err) {
-              Logger.log('VisionAnalysisError', { uploadId: upload.id }, err);
-            }
-          }
-        }
-      }
-    } else if (includeCharacter && workspace.character_reference_ids) {
+
+    // 1. Character reference images → always pixels (identity lock)
+    if (includeCharacter && workspace.character_reference_ids) {
       try {
         const charRefIds: string[] = JSON.parse(workspace.character_reference_ids);
         if (charRefIds.length > 0) {
-          const charUploads = await getWorkspaceUploadsByIds(c.env.DB, [charRefIds[0]], workspace.id);
-          const charUpload = charUploads.results[0];
-          if (charUpload) {
-            referenceImageUrl = charUpload.public_url;
-            // Edit mode feeds the character's pixels to gpt-image-1 so the
-            // subject stays consistent.
-            generationMode = 'edit';
+          const charUploads = await getWorkspaceUploadsByIds(c.env.DB, charRefIds, workspace.id);
+          for (const u of charUploads.results) {
+            pixelImageUrls.push(u.public_url);
+            imageRoles.push('the locked character — reproduce this exact person/subject, keeping their appearance identical');
           }
         }
       } catch { /* malformed JSON — ignore */ }
     }
 
-    // Prepend the locked-character block to the prompt when requested.
+    // 2. Draft reference uploads (edit → pixels, inspire → text description)
+    const draftRefIds = body.referenceUploadIds?.length
+      ? body.referenceUploadIds
+      : (body.referenceUploadId ? [body.referenceUploadId] : []);
+    if (draftRefIds.length > 0) {
+      const uploads = await getWorkspaceUploadsByIds(c.env.DB, draftRefIds, workspace.id);
+      for (const u of uploads.results) {
+        if (mode === 'inspire') {
+          let desc: string | undefined = u.vision_description ?? undefined;
+          if (!desc) {
+            try {
+              desc = await analyzeImageForDescription({ apiKey: c.env.OPENAI_API_KEY, imageUrl: u.public_url });
+              await updateWorkspaceUploadVisionDescription(c.env.DB, u.id, desc);
+            } catch (err) {
+              Logger.log('VisionAnalysisError', { uploadId: u.id }, err);
+            }
+          }
+          if (desc) referenceVisionDescription = referenceVisionDescription ? `${referenceVisionDescription}\n\n${desc}` : desc;
+        } else {
+          pixelImageUrls.push(u.public_url);
+          imageRoles.push('a scene/style reference — use it for setting, composition, and styling');
+        }
+      }
+    }
+
+    // gpt-image-2 accepts up to 16 input images.
+    const referenceImageUrls = pixelImageUrls.slice(0, 16);
+    const referenceRoles = imageRoles.slice(0, referenceImageUrls.length);
+
+    // ── Build the final prompt ─────────────────────────────────────────────────
     let imagePrompt = body.prompt;
+    // Locked-character appearance text (complements the character image pixels).
     if (includeCharacter) {
       const charBlock = characterBlock(workspace);
-      if (charBlock) imagePrompt = `${charBlock}\n\n${body.prompt}`;
+      if (charBlock) imagePrompt = `${charBlock}\n\n${imagePrompt}`;
+    }
+    // Multi-image compositing guidance: name each image by index and role so the
+    // model knows how to combine them (per OpenAI's multi-image prompting guidance).
+    if (referenceImageUrls.length > 1) {
+      const manifest = referenceRoles.map((role, i) => `Image ${i + 1} is ${role}.`).join('\n');
+      imagePrompt = `You are given ${referenceImageUrls.length} reference images.\n${manifest}\nCompose a single new image as described below — combine the references rather than copying any one of them verbatim.\n\n${imagePrompt}`;
     }
 
     await c.env.GENERATION_WORKFLOW.create({
@@ -140,9 +159,8 @@ generateRouter.post('/image', async (c) => {
         prompt: imagePrompt,
         size: imageSize as '1024x1024' | '1024x1792' | '1792x1024',
         imageModel,
-        referenceImageUrl,
+        referenceImageUrls: referenceImageUrls.length ? referenceImageUrls : undefined,
         referenceVisionDescription,
-        generationMode,
       },
     });
 

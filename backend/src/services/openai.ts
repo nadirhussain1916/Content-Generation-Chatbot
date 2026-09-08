@@ -360,14 +360,16 @@ function imageApiError(model: string, kind: 'generation' | 'edit', status: numbe
   return isPermanent ? new NonRetryableError(message) : new Error(message);
 }
 
+// Max reference images gpt-image-2 / gpt-image-1 accept on the /edits endpoint.
+const OPENAI_EDIT_MAX_IMAGES = 16;
+
 export async function generateDalleImage(params: {
   apiKey: string;
   prompt: string;
   size?: '1024x1024' | '1024x1792' | '1792x1024';
   imageModel?: string; // 'gpt-image-2' (default)
-  referenceImageUrl?: string;          // R2 public URL of the reference image
-  referenceVisionDescription?: string; // cached vision description (for inspire mode)
-  generationMode?: 'edit' | 'inspire'; // edit = /edits endpoint; inspire = enrich prompt
+  referenceImageUrls?: string[];       // R2 public URLs fed as pixels to the /edits endpoint
+  referenceVisionDescription?: string; // cached vision description for "inspire" (text-only) references
 }): Promise<string> {
   const model = params.imageModel ?? 'gpt-image-2';
 
@@ -380,18 +382,34 @@ export async function generateDalleImage(params: {
   const rawSize = params.size ?? '1024x1024';
   const resolvedSize = GPT_IMAGE_SIZE_MAP[rawSize] ?? rawSize;
 
-  // ── Edit mode: use /v1/images/edits ──────────────────────────────────────
-  if (params.generationMode === 'edit' && params.referenceImageUrl) {
-    // Fetch the reference image bytes from R2
-    const imgRes = await fetch(params.referenceImageUrl);
-    if (!imgRes.ok) throw new Error(`Failed to fetch reference image: ${imgRes.statusText}`);
-    const imgBuffer = await imgRes.arrayBuffer();
-    const imgBlob = new Blob([imgBuffer], { type: imgRes.headers.get('Content-Type') ?? 'image/png' });
+  // ── Prompt enrichment ──────────────────────────────────────────────────────
+  // "Inspire" references are folded in as text (no pixels). This runs for BOTH
+  // the edit and generation paths so a scene can be described in words while a
+  // character reference is still supplied as pixels below.
+  let finalPrompt = params.prompt;
+  if (params.referenceVisionDescription) {
+    finalPrompt = `Inspired by this reference: ${params.referenceVisionDescription}\n\n${finalPrompt}`;
+  }
+
+  // ── Edit mode: /v1/images/edits with one or more reference images ──────────
+  // gpt-image-2 auto-applies high fidelity to input images (identity/character
+  // preservation) — do NOT send input_fidelity, it errors on this model.
+  const refUrls = (params.referenceImageUrls ?? []).slice(0, OPENAI_EDIT_MAX_IMAGES);
+  if (refUrls.length > 0) {
+    // Fetch all reference image bytes in parallel, preserving order.
+    const blobs = await Promise.all(
+      refUrls.map(async (url, i) => {
+        const imgRes = await fetch(url);
+        if (!imgRes.ok) throw new Error(`Failed to fetch reference image ${i + 1}: ${imgRes.statusText}`);
+        const buf = await imgRes.arrayBuffer();
+        return new Blob([buf], { type: imgRes.headers.get('Content-Type') ?? 'image/png' });
+      })
+    );
 
     const formData = new FormData();
     formData.append('model', model);
-    formData.append('image[]', imgBlob, 'reference.png');
-    formData.append('prompt', params.prompt);
+    for (const blob of blobs) formData.append('image[]', blob, 'reference.png');
+    formData.append('prompt', finalPrompt);
     formData.append('n', '1');
     formData.append('size', resolvedSize);
 
@@ -414,13 +432,7 @@ export async function generateDalleImage(params: {
     throw new Error(`${model} edit returned neither url nor b64_json`);
   }
 
-  // ── Inspire mode: enrich prompt with vision description ──────────────────
-  let finalPrompt = params.prompt;
-  if (params.generationMode === 'inspire' && params.referenceVisionDescription) {
-    finalPrompt = `Inspired by this reference: ${params.referenceVisionDescription}\n\n${params.prompt}`;
-  }
-
-  // ── Standard generation ───────────────────────────────────────────────────
+  // ── Standard generation (text-to-image, includes any inspire enrichment) ───
   const quality = 'auto';
 
   const response = await fetch('https://api.openai.com/v1/images/generations', {
@@ -447,7 +459,7 @@ export async function generateDalleImage(params: {
   const item = data.data[0];
   if (!item) throw new Error(`${model} returned no image data`);
 
-  // gpt-image-1 returns b64_json by default; url is available too but may be omitted
+  // GPT image models return b64_json by default; url is available too but may be omitted.
   if (item.url) return item.url;
 
   // Convert base64 to a data URL the caller can use directly

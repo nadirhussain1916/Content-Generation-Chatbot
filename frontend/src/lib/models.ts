@@ -158,9 +158,12 @@ export const LTX_EXTEND_KEY = 'tf_ltx_extend';
 // Maximum number of reference images each generation model accepts.
 // 0 = model does not support reference images at all.
 
-/** Max references per image generation model */
+/** Max draft references per image generation model.
+ *  gpt-image-2 accepts up to 16 input images on /edits; we allow up to 4 draft
+ *  references here, which the backend composites together with the workspace
+ *  character image(s) (kept comfortably under the 16-image API ceiling). */
 export const IMAGE_MODEL_REF_CAPS: Record<ImageModelId, number> = {
-  'gpt-image-2': 1,
+  'gpt-image-2': 4,
 };
 
 /** Max references per video generation model */

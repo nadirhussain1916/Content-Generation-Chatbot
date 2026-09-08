@@ -237,6 +237,11 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
     const refIds: string[] = pkg.referenceUploadIds ?? [];
     const primaryId = pkg.primaryReferenceUploadId ?? null;
 
+    // The generate buttons re-parse post_package internally, so hand them the
+    // authoritative package (with optimistic reference/prompt/size edits) rather
+    // than the possibly-stale message prop — keeps UI and API perfectly in sync.
+    const effectiveMessage = { ...message, post_package: JSON.stringify(pkg) };
+
     // ── Reference cap based on user's current preferred generation model ──────
     const preferredImageModel = readPref(IMAGE_MODEL_KEY, DEFAULT_IMAGE_MODEL);
     const preferredVideoModel = readPref(VIDEO_MODEL_KEY, DEFAULT_VIDEO_MODEL);
@@ -389,7 +394,7 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
                     <GenerateVideoButton
                       slug={slug}
                       threadId={threadId}
-                      message={message}
+                      message={effectiveMessage}
                       existingAsset={asset}
                       onGenerated={onAssetGenerated}
                       hasCharacter={hasCharacter}
@@ -399,7 +404,7 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
                     <GenerateImageButton
                       slug={slug}
                       threadId={threadId}
-                      message={message}
+                      message={effectiveMessage}
                       existingAsset={asset}
                       onGenerated={onAssetGenerated}
                       hasCharacter={hasCharacter}

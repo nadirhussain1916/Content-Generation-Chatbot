@@ -14,9 +14,8 @@ export type GenerationParams =
       prompt: string;
       size?: '1024x1024' | '1024x1792' | '1792x1024';
       imageModel?: string;
-      referenceImageUrl?: string;
+      referenceImageUrls?: string[];
       referenceVisionDescription?: string;
-      generationMode?: 'edit' | 'inspire';
     }
   | {
       type: 'video';
@@ -83,9 +82,8 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
             prompt: p.prompt,
             size: p.size,
             imageModel: p.imageModel,
-            referenceImageUrl: p.referenceImageUrl,
+            referenceImageUrls: p.referenceImageUrls,
             referenceVisionDescription: p.referenceVisionDescription,
-            generationMode: p.generationMode,
           });
         });
 

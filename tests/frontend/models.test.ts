@@ -135,8 +135,8 @@ describe('LTX_EXTEND_OPTIONS', () => {
 // ─── Reference caps ───────────────────────────────────────────────────────────
 
 describe('IMAGE_MODEL_REF_CAPS', () => {
-  it('gpt-image-2 supports 1 reference', () => {
-    expect(IMAGE_MODEL_REF_CAPS['gpt-image-2']).toBe(1);
+  it('gpt-image-2 supports up to 4 draft references', () => {
+    expect(IMAGE_MODEL_REF_CAPS['gpt-image-2']).toBe(4);
   });
 });
 

@@ -51,7 +51,12 @@ export default function GenerateImageButton({ slug, threadId, message, existingA
   const pkgSize = pkg.imageSize as ImageSize | undefined;
   const [size, setSize] = useState<ImageSize>(pkgSize ?? '1024x1024');
   const primaryReferenceUploadId = pkg.primaryReferenceUploadId ?? null;
-  const hasReference = !!primaryReferenceUploadId;
+  // All draft references (falls back to the single primary). gpt-image-2 composites
+  // these together with the workspace character image(s) server-side.
+  const referenceUploadIds = pkg.referenceUploadIds?.length
+    ? pkg.referenceUploadIds
+    : (primaryReferenceUploadId ? [primaryReferenceUploadId] : []);
+  const hasReference = referenceUploadIds.length > 0;
 
   async function pollUntilReady(assetId: string): Promise<Asset> {
     const deadline = Date.now() + POLL_TIMEOUT_MS;
@@ -86,8 +91,8 @@ export default function GenerateImageButton({ slug, threadId, message, existingA
           threadId, prompt, messageId: message.id, size,
           imageModel,
           ...(hasCharacter && { includeCharacter }),
-          ...(primaryReferenceUploadId && {
-            referenceUploadId: primaryReferenceUploadId,
+          ...(referenceUploadIds.length > 0 && {
+            referenceUploadIds,
             generationMode,
           }),
         },
