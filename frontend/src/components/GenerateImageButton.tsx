@@ -5,7 +5,7 @@ import type { TfResponse, Asset, Message, ImagePostPackage, VideoPostPackage } f
 import { ImageIcon, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { cn } from '../lib/utils';
 import ModelPicker from './ModelPicker';
-import { IMAGE_MODELS, DEFAULT_IMAGE_MODEL, IMAGE_MODEL_KEY, readPref, writePref } from '../lib/models';
+import { IMAGE_MODELS, DEFAULT_IMAGE_MODEL, IMAGE_MODEL_KEY, INCLUDE_CHARACTER_KEY, readPref, writePref } from '../lib/models';
 
 type ImageSize = '1024x1024' | '1024x1792' | '1792x1024';
 type GenerationMode = 'edit' | 'inspire';
@@ -22,12 +22,14 @@ interface GenerateImageButtonProps {
   message: Message;
   existingAsset?: Asset;
   onGenerated?: (asset: Asset) => void;
+  hasCharacter?: boolean;
+  characterName?: string | null;
 }
 
 const POLL_INTERVAL_MS = 3000;
 const POLL_TIMEOUT_MS = 120_000;
 
-export default function GenerateImageButton({ slug, threadId, message, existingAsset, onGenerated }: GenerateImageButtonProps) {
+export default function GenerateImageButton({ slug, threadId, message, existingAsset, onGenerated, hasCharacter = false, characterName = null }: GenerateImageButtonProps) {
   const { getAuthToken } = useAuthToken();
   const [loading, setLoading] = useState(false);
   // only treat as done when the asset is actually ready — not failed/pending
@@ -40,6 +42,7 @@ export default function GenerateImageButton({ slug, threadId, message, existingA
   );
   const [imageModel, setImageModel] = useState(() => readPref(IMAGE_MODEL_KEY, DEFAULT_IMAGE_MODEL));
   const [generationMode, setGenerationMode] = useState<GenerationMode>('inspire');
+  const [includeCharacter, setIncludeCharacter] = useState<boolean>(() => readPref(INCLUDE_CHARACTER_KEY, '1') === '1');
 
   // Parse AI-chosen size and reference fields from package
   const pkg = (() => {
@@ -76,15 +79,13 @@ export default function GenerateImageButton({ slug, threadId, message, existingA
       const prompt = parsedPkg.imagePrompt;
       if (!prompt) { setError('No image prompt in this draft'); return; }
 
-      // Force gpt-image-1 when edit mode is selected (DALL-E 3 has no edits endpoint)
-      const effectiveModel = generationMode === 'edit' && imageModel === 'dall-e-3' ? 'gpt-image-1' : imageModel;
-
       const token = await getAuthToken();
       const res = await api.post<TfResponse<{ assetId: string; status: string }>>(
         `/api/workspaces/${slug}/generate/image`,
         {
           threadId, prompt, messageId: message.id, size,
-          imageModel: effectiveModel,
+          imageModel,
+          ...(hasCharacter && { includeCharacter }),
           ...(primaryReferenceUploadId && {
             referenceUploadId: primaryReferenceUploadId,
             generationMode,
@@ -155,6 +156,24 @@ export default function GenerateImageButton({ slug, threadId, message, existingA
               onChange={(id) => { setImageModel(id); writePref(IMAGE_MODEL_KEY, id); }}
             />
           </div>
+          {/* Include locked character — only shown when a workspace character exists */}
+          {hasCharacter && (
+            <label className='flex items-center gap-1.5 cursor-pointer select-none'>
+              <input
+                type='checkbox'
+                checked={includeCharacter}
+                disabled={loading}
+                onChange={(e) => {
+                  setIncludeCharacter(e.target.checked);
+                  writePref(INCLUDE_CHARACTER_KEY, e.target.checked ? '1' : '0');
+                }}
+                className='accent-brand h-3.5 w-3.5'
+              />
+              <span className='text-meta text-text-secondary'>
+                Include character{characterName ? ` (${characterName})` : ''}
+              </span>
+            </label>
+          )}
           {/* Reference mode toggle — only shown when a primary reference is set */}
           {hasReference && (
             <div className='flex items-center gap-1.5'>
@@ -163,14 +182,7 @@ export default function GenerateImageButton({ slug, threadId, message, existingA
                 {(['inspire', 'edit'] as const).map((mode) => (
                   <button
                     key={mode}
-                    onClick={() => {
-                      setGenerationMode(mode);
-                      // Edit mode requires gpt-image-1
-                      if (mode === 'edit' && imageModel === 'dall-e-3') {
-                        setImageModel('gpt-image-1');
-                        writePref(IMAGE_MODEL_KEY, 'gpt-image-1');
-                      }
-                    }}
+                    onClick={() => setGenerationMode(mode)}
                     disabled={loading}
                     className={cn(
                       'px-2.5 py-1 text-xs rounded-lg border transition-all capitalize',

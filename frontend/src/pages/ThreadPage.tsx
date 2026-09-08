@@ -3,7 +3,7 @@ import { useParams, useLocation } from 'react-router-dom';
 import { useNavigate } from 'react-router-dom';
 import { useAuthToken } from '../hooks/useAuthToken';
 import { api } from '../lib/api';
-import type { TfResponse, Thread, Message, Asset } from '../types';
+import type { TfResponse, Thread, Message, Asset, Workspace } from '../types';
 import AppShell from '../components/AppShell';
 import Sidebar from '../components/Sidebar';
 import ChatMessage from '../components/ChatMessage';
@@ -24,6 +24,8 @@ export default function ThreadPage() {
 
   const [thread, setThread] = useState<Thread | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  // Locked-character info for the include/exclude toggle on draft cards
+  const [character, setCharacter] = useState<{ name: string | null; has: boolean }>({ name: null, has: false });
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sidebarRefreshKey, setSidebarRefreshKey] = useState(0);
@@ -102,7 +104,7 @@ export default function ThreadPage() {
 
   const load = useCallback(async () => {
     const token = await getToken();
-    const [threadRes, assetsRes] = await Promise.all([
+    const [threadRes, assetsRes, workspaceRes] = await Promise.all([
       api.get<TfResponse<{ thread: Thread; messages: Message[] }>>(
         `/api/workspaces/${slug}/threads/${threadId}`,
         token ?? undefined
@@ -111,7 +113,20 @@ export default function ThreadPage() {
         `/api/workspaces/${slug}/threads/${threadId}/assets`,
         token ?? undefined
       ),
+      api.get<TfResponse<Workspace>>(
+        `/api/workspaces/${slug}`,
+        token ?? undefined
+      ),
     ]);
+    if (workspaceRes.success && workspaceRes.data) {
+      const ws = workspaceRes.data;
+      let hasRefs = false;
+      try { hasRefs = (JSON.parse(ws.character_reference_ids ?? '[]') as string[]).length > 0; } catch { /* ignore */ }
+      setCharacter({
+        name: ws.character_name,
+        has: !!(ws.character_name || ws.character_appearance || hasRefs),
+      });
+    }
     if (threadRes.success && threadRes.data) {
       setThread(threadRes.data.thread);
       setMessages(threadRes.data.messages);
@@ -351,6 +366,8 @@ export default function ThreadPage() {
                   }))}
                   uploads={uploads}
                   imageAssets={imageAssets}
+                  hasCharacter={character.has}
+                  characterName={character.name}
                 />
               ))}
               {sending && (

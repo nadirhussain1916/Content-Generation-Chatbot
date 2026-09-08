@@ -37,10 +37,9 @@ describe('TEXT_MODELS', () => {
 });
 
 describe('IMAGE_MODELS', () => {
-  it('contains gpt-image-1 and dall-e-3', () => {
+  it('contains gpt-image-2', () => {
     const ids = IMAGE_MODELS.map((m) => m.id);
-    expect(ids).toContain('gpt-image-1');
-    expect(ids).toContain('dall-e-3');
+    expect(ids).toContain('gpt-image-2');
   });
 
   it('DEFAULT_IMAGE_MODEL is in IMAGE_MODELS', () => {
@@ -136,12 +135,8 @@ describe('LTX_EXTEND_OPTIONS', () => {
 // ─── Reference caps ───────────────────────────────────────────────────────────
 
 describe('IMAGE_MODEL_REF_CAPS', () => {
-  it('gpt-image-1 supports 1 reference', () => {
-    expect(IMAGE_MODEL_REF_CAPS['gpt-image-1']).toBe(1);
-  });
-
-  it('dall-e-3 supports 1 reference (inspire mode)', () => {
-    expect(IMAGE_MODEL_REF_CAPS['dall-e-3']).toBe(1);
+  it('gpt-image-2 supports 1 reference', () => {
+    expect(IMAGE_MODEL_REF_CAPS['gpt-image-2']).toBe(1);
   });
 });
 
@@ -204,8 +199,8 @@ describe('readPref / writePref', () => {
   });
 
   it('writePref + readPref round-trips a value', () => {
-    writePref(IMAGE_MODEL_KEY, 'dall-e-3');
-    expect(readPref(IMAGE_MODEL_KEY, DEFAULT_IMAGE_MODEL)).toBe('dall-e-3');
+    writePref(IMAGE_MODEL_KEY, 'gpt-image-2');
+    expect(readPref(IMAGE_MODEL_KEY, DEFAULT_IMAGE_MODEL)).toBe('gpt-image-2');
   });
 
   it('writePref + readPref for video model', () => {

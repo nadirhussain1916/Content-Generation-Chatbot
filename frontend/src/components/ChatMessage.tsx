@@ -23,9 +23,12 @@ interface ChatMessageProps {
   // For the draft card reference picker
   uploads?: WorkspaceUpload[];
   imageAssets?: Asset[];
+  // Locked-character toggle on draft generation buttons
+  hasCharacter?: boolean;
+  characterName?: string | null;
 }
 
-export default function ChatMessage({ message, onOptionSelect, asset, assetBlobUrl, slug, threadId, onAssetGenerated, attachedImages, uploads = [], imageAssets = [] }: ChatMessageProps) {
+export default function ChatMessage({ message, onOptionSelect, asset, assetBlobUrl, slug, threadId, onAssetGenerated, attachedImages, uploads = [], imageAssets = [], hasCharacter = false, characterName = null }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState(true);
   const { status: publishStatus, publish } = usePublishStatus(slug, asset?.id);
@@ -389,6 +392,8 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
                       message={message}
                       existingAsset={asset}
                       onGenerated={onAssetGenerated}
+                      hasCharacter={hasCharacter}
+                      characterName={characterName}
                     />
                   ) : (
                     <GenerateImageButton
@@ -397,6 +402,8 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
                       message={message}
                       existingAsset={asset}
                       onGenerated={onAssetGenerated}
+                      hasCharacter={hasCharacter}
+                      characterName={characterName}
                     />
                   )}
                 </div>

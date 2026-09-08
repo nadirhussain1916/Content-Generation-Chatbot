@@ -14,13 +14,16 @@ export const TEXT_MODEL_KEY = 'tf_text_model';
 // ─── Image generation models ──────────────────────────────────────────────────
 
 export const IMAGE_MODELS = [
-  { id: 'gpt-image-1', label: 'GPT Image 1', desc: 'OpenAI · Best quality' },
-  { id: 'dall-e-3',    label: 'DALL-E 3',    desc: 'OpenAI · Standard' },
+  { id: 'gpt-image-2', label: 'GPT Image 2', desc: 'OpenAI · Newest · Best quality' },
 ] as const;
 
 export type ImageModelId = (typeof IMAGE_MODELS)[number]['id'];
-export const DEFAULT_IMAGE_MODEL: ImageModelId = 'gpt-image-1';
+export const DEFAULT_IMAGE_MODEL: ImageModelId = 'gpt-image-2';
 export const IMAGE_MODEL_KEY = 'tf_image_model';
+
+// Per-generation toggle: include the workspace's locked character (name +
+// appearance text, and its reference image) in image/video generations.
+export const INCLUDE_CHARACTER_KEY = 'tf_include_character';
 
 // ─── Video generation models ──────────────────────────────────────────────────
 
@@ -167,8 +170,7 @@ export const LTX_EXTEND_KEY = 'tf_ltx_extend';
 
 /** Max references per image generation model */
 export const IMAGE_MODEL_REF_CAPS: Record<ImageModelId, number> = {
-  'gpt-image-1': 1,
-  'dall-e-3':    1, // inspire mode only — description is injected into the prompt
+  'gpt-image-2': 1,
 };
 
 /** Max references per video generation model */

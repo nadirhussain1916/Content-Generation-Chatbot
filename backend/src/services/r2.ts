@@ -32,7 +32,7 @@ export async function uploadFromUrl(params: {
 
 /**
  * Convert a PNG ArrayBuffer to JPEG using a simple WASM-free approach.
- * For Instagram we need JPEG — DALL-E 3 outputs PNG.
+ * For Instagram we need JPEG — gpt-image-1 outputs PNG.
  * We re-fetch the OpenAI URL and use the Accept header trick to get JPEG... 
  * 
  * Reality: OpenAI always returns PNG. We store as PNG and let Instagram handle it

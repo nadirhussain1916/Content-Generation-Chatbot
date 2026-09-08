@@ -97,46 +97,24 @@ const TEXT_MODELS = [
 
 const IMAGE_MODELS = [
   {
-    id: 'gpt-image-1',
-    name: 'GPT Image 1',
+    id: 'gpt-image-2',
+    name: 'GPT Image 2',
     badge: 'Default · Best quality',
     badgeColor: 'bg-brand/10 text-brand border-brand/20',
-    price: '~$0.02–$0.19 per image (size-dependent)',
+    price: '~$0.005–$0.21 per image (quality & size-dependent)',
     priceLevel: 2,
     speed: 'Medium',
     tags: ['Photorealistic', 'Reference support', 'Edits'],
     description:
-      'OpenAI\'s newest image model. Supports reference images for in-painting and style matching. Produces the most accurate, controllable results — especially when you attach a reference photo.',
+      'OpenAI\'s latest and best image model. Supports reference images for in-painting and style matching, and always processes reference inputs at high fidelity. Produces the most accurate, controllable results — especially when you attach a reference photo.',
     bestFor: [
       'Hero product shots with a reference image',
       'Consistent brand aesthetic across multiple images',
       'Portrait and lifestyle photography style',
     ],
     watchOut: [
-      'Slower than DALL-E 3 — each image takes 10–20s',
-      'Costlier at large sizes (1792×1024)',
-    ],
-  },
-  {
-    id: 'dall-e-3',
-    name: 'DALL-E 3',
-    badge: 'Currently unavailable',
-    badgeColor: 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20',
-    price: '~$0.04 standard · $0.08 HD per image',
-    priceLevel: 1,
-    speed: 'Fast',
-    tags: ['Illustrations', 'Concepts', 'Inspire mode'],
-    description:
-      'Temporarily unavailable — the OpenAI API is currently rejecting DALL-E 3 requests for this account, so generations will fail. Use GPT Image 1 in the meantime. (When available: OpenAI\'s previous-generation image model, excellent at vivid, stylised, and illustrated content. The "Inspire" mode takes your reference image\'s description and lets DALL-E 3 re-interpret it creatively.)',
-    bestFor: [
-      'Illustrated or artistic content (not photo-realistic)',
-      'Concept thumbnails and mood boards',
-      'Inspire mode — letting the AI creatively riff on a reference',
-    ],
-    watchOut: [
-      'Currently unavailable — requests are being rejected by OpenAI; pick GPT Image 1 instead',
-      'Cannot use a reference image directly for edits (inspire mode only)',
-      'Less precise on product accuracy than GPT Image 1',
+      'Complex prompts can take up to ~2 minutes to process',
+      'Costlier at higher quality / larger sizes',
     ],
   },
 ];

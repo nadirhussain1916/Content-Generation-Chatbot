@@ -28,8 +28,8 @@ export function brandBlock(ws: {
   if (ws.brand_voice)        lines.push(`Brand voice notes: ${ws.brand_voice}`);
   if (ws.target_audience)    lines.push(`Target audience: ${ws.target_audience}`);
   if (ws.default_image_size) lines.push(`Default image size: ${IMAGE_SIZE_LABELS[ws.default_image_size] ?? ws.default_image_size} — ALWAYS set imageSize to this value unless the user explicitly requests a different aspect ratio.`);
-  if (ws.default_video_dimensions) lines.push(`Default video dimensions: ${VIDEO_DIM_LABELS[ws.default_video_dimensions] ?? ws.default_video_dimensions}`);
-  if (ws.default_video_duration)   lines.push(`Max clip length: ${ws.default_video_duration}s per generated video clip.`);
+  if (ws.default_video_dimensions) lines.push(`Default video dimensions: ${VIDEO_DIM_LABELS[ws.default_video_dimensions] ?? ws.default_video_dimensions} — set videoAspectRatio to match this orientation (9:16 for portrait, 16:9 for landscape) unless the user explicitly requests a different one.`);
+  if (ws.default_video_duration)   lines.push(`Default clip length: ${ws.default_video_duration}s — set videoDurationSeconds to this value unless the user explicitly requests a different length.`);
   if (ws.target_video_length) {
     const targetSecs = ws.target_video_length;
     const minWords = Math.round(targetSecs * 2.4 * 0.9);
@@ -47,6 +47,23 @@ export function brandBlock(ws: {
   }
   if (ws.agent_instructions) lines.push(`\nCustom agent instructions (follow strictly):\n${ws.agent_instructions}`);
   return lines.length ? `\n\n--- WORKSPACE CONTEXT ---\n${lines.join('\n')}\n---` : '';
+}
+
+/**
+ * Locked-character block prepended to image/video generation prompts so the
+ * subject keeps a consistent name + appearance. Returns '' when no character
+ * text is configured. Applied to both image and video paths (gated by the
+ * per-generation "include character" toggle in the route handlers).
+ */
+export function characterBlock(ws: {
+  character_name?: string | null;
+  character_appearance?: string | null;
+}): string {
+  const lines: string[] = [];
+  if (ws.character_name)       lines.push(`Name: ${ws.character_name}`);
+  if (ws.character_appearance) lines.push(`Appearance: ${ws.character_appearance}`);
+  if (!lines.length) return '';
+  return `CHARACTER (maintain this exact appearance consistently — never alter it):\n${lines.join('\n')}`;
 }
 
 export type WorkspaceBrand = {
@@ -176,6 +193,8 @@ generate_video_script (TERMINAL):
      MOOD & ATMOSPHERE — precise emotional feeling the visuals must deliver
      TEXT / MOTION GRAPHICS — on-screen captions, lower-thirds, animated elements, placement & style
      Write as 1-2 cohesive paragraphs a production crew can execute without further clarification.
+  → videoAspectRatio: "9:16" (portrait — Reels / Shorts / TikTok) or "16:9" (landscape — YouTube). Match the workspace default video dimensions unless the user requests otherwise.
+  → videoDurationSeconds: integer per-clip length in seconds. Set to the workspace default clip length unless the user requests a different length.
   → tone: the actual tone applied.
   → suggestedPlatforms: array from ["instagram", "tiktok"].
 

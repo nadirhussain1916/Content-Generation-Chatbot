@@ -46,10 +46,13 @@ describe('calcTextCost', () => {
 // ─── calcImageCost ────────────────────────────────────────────────────────────
 
 describe('calcImageCost', () => {
-  it('dall-e-3: flat $0.04 for any size', () => {
-    expect(calcImageCost('dall-e-3', '1024x1024')).toBe(0.04);
-    expect(calcImageCost('dall-e-3', '1024x1792')).toBe(0.04);
-    expect(calcImageCost('dall-e-3', '1792x1024')).toBe(0.04);
+  it('gpt-image-2 square (1024×1024): $0.053', () => {
+    expect(calcImageCost('gpt-image-2', '1024x1024')).toBe(0.053);
+  });
+
+  it('gpt-image-2 non-square (1024×1792 / 1792×1024): $0.041', () => {
+    expect(calcImageCost('gpt-image-2', '1024x1792')).toBe(0.041);
+    expect(calcImageCost('gpt-image-2', '1792x1024')).toBe(0.041);
   });
 
   it('gpt-image-1 square (1024×1024): $0.042', () => {

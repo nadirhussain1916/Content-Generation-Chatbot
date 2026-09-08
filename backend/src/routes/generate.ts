@@ -8,6 +8,7 @@ import { withPublicUrl } from '../services/r2';
 import { kvRateLimiter } from '../middleware/rateLimiter';
 import { analyzeImageForDescription } from '../services/openai';
 import { calcImageCost, calcVideoClipCost, calcLtxChainCost } from '../services/costs';
+import { characterBlock } from '../services/prompts';
 
 type Env = { Bindings: CloudflareBindings; Variables: ContextVariables };
 
@@ -42,6 +43,7 @@ generateRouter.post('/image', async (c) => {
       imageModel?: string;
       referenceUploadId?: string;
       generationMode?: 'edit' | 'inspire';
+      includeCharacter?: boolean;
     };
     if (!body.threadId || !body.prompt) {
       return c.json<TfResponse<null>>({ success: false, message: 'threadId and prompt are required' }, 400);
@@ -54,7 +56,8 @@ generateRouter.post('/image', async (c) => {
 
     // Use explicit size from request, then workspace default, then global default
     const imageSize = body.size ?? workspace.default_image_size ?? '1024x1024';
-    const imageModel = body.imageModel ?? 'gpt-image-1';
+    const imageModel = body.imageModel ?? 'gpt-image-2';
+    const includeCharacter = body.includeCharacter ?? true;
 
     const assetId = crypto.randomUUID();
     await createAsset(c.env.DB, {
@@ -76,9 +79,13 @@ generateRouter.post('/image', async (c) => {
     );
 
     // Trigger Workflow — durable, retriable, no 30 s CPU limit
-    // Resolve reference image if provided
+    // Resolve reference image + generation mode.
+    // Priority: an explicit per-draft reference wins; otherwise, when the
+    // "include character" toggle is on, fall back to the workspace character's
+    // reference image (used via gpt-image-1 edit mode to lock the appearance).
     let referenceImageUrl: string | undefined;
     let referenceVisionDescription: string | undefined;
+    let generationMode = body.generationMode;
     if (body.referenceUploadId) {
       const uploads = await getWorkspaceUploadsByIds(c.env.DB, [body.referenceUploadId], workspace.id);
       const upload = uploads.results[0];
@@ -100,6 +107,27 @@ generateRouter.post('/image', async (c) => {
           }
         }
       }
+    } else if (includeCharacter && workspace.character_reference_ids) {
+      try {
+        const charRefIds: string[] = JSON.parse(workspace.character_reference_ids);
+        if (charRefIds.length > 0) {
+          const charUploads = await getWorkspaceUploadsByIds(c.env.DB, [charRefIds[0]], workspace.id);
+          const charUpload = charUploads.results[0];
+          if (charUpload) {
+            referenceImageUrl = charUpload.public_url;
+            // Edit mode feeds the character's pixels to gpt-image-1 so the
+            // subject stays consistent.
+            generationMode = 'edit';
+          }
+        }
+      } catch { /* malformed JSON — ignore */ }
+    }
+
+    // Prepend the locked-character block to the prompt when requested.
+    let imagePrompt = body.prompt;
+    if (includeCharacter) {
+      const charBlock = characterBlock(workspace);
+      if (charBlock) imagePrompt = `${charBlock}\n\n${body.prompt}`;
     }
 
     await c.env.GENERATION_WORKFLOW.create({
@@ -109,12 +137,12 @@ generateRouter.post('/image', async (c) => {
         assetId,
         workspaceId: workspace.id,
         r2KeyPrefix: `${workspace.id}/${body.threadId}/${assetId}`,
-        prompt: body.prompt,
+        prompt: imagePrompt,
         size: imageSize as '1024x1024' | '1024x1792' | '1792x1024',
         imageModel,
         referenceImageUrl,
         referenceVisionDescription,
-        generationMode: body.generationMode,
+        generationMode,
       },
     });
 
@@ -144,6 +172,7 @@ generateRouter.post('/video', async (c) => {
       chainCount?: number;    // number of extend calls to append (1–6); 0 or absent = no chaining
       extendDuration?: number; // seconds per extend (1–20); defaults to 20
       referenceUploadId?: string;
+      includeCharacter?: boolean;
     };
     if (!body.threadId || !body.prompt) {
       return c.json<TfResponse<null>>({ success: false, message: 'threadId and prompt are required' }, 400);
@@ -158,13 +187,16 @@ generateRouter.post('/video', async (c) => {
       return c.json<TfResponse<null>>({ success: false, message: 'Video generation is not configured' }, 501);
     }
 
+    const includeCharacter = body.includeCharacter ?? true;
+
     // ── Resolve reference image for video generation ──────────────────────────
     // Priority: explicit upload from the draft > first character reference image
+    // (the character fallback only applies when the "include character" toggle is on)
     let videoReferenceImageUrl: string | undefined;
     if (body.referenceUploadId) {
       const refUploads = await getWorkspaceUploadsByIds(c.env.DB, [body.referenceUploadId], workspace.id);
       videoReferenceImageUrl = refUploads.results[0]?.public_url;
-    } else if (workspace.character_reference_ids) {
+    } else if (includeCharacter && workspace.character_reference_ids) {
       try {
         const charRefIds: string[] = JSON.parse(workspace.character_reference_ids);
         if (charRefIds.length > 0) {
@@ -176,13 +208,9 @@ generateRouter.post('/video', async (c) => {
 
     // ── Prepend locked character block to video prompt ────────────────────────
     let videoPrompt = body.prompt;
-    if (workspace.character_name || workspace.character_appearance) {
-      const charBlock = [
-        `CHARACTER (maintain consistent appearance throughout every scene):`,
-        workspace.character_name        ? `Name: ${workspace.character_name}` : '',
-        workspace.character_appearance  ? `Appearance: ${workspace.character_appearance}` : '',
-      ].filter(Boolean).join('\n');
-      videoPrompt = `${charBlock}\n\n${body.prompt}`;
+    if (includeCharacter) {
+      const charBlock = characterBlock(workspace);
+      if (charBlock) videoPrompt = `${charBlock}\n\n${body.prompt}`;
     }
 
     // ── Per-model config ──────────────────────────────────────────────────────
@@ -278,7 +306,9 @@ generateRouter.post('/video', async (c) => {
     // Veo-2: 5-8 | LTX Fast: 6,8,10,12,14,16,18,20 | LTX Pro: 6,8,10
     // Seedance 2.0/Fast: 5,8,10,12,15 | Wan 2.7: 2,3,4,5,8,10,12,15
     const VALID_DURATIONS = new Set([2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 15, 16, 18, 20]);
-    const videoDuration = body.duration && VALID_DURATIONS.has(body.duration) ? body.duration : 5;
+    // Duration: prefer explicit body param, fall back to workspace default clip length, then 5s
+    const requestedDuration = body.duration ?? workspace.default_video_duration;
+    const videoDuration = requestedDuration && VALID_DURATIONS.has(requestedDuration) ? requestedDuration : 5;
 
     const assetId = crypto.randomUUID();
     const r2KeyPrefix = `${workspace.id}/${body.threadId}/${assetId}`;

@@ -106,6 +106,8 @@ export interface VideoPostPackage {
     scenes: { description: string; voiceover: string; duration: string }[];
   };
   videoPrompt: string;
+  videoAspectRatio?: '9:16' | '16:9';
+  videoDurationSeconds?: number;
   tone: string;
   suggestedPlatforms: ('instagram' | 'tiktok')[];
   // Reference images (injected by backend after AI generation)

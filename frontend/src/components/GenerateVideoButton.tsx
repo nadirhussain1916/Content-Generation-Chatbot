@@ -11,6 +11,7 @@ import {
   VIDEO_DURATIONS, DEFAULT_VIDEO_DURATIONS, VIDEO_DURATION_KEY,
   ASPECT_RATIO_MODEL_IDS, DURATION_MODEL_IDS,
   LTX_EXTEND_OPTIONS, LTX_EXTEND_KEY,
+  INCLUDE_CHARACTER_KEY,
   type VideoModelId, type LtxExtendOption,
   readPref, writePref,
 } from '../lib/models';
@@ -21,12 +22,14 @@ interface GenerateVideoButtonProps {
   message: Message;
   existingAsset?: Asset;
   onGenerated?: (asset: Asset) => void;
+  hasCharacter?: boolean;
+  characterName?: string | null;
 }
 
 const POLL_INTERVAL_MS = 5000;
 const POLL_TIMEOUT_MS = 900_000; // 15 min — covers slow cold starts
 
-export default function GenerateVideoButton({ slug, threadId, message, existingAsset, onGenerated }: GenerateVideoButtonProps) {
+export default function GenerateVideoButton({ slug, threadId, message, existingAsset, onGenerated, hasCharacter = false, characterName = null }: GenerateVideoButtonProps) {
   const { getAuthToken } = useAuthToken();
   const [loading, setLoading] = useState(false);
   // only treat as done when the asset is actually ready — not failed/pending
@@ -37,10 +40,26 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
       ? (existingAsset.error_message ?? 'Video generation failed')
       : null
   );
+  // AI-chosen video params from the draft package (fall back to saved prefs)
+  const pkg = (() => {
+    try { return JSON.parse(message.post_package ?? '{}') as Partial<VideoPostPackage>; } catch { return {}; }
+  })();
+
   const [videoModel, setVideoModel] = useState(() => readPref(VIDEO_MODEL_KEY, DEFAULT_VIDEO_MODEL));
-  const [aspectRatio, setAspectRatio] = useState(() => readPref(VIDEO_ASPECT_RATIO_KEY, DEFAULT_VIDEO_ASPECT_RATIO));
-  const [duration, setDuration] = useState(() => readPref(VIDEO_DURATION_KEY, DEFAULT_VIDEO_DURATIONS[DEFAULT_VIDEO_MODEL]));
+  const [aspectRatio, setAspectRatio] = useState(() => {
+    const fromPkg = pkg.videoAspectRatio;
+    if (fromPkg && VIDEO_ASPECT_RATIOS.some((r) => r.id === fromPkg)) return fromPkg;
+    return readPref(VIDEO_ASPECT_RATIO_KEY, DEFAULT_VIDEO_ASPECT_RATIO);
+  });
+  const [duration, setDuration] = useState(() => {
+    const modelId = readPref(VIDEO_MODEL_KEY, DEFAULT_VIDEO_MODEL) as VideoModelId;
+    const opts = VIDEO_DURATIONS[modelId] ?? VIDEO_DURATIONS['google/veo-2'];
+    const fromPkg = pkg.videoDurationSeconds != null ? String(pkg.videoDurationSeconds) : undefined;
+    if (fromPkg && opts.some((o) => o.id === fromPkg)) return fromPkg;
+    return readPref(VIDEO_DURATION_KEY, DEFAULT_VIDEO_DURATIONS[DEFAULT_VIDEO_MODEL]);
+  });
   const [ltxExtendId, setLtxExtendId] = useState<string>(() => readPref(LTX_EXTEND_KEY, '0'));
+  const [includeCharacter, setIncludeCharacter] = useState<boolean>(() => readPref(INCLUDE_CHARACTER_KEY, '1') === '1');
 
   const currentModelId = videoModel as VideoModelId;
   const supportsAspectRatio = ASPECT_RATIO_MODEL_IDS.includes(currentModelId);
@@ -74,7 +93,6 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
     setError(null);
 
     try {
-      const pkg = JSON.parse(message.post_package) as Partial<VideoPostPackage>;
       const prompt = pkg.videoPrompt;
       if (!prompt) { setError('No video prompt in this draft'); return; }
 
@@ -93,6 +111,7 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
           ...(isLtxPro && chainCount > 0
             ? { duration: 10, chainCount, extendDuration: selectedExtend.extendDuration }
             : supportsDuration && { duration: Number(duration) }),
+          ...(hasCharacter && { includeCharacter }),
           ...(primaryReferenceUploadId && { referenceUploadId: primaryReferenceUploadId }),
         },
         token ?? undefined
@@ -168,6 +187,24 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
                 onChange={(id) => { setLtxExtendId(id); writePref(LTX_EXTEND_KEY, id); }}
               />
             </div>
+          )}
+          {/* Include locked character — only shown when a workspace character exists */}
+          {hasCharacter && (
+            <label className='flex items-center gap-1.5 cursor-pointer select-none'>
+              <input
+                type='checkbox'
+                checked={includeCharacter}
+                disabled={loading}
+                onChange={(e) => {
+                  setIncludeCharacter(e.target.checked);
+                  writePref(INCLUDE_CHARACTER_KEY, e.target.checked ? '1' : '0');
+                }}
+                className='accent-brand h-3.5 w-3.5'
+              />
+              <span className='text-meta text-text-secondary'>
+                Include character{characterName ? ` (${characterName})` : ''}
+              </span>
+            </label>
           )}
         </div>
       )}

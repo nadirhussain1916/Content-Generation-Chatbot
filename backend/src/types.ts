@@ -168,6 +168,8 @@ export interface VideoPostPackage {
   hashtags: string[];
   script: VideoScript;
   videoPrompt: string;
+  videoAspectRatio?: '9:16' | '16:9';
+  videoDurationSeconds?: number;
   tone: string;
   suggestedPlatforms: ('instagram' | 'tiktok')[];
   // Reference images (injected by backend after AI generation)

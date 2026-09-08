@@ -14,13 +14,12 @@ export function calcTextCost(model: string, inputTokens: number, outputTokens: n
 }
 
 // ─── Image model pricing (USD per image) ─────────────────────────────────────
-// gpt-image-1: quality=auto — mid-tier estimate
-//   1024×1024:               $0.042
-//   1024×1536 / 1536×1024:   $0.063
-// dall-e-3: standard quality $0.04 (all sizes)
+// We send quality=auto, so these are mid-tier ("medium") estimates.
+// gpt-image-2:  square $0.053 · non-square $0.041
+// gpt-image-1:  square $0.042 · non-square $0.063 (kept for historical assets)
 
 const IMAGE_COSTS: Record<string, { flat?: number; square?: number; nonSquare?: number }> = {
-  'dall-e-3':    { flat: 0.04 },
+  'gpt-image-2': { square: 0.053, nonSquare: 0.041 },
   'gpt-image-1': { square: 0.042, nonSquare: 0.063 },
 };
 

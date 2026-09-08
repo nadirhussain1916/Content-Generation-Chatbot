@@ -51,6 +51,8 @@ const VideoPostPackageSchema = z.object({
   hashtags: z.array(z.string()).max(30),
   script: VideoScriptSchema,
   videoPrompt: z.string().describe('Replicate/Runway visual prompt'),
+  videoAspectRatio: z.enum(['9:16', '16:9']).describe('9:16=portrait (Reels/Shorts/TikTok) | 16:9=landscape (YouTube). Match the workspace default video dimensions unless the user requests otherwise.'),
+  videoDurationSeconds: z.number().int().describe('Per-clip generation length in seconds. Set to the workspace default clip length unless the user requests a different length.'),
   tone: z.string(),
   suggestedPlatforms: z.array(z.enum(['instagram', 'tiktok'])),
 });
@@ -346,7 +348,7 @@ export async function analyzeImageForDescription(params: {
   return text;
 }
 
-// ─── Image generation (DALL-E 3 / gpt-image-1) ───────────────────────────────
+// ─── Image generation (gpt-image-2) ───────────────────────────────────────────
 
 // Build the right error for an OpenAI image API failure. 4xx client errors
 // (invalid model, bad params, auth) are permanent — retrying wastes ~15s of
@@ -362,25 +364,24 @@ export async function generateDalleImage(params: {
   apiKey: string;
   prompt: string;
   size?: '1024x1024' | '1024x1792' | '1792x1024';
-  imageModel?: string; // 'gpt-image-1' (default) | 'dall-e-3'
+  imageModel?: string; // 'gpt-image-2' (default)
   referenceImageUrl?: string;          // R2 public URL of the reference image
   referenceVisionDescription?: string; // cached vision description (for inspire mode)
   generationMode?: 'edit' | 'inspire'; // edit = /edits endpoint; inspire = enrich prompt
 }): Promise<string> {
-  const model = params.imageModel ?? 'gpt-image-1';
+  const model = params.imageModel ?? 'gpt-image-2';
 
-  // ── Normalise size per model ──────────────────────────────────────────────
-  // dall-e-3 uses 1024x1792 / 1792x1024; gpt-image-1 uses 1024x1536 / 1536x1024.
-  // Any size coming in may be a dall-e-3 value — remap it for gpt-image-1.
+  // ── Normalise size ────────────────────────────────────────────────────────
+  // GPT Image models use 1024x1536 / 1536x1024 — remap the incoming portrait/landscape values.
   const GPT_IMAGE_SIZE_MAP: Record<string, string> = {
     '1024x1792': '1024x1536',
     '1792x1024': '1536x1024',
   };
   const rawSize = params.size ?? '1024x1024';
-  const resolvedSize = model !== 'dall-e-3' ? (GPT_IMAGE_SIZE_MAP[rawSize] ?? rawSize) : rawSize;
+  const resolvedSize = GPT_IMAGE_SIZE_MAP[rawSize] ?? rawSize;
 
-  // ── Edit mode: use /v1/images/edits (gpt-image-1 only) ───────────────────
-  if (params.generationMode === 'edit' && params.referenceImageUrl && model !== 'dall-e-3') {
+  // ── Edit mode: use /v1/images/edits ──────────────────────────────────────
+  if (params.generationMode === 'edit' && params.referenceImageUrl) {
     // Fetch the reference image bytes from R2
     const imgRes = await fetch(params.referenceImageUrl);
     if (!imgRes.ok) throw new Error(`Failed to fetch reference image: ${imgRes.statusText}`);
@@ -420,7 +421,7 @@ export async function generateDalleImage(params: {
   }
 
   // ── Standard generation ───────────────────────────────────────────────────
-  const quality = model === 'dall-e-3' ? 'standard' : 'auto';
+  const quality = 'auto';
 
   const response = await fetch('https://api.openai.com/v1/images/generations', {
     method: 'POST',

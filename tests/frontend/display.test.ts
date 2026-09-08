@@ -27,8 +27,8 @@ describe('MODEL_LABELS', () => {
   });
 
   it('covers all known image models', () => {
+    expect(MODEL_LABELS['gpt-image-2']).toBeDefined();
     expect(MODEL_LABELS['gpt-image-1']).toBeDefined();
-    expect(MODEL_LABELS['dall-e-3']).toBeDefined();
   });
 });
 
