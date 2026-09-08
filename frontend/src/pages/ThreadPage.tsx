@@ -299,9 +299,9 @@ export default function ThreadPage() {
     <AppShell>
       <Sidebar onNewThread={handleNewThread} refreshKey={sidebarRefreshKey} />
 
-      <main className='flex-1 flex flex-col min-w-0 bg-surface-chat/40 backdrop-blur-xl'>
+      <main className='flex-1 flex flex-col min-w-0 bg-surface-chat/25 backdrop-blur-xl'>
         {/* Thread header */}
-        <header className='flex items-center gap-3 px-5 py-4 border-b border-border-soft/60 bg-surface/50 backdrop-blur-xl'>
+        <header className='flex items-center gap-3 px-5 py-4 border-b border-border-soft/60 bg-surface/40 backdrop-blur-xl'>
           <button
             onClick={() => navigate(`/workspaces/${slug}`)}
             className='text-text-secondary hover:text-text-primary lg:hidden'
@@ -376,7 +376,7 @@ export default function ThreadPage() {
         )}
 
         {/* Input */}
-        <div className='border-t border-border-soft/60 bg-surface/50 backdrop-blur-xl p-4'>
+        <div className='border-t border-border-soft/60 bg-surface/40 backdrop-blur-xl p-4'>
           <div className='max-w-4xl mx-auto'>
             <ChatInput
               slug={slug!}

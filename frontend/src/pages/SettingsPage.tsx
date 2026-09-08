@@ -205,7 +205,7 @@ export default function SettingsPage() {
     <AppShell>
       <Sidebar onNewThread={handleNewThread} />
 
-      <main className='flex-1 overflow-y-auto bg-surface-chat/40 backdrop-blur-xl'>
+      <main className='flex-1 overflow-y-auto bg-surface-chat/25 backdrop-blur-xl'>
         <div className='max-w-5xl mx-auto px-6 py-8'>
           <div className='flex items-center gap-2 mb-6'>
             <Settings size={20} className='text-text-secondary' />

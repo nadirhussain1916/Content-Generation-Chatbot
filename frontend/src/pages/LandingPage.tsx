@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@clerk/clerk-react';
 import { api } from '../lib/api';
 import type { TfResponse, Workspace } from '../types';
-import { Zap, MessageSquare, Target, ClipboardCheck, Type, Image as ImageIcon, Video, Heart, Smartphone, WifiOff } from 'lucide-react';
+import { MessageSquare, Target, ClipboardCheck, Type, Image as ImageIcon, Video, Heart, Smartphone, WifiOff } from 'lucide-react';
 import { useTheme } from '../lib/theme';
 import { GRAIN_TEXTURE } from '../lib/textures';
 import TypewriterText from '../components/TypewriterText';
@@ -219,9 +219,7 @@ export default function LandingPage({ noRedirect = false }: LandingPageProps) {
 
           {/* Logo */}
           <div className='mb-10'>
-            <div className='w-9 h-9 rounded-xl bg-brand flex items-center justify-center'>
-              <Zap size={17} className='text-on-brand' />
-            </div>
+            <img src='/favicon.png' alt='Logic Enablers' className='w-10 h-10 rounded-xl' />
           </div>
 
           {/* Heading */}

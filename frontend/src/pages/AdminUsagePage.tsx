@@ -83,7 +83,7 @@ export default function AdminUsagePage() {
     <AppShell>
       <AdminSidebar />
 
-      <main className='flex-1 overflow-y-auto bg-surface-chat/40 backdrop-blur-xl'>
+      <main className='flex-1 overflow-y-auto bg-surface-chat/25 backdrop-blur-xl'>
         <div className='max-w-6xl mx-auto px-6 py-8 space-y-4'>
           <div className='flex items-center justify-between gap-3 flex-wrap'>
             <div>

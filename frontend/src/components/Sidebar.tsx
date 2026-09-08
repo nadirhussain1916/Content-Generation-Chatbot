@@ -54,7 +54,7 @@ export default function Sidebar({ onNewThread, refreshKey = 0 }: SidebarProps) {
   }
 
   return (
-    <aside className='w-64 flex-shrink-0 bg-surface/70 backdrop-blur-xl border-r border-border-soft/60 flex flex-col h-full'>
+    <aside className='w-64 flex-shrink-0 bg-surface/55 backdrop-blur-xl border-r border-border-soft/60 flex flex-col h-full'>
       {/* Workspace selector */}
       <div className='p-4 border-b border-border-soft'>
         <button

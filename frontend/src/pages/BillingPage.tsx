@@ -48,7 +48,7 @@ export default function BillingPage() {
     <AppShell>
       <Sidebar onNewThread={() => navigate(`/workspaces/${slug}`)} />
 
-      <main className='flex-1 overflow-y-auto bg-surface-chat/40 backdrop-blur-xl'>
+      <main className='flex-1 overflow-y-auto bg-surface-chat/25 backdrop-blur-xl'>
         <div className='max-w-5xl mx-auto px-6 py-8'>
           {/* Header */}
           <div className='flex items-center justify-between gap-3 mb-8 flex-wrap'>

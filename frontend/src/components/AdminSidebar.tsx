@@ -19,7 +19,7 @@ export default function AdminSidebar() {
   const navigate = useNavigate();
 
   return (
-    <aside className='w-64 flex-shrink-0 bg-surface/70 backdrop-blur-xl border-r border-border-soft/60 flex flex-col h-full'>
+    <aside className='w-64 flex-shrink-0 bg-surface/55 backdrop-blur-xl border-r border-border-soft/60 flex flex-col h-full'>
       {/* Brand */}
       <div className='p-4 border-b border-border-soft'>
         <div className='flex items-center gap-2 p-2'>

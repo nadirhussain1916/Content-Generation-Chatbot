@@ -91,9 +91,9 @@ export default function GenerationsPage() {
     <AppShell>
       <Sidebar onNewThread={() => navigate(`/workspaces/${slug}`)} />
 
-      <main className='flex-1 flex flex-col min-w-0 bg-surface-chat/40 backdrop-blur-xl'>
+      <main className='flex-1 flex flex-col min-w-0 bg-surface-chat/25 backdrop-blur-xl'>
         {/* Header */}
-        <header className='flex items-center justify-between px-6 py-4 border-b border-border-soft/60 bg-surface/50 backdrop-blur-xl flex-shrink-0'>
+        <header className='flex items-center justify-between px-6 py-4 border-b border-border-soft/60 bg-surface/40 backdrop-blur-xl flex-shrink-0'>
           <div className='flex items-center gap-3'>
             <div>
               <h1 className='text-heading text-text-primary'>Generations</h1>

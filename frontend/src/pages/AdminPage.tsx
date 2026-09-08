@@ -122,7 +122,7 @@ export default function AdminPage() {
     <AppShell>
       <AdminSidebar />
 
-      <main className='flex-1 overflow-y-auto bg-surface-chat/40 backdrop-blur-xl'>
+      <main className='flex-1 overflow-y-auto bg-surface-chat/25 backdrop-blur-xl'>
         <div className='max-w-4xl mx-auto px-6 py-8 space-y-4'>
           <div className='mb-2'>
             <h1 className='text-heading text-text-primary'>Users</h1>
