@@ -1,4 +1,5 @@
 import { createOpenAI } from '@ai-sdk/openai';
+import { NonRetryableError } from 'cloudflare:workflows';
 import { generateText, tool, stepCountIs } from 'ai';
 import { z } from 'zod';
 import { AGENT_SYSTEM_PROMPT, type WorkspaceBrand } from './prompts';
@@ -347,6 +348,16 @@ export async function analyzeImageForDescription(params: {
 
 // ─── Image generation (DALL-E 3 / gpt-image-1) ───────────────────────────────
 
+// Build the right error for an OpenAI image API failure. 4xx client errors
+// (invalid model, bad params, auth) are permanent — retrying wastes ~15s of
+// workflow backoff — so they're thrown as NonRetryableError to fail fast.
+// 429 rate limits and 5xx server errors stay retryable.
+function imageApiError(model: string, kind: 'generation' | 'edit', status: number, body: string): Error {
+  const message = `${model} image ${kind} failed (HTTP ${status}): ${body}`;
+  const isPermanent = status >= 400 && status < 500 && status !== 429;
+  return isPermanent ? new NonRetryableError(message) : new Error(message);
+}
+
 export async function generateDalleImage(params: {
   apiKey: string;
   prompt: string;
@@ -391,15 +402,15 @@ export async function generateDalleImage(params: {
 
     if (!response.ok) {
       const err = await response.text();
-      throw new Error(`gpt-image-1 edits error: ${err}`);
+      throw imageApiError(model, 'edit', response.status, err);
     }
 
     const data = (await response.json()) as { data: { url?: string; b64_json?: string }[] };
     const item = data.data[0];
-    if (!item) throw new Error('gpt-image-1 edits returned no image data');
+    if (!item) throw new Error(`${model} edit returned no image data`);
     if (item.url) return item.url;
     if (item.b64_json) return `data:image/png;base64,${item.b64_json}`;
-    throw new Error('gpt-image-1 edits returned neither url nor b64_json');
+    throw new Error(`${model} edit returned neither url nor b64_json`);
   }
 
   // ── Inspire mode: enrich prompt with vision description ──────────────────
@@ -428,12 +439,12 @@ export async function generateDalleImage(params: {
 
   if (!response.ok) {
     const err = await response.text();
-    throw new Error(`gpt-image-1 error: ${err}`);
+    throw imageApiError(model, 'generation', response.status, err);
   }
 
   const data = (await response.json()) as { data: { url?: string; b64_json?: string }[] };
   const item = data.data[0];
-  if (!item) throw new Error('gpt-image-1 returned no image data');
+  if (!item) throw new Error(`${model} returned no image data`);
 
   // gpt-image-1 returns b64_json by default; url is available too but may be omitted
   if (item.url) return item.url;
@@ -441,5 +452,5 @@ export async function generateDalleImage(params: {
   // Convert base64 to a data URL the caller can use directly
   if (item.b64_json) return `data:image/png;base64,${item.b64_json}`;
 
-  throw new Error('gpt-image-1 returned neither url nor b64_json');
+  throw new Error(`${model} returned neither url nor b64_json`);
 }

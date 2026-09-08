@@ -120,20 +120,21 @@ const IMAGE_MODELS = [
   {
     id: 'dall-e-3',
     name: 'DALL-E 3',
-    badge: 'Creative',
-    badgeColor: 'bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20',
+    badge: 'Currently unavailable',
+    badgeColor: 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20',
     price: '~$0.04 standard · $0.08 HD per image',
     priceLevel: 1,
     speed: 'Fast',
     tags: ['Illustrations', 'Concepts', 'Inspire mode'],
     description:
-      'OpenAI\'s previous-generation image model. Excellent at vivid, stylised, and illustrated content. The "Inspire" mode in this app takes your reference image\'s description and lets DALL-E 3 re-interpret it creatively.',
+      'Temporarily unavailable — the OpenAI API is currently rejecting DALL-E 3 requests for this account, so generations will fail. Use GPT Image 1 in the meantime. (When available: OpenAI\'s previous-generation image model, excellent at vivid, stylised, and illustrated content. The "Inspire" mode takes your reference image\'s description and lets DALL-E 3 re-interpret it creatively.)',
     bestFor: [
       'Illustrated or artistic content (not photo-realistic)',
       'Concept thumbnails and mood boards',
       'Inspire mode — letting the AI creatively riff on a reference',
     ],
     watchOut: [
+      'Currently unavailable — requests are being rejected by OpenAI; pick GPT Image 1 instead',
       'Cannot use a reference image directly for edits (inspire mode only)',
       'Less precise on product accuracy than GPT Image 1',
     ],
