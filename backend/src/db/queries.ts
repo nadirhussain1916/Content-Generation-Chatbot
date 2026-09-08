@@ -297,3 +297,89 @@ export async function updateMessage(db: D1Database, id: string, data: { post_pac
     'UPDATE messages SET post_package = ? WHERE id = ?'
   ).bind(data.post_package, id).run();
 }
+
+// ─── Usage / billing aggregation ──────────────────────────────────────────────
+
+export interface ModelUsageRow {
+  model: string | null;
+  count: number;
+  cost: number | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+}
+
+export interface AssetUsageRow {
+  type: 'image' | 'video';
+  model: string | null;
+  count: number;
+  cost: number | null;
+}
+
+/** Per-model text (message) usage for one workspace. */
+export async function getWorkspaceMessageUsage(db: D1Database, workspaceId: string) {
+  return db.prepare(
+    `SELECT m.model as model,
+            COUNT(*) as count,
+            SUM(m.cost_usd) as cost,
+            SUM(m.input_tokens) as input_tokens,
+            SUM(m.output_tokens) as output_tokens
+       FROM messages m
+       JOIN threads t ON t.id = m.thread_id
+      WHERE t.workspace_id = ? AND m.cost_usd IS NOT NULL
+      GROUP BY m.model
+      ORDER BY cost DESC`
+  ).bind(workspaceId).all<ModelUsageRow>();
+}
+
+/** Per-type/model image+video (asset) usage for one workspace. */
+export async function getWorkspaceAssetUsage(db: D1Database, workspaceId: string) {
+  return db.prepare(
+    `SELECT type, model, COUNT(*) as count, SUM(cost_usd) as cost
+       FROM assets
+      WHERE workspace_id = ? AND cost_usd IS NOT NULL
+      GROUP BY type, model
+      ORDER BY cost DESC`
+  ).bind(workspaceId).all<AssetUsageRow>();
+}
+
+export interface UserAssetUsageRow {
+  userId: string;
+  type: 'image' | 'video';
+  count: number;
+  cost: number | null;
+}
+
+export interface UserMessageUsageRow {
+  userId: string;
+  count: number;
+  cost: number | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+}
+
+/** Image+video asset usage grouped by workspace owner (all users). */
+export async function getAllUsersAssetUsage(db: D1Database) {
+  return db.prepare(
+    `SELECT w.owner_id as userId, a.type as type, COUNT(*) as count, SUM(a.cost_usd) as cost
+       FROM assets a
+       JOIN workspaces w ON w.id = a.workspace_id
+      WHERE a.cost_usd IS NOT NULL
+      GROUP BY w.owner_id, a.type`
+  ).all<UserAssetUsageRow>();
+}
+
+/** Text message usage grouped by workspace owner (all users). */
+export async function getAllUsersMessageUsage(db: D1Database) {
+  return db.prepare(
+    `SELECT w.owner_id as userId,
+            COUNT(*) as count,
+            SUM(m.cost_usd) as cost,
+            SUM(m.input_tokens) as input_tokens,
+            SUM(m.output_tokens) as output_tokens
+       FROM messages m
+       JOIN threads t ON t.id = m.thread_id
+       JOIN workspaces w ON w.id = t.workspace_id
+      WHERE m.cost_usd IS NOT NULL
+      GROUP BY w.owner_id`
+  ).all<UserMessageUsageRow>();
+}

@@ -66,4 +66,61 @@ export const adminApi = {
       { method: 'POST' },
       token
     ),
+
+  getUsage: (token: string) =>
+    request<{ success: boolean; data: AdminUsageResponse }>('/api/admin/usage', { method: 'GET' }, token),
 };
+
+// ─── Billing / usage ──────────────────────────────────────────────────────────
+
+export interface ModelUsage {
+  model: string | null;
+  count: number;
+  cost: number;
+  inputTokens?: number;
+  outputTokens?: number;
+}
+
+export interface CategoryUsage {
+  cost: number;
+  count: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  byModel: ModelUsage[];
+}
+
+export interface UsageSummary {
+  totalCost: number;
+  text: CategoryUsage;
+  image: CategoryUsage;
+  video: CategoryUsage;
+}
+
+export interface AdminUsageUser {
+  userId: string;
+  email: string | null;
+  name: string | null;
+  textCost: number;
+  imageCost: number;
+  videoCost: number;
+  totalCost: number;
+  messageCount: number;
+  imageCount: number;
+  videoCount: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+export interface AdminUsageResponse {
+  totals: {
+    totalCost: number;
+    textCost: number;
+    imageCost: number;
+    videoCost: number;
+    payingUsers: number;
+    messageCount: number;
+    imageCount: number;
+    videoCount: number;
+  };
+  users: AdminUsageUser[];
+}

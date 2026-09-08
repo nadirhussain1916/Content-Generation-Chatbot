@@ -13,6 +13,7 @@ import messagesRouter from './routes/messages';
 import generateRouter from './routes/generate';
 import socialRouter, { socialCallbackRouter } from './routes/social';
 import publishRouter from './routes/publish';
+import billingRouter from './routes/billing';
 import adminRouter from './routes/admin/index';
 import uploadsRouter from './routes/uploads';
 import { getExpiringTokens, getProcessingInstagramPublishes, getSocialAccount, upsertSocialAccount, updatePublishRecord } from './db/queries';
@@ -55,6 +56,7 @@ app.route('/api/workspaces/:slug/generate', generateRouter);
 app.route('/api/workspaces/:slug/social', socialRouter);
 app.route('/api/social', socialCallbackRouter);
 app.route('/api/workspaces/:slug/publish', publishRouter);
+app.route('/api/workspaces/:slug/billing', billingRouter);
 app.route('/api/workspaces/:slug', uploadsRouter);
 app.route('/api/admin', adminRouter);
 

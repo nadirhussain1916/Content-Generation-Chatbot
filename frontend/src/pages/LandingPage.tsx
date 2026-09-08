@@ -1,10 +1,10 @@
 import { SignIn, SignUp } from '@clerk/clerk-react';
 import { useNavigate, Link } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@clerk/clerk-react';
 import { api } from '../lib/api';
 import type { TfResponse, Workspace } from '../types';
-import { Zap, MessageSquare, Target, ClipboardCheck, Type, Image as ImageIcon, Video, Heart, Smartphone } from 'lucide-react';
+import { Zap, MessageSquare, Target, ClipboardCheck, Type, Image as ImageIcon, Video, Heart, Smartphone, WifiOff } from 'lucide-react';
 import { useTheme } from '../lib/theme';
 import { GRAIN_TEXTURE } from '../lib/textures';
 import TypewriterText from '../components/TypewriterText';
@@ -120,31 +120,74 @@ export default function LandingPage({ noRedirect = false }: LandingPageProps) {
   const [mode, setMode] = useState<'sign-in' | 'sign-up'>('sign-in');
   // True while we are resolving where to send a signed-in user.
   const [redirecting, setRedirecting] = useState(false);
+  // Set when we can't reach / get a valid response from the API. We must NOT
+  // fall through to onboarding in this case, otherwise a returning user with
+  // existing workspaces would be shown the "set up your first workspace" flow
+  // just because the backend was momentarily unreachable.
+  const [connectionError, setConnectionError] = useState(false);
 
   const clerkAppearance = theme === 'dark' ? darkAppearance : lightAppearance;
 
-  useEffect(() => {
-    if (noRedirect || !isLoaded || !isSignedIn) return;
-
+  const resolveDestination = useCallback(async () => {
+    setConnectionError(false);
     setRedirecting(true);
-    (async () => {
-      try {
-        const token = await getToken();
-        const res = await api.get<TfResponse<Workspace[]>>(
-          '/api/workspaces',
-          token ?? undefined
-        );
-        const workspaces = res.data ?? [];
-        if (workspaces.length > 0) {
-          navigate(`/workspaces/${workspaces[0].slug}`, { replace: true });
-        } else {
-          navigate('/onboarding', { replace: true });
-        }
-      } catch {
+    try {
+      const token = await getToken();
+      const res = await api.get<TfResponse<Workspace[]>>(
+        '/api/workspaces',
+        token ?? undefined
+      );
+      // A reachable backend always returns a well-formed TfResponse. If the
+      // request "succeeded" at the fetch level but the payload is malformed or
+      // reports failure, treat it as a connection error rather than assuming
+      // the user has no workspaces.
+      if (!res || res.success !== true || !Array.isArray(res.data)) {
+        setConnectionError(true);
+        setRedirecting(false);
+        return;
+      }
+      const workspaces = res.data;
+      if (workspaces.length > 0) {
+        navigate(`/workspaces/${workspaces[0].slug}`, { replace: true });
+      } else {
         navigate('/onboarding', { replace: true });
       }
-    })();
-  }, [isLoaded, isSignedIn, noRedirect]);
+    } catch {
+      // Network error / backend down / non-JSON response — surface it instead
+      // of silently sending the user into onboarding.
+      setConnectionError(true);
+      setRedirecting(false);
+    }
+  }, [getToken, navigate]);
+
+  useEffect(() => {
+    if (noRedirect || !isLoaded || !isSignedIn) return;
+    void resolveDestination();
+  }, [isLoaded, isSignedIn, noRedirect, resolveDestination]);
+
+  // Connection error — show a clear "can't reach the server" screen with a
+  // retry, rather than the onboarding flow.
+  if (connectionError) {
+    return (
+      <div className='h-screen bg-surface-white flex items-center justify-center p-6'>
+        <div className='w-full max-w-sm text-center'>
+          <div className='mx-auto mb-5 w-12 h-12 rounded-2xl bg-red-500/10 flex items-center justify-center'>
+            <WifiOff size={22} className='text-red-500' />
+          </div>
+          <h1 className='text-heading text-text-primary mb-1.5'>Can't reach the server</h1>
+          <p className='text-message text-text-secondary mb-6'>
+            We couldn't load your workspaces. Check your connection and try again.
+          </p>
+          <button
+            onClick={() => void resolveDestination()}
+            className='w-full bg-brand hover:bg-brand-hover transition-colors py-3 rounded-lg font-semibold text-message text-on-brand'
+          >
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // Blank loading screen — avoids flashing the sign-in form for returning users
   if (redirecting) {

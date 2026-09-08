@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import AppShell from '../components/AppShell';
 import Sidebar from '../components/Sidebar';
+import PageTabs from '../components/PageTabs';
 import { cn } from '../lib/utils';
 import {
   MessageSquare, ImageIcon, VideoIcon, DollarSign,
@@ -344,16 +346,25 @@ function Tag({ label }: { label: string }) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+type ModelsTab = 'text' | 'image' | 'video';
+
+const MODELS_TABS = [
+  { id: 'text', label: 'Text models', icon: MessageSquare },
+  { id: 'image', label: 'Image models', icon: ImageIcon },
+  { id: 'video', label: 'Video models', icon: VideoIcon },
+];
+
 export default function ModelsPage() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
+  const [tab, setTab] = useState<ModelsTab>('text');
 
   return (
     <AppShell>
       <Sidebar onNewThread={() => navigate(`/workspaces/${slug}`)} />
 
       <main className='flex-1 overflow-y-auto bg-surface-chat/40 backdrop-blur-xl'>
-        <div className='max-w-3xl mx-auto px-6 py-8'>
+        <div className='max-w-5xl mx-auto px-6 py-8'>
 
           {/* Header */}
           <div className='flex items-center gap-3 mb-2'>
@@ -386,26 +397,35 @@ export default function ModelsPage() {
             ))}
           </div>
 
+          {/* ── Tabs ────────────────────────────────────────────────────────── */}
+          <PageTabs tabs={MODELS_TABS} active={tab} onChange={(id) => setTab(id as ModelsTab)} className='mb-8' />
+
           {/* ── Text models ─────────────────────────────────────────────────── */}
-          <Section icon={MessageSquare} title='Text models' subtitle='Used for script writing, captions, brand questions, and planning.' color='text-blue-500'>
-            {TEXT_MODELS.map((m) => (
-              <ModelCard key={m.id} {...m} type='text' />
-            ))}
-          </Section>
+          {tab === 'text' && (
+            <Section icon={MessageSquare} title='Text models' subtitle='Used for script writing, captions, brand questions, and planning.' color='text-blue-500'>
+              {TEXT_MODELS.map((m) => (
+                <ModelCard key={m.id} {...m} type='text' />
+              ))}
+            </Section>
+          )}
 
           {/* ── Image models ────────────────────────────────────────────────── */}
-          <Section icon={ImageIcon} title='Image models' subtitle='Used to generate still images from your video scripts.' color='text-orange-500'>
-            {IMAGE_MODELS.map((m) => (
-              <ModelCard key={m.id} {...m} type='image' />
-            ))}
-          </Section>
+          {tab === 'image' && (
+            <Section icon={ImageIcon} title='Image models' subtitle='Used to generate still images from your video scripts.' color='text-orange-500'>
+              {IMAGE_MODELS.map((m) => (
+                <ModelCard key={m.id} {...m} type='image' />
+              ))}
+            </Section>
+          )}
 
           {/* ── Video models ────────────────────────────────────────────────── */}
-          <Section icon={VideoIcon} title='Video models' subtitle='Used to generate video clips from your prompts. Select the model in the Generate Video button.' color='text-purple-500'>
-            {VIDEO_MODELS.map((m) => (
-              <ModelCard key={m.id} {...m} type='video' />
-            ))}
-          </Section>
+          {tab === 'video' && (
+            <Section icon={VideoIcon} title='Video models' subtitle='Used to generate video clips from your prompts. Select the model in the Generate Video button.' color='text-purple-500'>
+              {VIDEO_MODELS.map((m) => (
+                <ModelCard key={m.id} {...m} type='video' />
+              ))}
+            </Section>
+          )}
 
           {/* Cost tip */}
           <div className='mt-8 flex items-start gap-3 bg-amber-50 dark:bg-amber-900/15 border border-amber-300/40 dark:border-amber-700/30 rounded-xl px-4 py-3.5'>

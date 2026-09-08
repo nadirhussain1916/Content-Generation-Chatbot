@@ -5,8 +5,9 @@ import { api } from '../lib/api';
 import type { TfResponse, Workspace, SocialAccountSafe, WorkspaceUpload } from '../types';
 import AppShell from '../components/AppShell';
 import Sidebar from '../components/Sidebar';
+import PageTabs from '../components/PageTabs';
 import { useNavigate } from 'react-router-dom';
-import { CheckCircle, XCircle, Link2, Unlink, Loader2, Settings, Upload, X } from 'lucide-react';
+import { CheckCircle, XCircle, Link2, Unlink, Loader2, Settings, Upload, X, Sparkles, Film, Palette, User } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 const BACKEND = import.meta.env.VITE_API_BASE_URL ?? '';
@@ -21,11 +22,26 @@ import {
   derivedSizesFromSettings,
 } from '../lib/platform';
 
+type SettingsTab = 'ai' | 'media' | 'brand' | 'character' | 'connections';
+
+const SETTINGS_TABS = [
+  { id: 'ai', label: 'AI Preferences', icon: Sparkles },
+  { id: 'media', label: 'Media Defaults', icon: Film },
+  { id: 'brand', label: 'Brand & Agent', icon: Palette },
+  { id: 'character', label: 'Character', icon: User },
+  { id: 'connections', label: 'Connections', icon: Link2 },
+];
+
 export default function SettingsPage() {
   const { slug } = useParams<{ slug: string }>();
   const [searchParams] = useSearchParams();
   const { getAuthToken: getToken } = useAuthToken();
   const navigate = useNavigate();
+
+  // Land on Connections when returning from an OAuth connect/disconnect redirect.
+  const [tab, setTab] = useState<SettingsTab>(() =>
+    searchParams.get('connected') || searchParams.get('error') ? 'connections' : 'ai'
+  );
 
   const [, setWorkspace] = useState<Workspace | null>(null);
   const [accounts, setAccounts] = useState<SocialAccountSafe[]>([]);
@@ -191,8 +207,8 @@ export default function SettingsPage() {
       <Sidebar onNewThread={handleNewThread} />
 
       <main className='flex-1 overflow-y-auto bg-surface-chat/40 backdrop-blur-xl'>
-        <div className='max-w-2xl mx-auto px-6 py-8'>
-          <div className='flex items-center gap-2 mb-8'>
+        <div className='max-w-5xl mx-auto px-6 py-8'>
+          <div className='flex items-center gap-2 mb-6'>
             <Settings size={20} className='text-text-secondary' />
             <h1 className='text-heading text-text-primary'>Workspace settings</h1>
           </div>
@@ -202,8 +218,11 @@ export default function SettingsPage() {
               <Loader2 size={20} className='animate-spin text-text-muted' />
             </div>
           ) : (
-            <div className='space-y-8'>
+            <>
+            <PageTabs tabs={SETTINGS_TABS} active={tab} onChange={(id) => setTab(id as SettingsTab)} />
+            <div className='space-y-8 mt-6'>
               {/* AI Settings */}
+              {tab === 'ai' && (
               <section className={sectionClass}>
                 <h2 className={sectionHeadingClass}>AI Preferences</h2>
 
@@ -255,8 +274,10 @@ export default function SettingsPage() {
                   {saving ? 'Saving...' : 'Save settings'}
                 </button>
               </section>
+              )}
 
               {/* Media Defaults */}
+              {tab === 'media' && (
               <section className={sectionClass}>
                 <div>
                   <h2 className={sectionHeadingClass}>Media Defaults</h2>
@@ -473,8 +494,11 @@ export default function SettingsPage() {
                   {saving ? 'Saving...' : 'Save'}
                 </button>
               </section>
+              )}
 
-              {/* Brand Context */}
+              {/* Brand Context + Agent Instructions */}
+              {tab === 'brand' && (
+              <>
               <section className={sectionClass}>
                 <div>
                   <h2 className={sectionHeadingClass}>Brand Context</h2>
@@ -560,8 +584,11 @@ export default function SettingsPage() {
                   {saving ? 'Saving...' : 'Save'}
                 </button>
               </section>
+              </>
+              )}
 
               {/* Locked Character */}
+              {tab === 'character' && (
               <section className={sectionClass}>
                 <div>
                   <h2 className={sectionHeadingClass}>Locked Character</h2>
@@ -638,8 +665,10 @@ export default function SettingsPage() {
                   {saving ? 'Saving...' : 'Save'}
                 </button>
               </section>
+              )}
 
               {/* Social Connections */}
+              {tab === 'connections' && (
               <section className={sectionClass}>
                 <h2 className={sectionHeadingClass}>Social Accounts</h2>
 
@@ -703,7 +732,9 @@ export default function SettingsPage() {
                   )}
                 </div>
               </section>
+              )}
             </div>
+            </>
           )}
         </div>
       </main>

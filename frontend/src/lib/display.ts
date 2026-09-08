@@ -29,3 +29,22 @@ export function formatCost(cost: number | null): string | null {
   if (cost < 1)     return `$${cost.toFixed(3)}`;
   return `$${cost.toFixed(2)}`;
 }
+
+/**
+ * Always returns a USD string (unlike formatCost, which returns null for $0).
+ * Used for totals and rate cards where a concrete amount must always show.
+ */
+export function formatUsd(cost: number | null | undefined): string {
+  const n = cost ?? 0;
+  if (n > 0 && n < 0.01) return `$${n.toFixed(4)}`;
+  if (n > 0 && n < 1)    return `$${n.toFixed(3)}`;
+  return `$${n.toFixed(2)}`;
+}
+
+/** Compact token counts: 1234 → 1.2K, 3_400_000 → 3.4M. */
+export function formatTokens(tokens: number | null | undefined): string {
+  const n = tokens ?? 0;
+  if (n < 1000) return `${n}`;
+  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}K`;
+  return `${(n / 1_000_000).toFixed(2)}M`;
+}

@@ -3,10 +3,14 @@ import type { CloudflareBindings } from '../env';
 import type { ContextVariables } from '../types';
 import { Logger } from '../utils/Logger';
 
-const SUPER_ADMIN_EMAIL = 'zaibchahal@gmail.com';
+const SUPER_ADMIN_EMAILS = [
+  'zaibchahal@gmail.com',
+  'nadirhussain03000@gmail.com',
+  'troy.paige@globalsolutionsmanagement.net',
+].map((e) => e.toLowerCase());
 
 /**
- * Guards a route to the single hardcoded super-admin email.
+ * Guards a route to the hardcoded super-admin allowlist.
  * Must run after authMiddleware (userId must already be set on context).
  * Reads email from the users table (populated by the bootstrap endpoint).
  * Falls back to the Clerk Management API on first login before email is stored.
@@ -49,7 +53,7 @@ export const superAdminMiddleware: MiddlewareHandler<{
     }
   }
 
-  if (email !== SUPER_ADMIN_EMAIL) {
+  if (!email || !SUPER_ADMIN_EMAILS.includes(email.toLowerCase())) {
     return c.json({ success: false, message: 'Forbidden: super admin only' }, 403);
   }
 

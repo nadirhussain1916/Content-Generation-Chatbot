@@ -1,7 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { SignedIn, SignedOut, RedirectToSignIn, useAuth, useUser } from '@clerk/clerk-react';
-import { useImpersonation } from './context/ImpersonationContext';
-import { ImpersonationBanner } from './components/ImpersonationBanner';
 import LandingPage from './pages/LandingPage';
 import OnboardingPage from './pages/OnboardingPage';
 import WorkspacePage from './pages/WorkspacePage';
@@ -9,12 +7,18 @@ import ThreadPage from './pages/ThreadPage';
 import SettingsPage from './pages/SettingsPage';
 import GenerationsPage from './pages/GenerationsPage';
 import ModelsPage from './pages/ModelsPage';
+import BillingPage from './pages/BillingPage';
 import AdminPage from './pages/AdminPage';
+import AdminUsagePage from './pages/AdminUsagePage';
 import AuthGuard from './components/AuthGuard';
 import TermsPage from './pages/TermsPage';
 import PrivacyPage from './pages/PrivacyPage';
 
-const SUPER_ADMIN_EMAIL = 'zaibchahal@gmail.com';
+const SUPER_ADMIN_EMAILS = [
+  'zaibchahal@gmail.com',
+  'nadirhussain03000@gmail.com',
+  'troy.paige@globalsolutionsmanagement.net',
+].map((e) => e.toLowerCase());
 
 function SuperAdminRoute({ children }: { children: React.ReactNode }) {
   const { isLoaded, isSignedIn } = useAuth();
@@ -23,24 +27,15 @@ function SuperAdminRoute({ children }: { children: React.ReactNode }) {
   if (!isLoaded) return null;
   if (!isSignedIn) return <RedirectToSignIn />;
 
-  const email = user?.primaryEmailAddress?.emailAddress;
-  if (email !== SUPER_ADMIN_EMAIL) return <Navigate to='/' replace />;
+  const email = user?.primaryEmailAddress?.emailAddress?.toLowerCase();
+  if (!email || !SUPER_ADMIN_EMAILS.includes(email)) return <Navigate to='/' replace />;
 
   return <>{children}</>;
-}
-
-function ImpersonationSpacer() {
-  const { isImpersonating } = useImpersonation();
-  if (!isImpersonating) return null;
-  // Reserves space equal to the banner height so sticky headers stay below it.
-  return <div className='h-10 w-full shrink-0' aria-hidden />;
 }
 
 export default function App() {
   return (
     <BrowserRouter>
-      <ImpersonationBanner />
-      <ImpersonationSpacer />
       <Routes>
         {/* Public */}
         <Route path='/' element={<LandingPage />} />
@@ -107,6 +102,16 @@ export default function App() {
             </SignedIn>
           }
         />
+        <Route
+          path='/workspaces/:slug/billing'
+          element={
+            <SignedIn>
+              <AuthGuard>
+                <BillingPage />
+              </AuthGuard>
+            </SignedIn>
+          }
+        />
 
         {/* Redirect signed-out users to sign-in */}
         <Route
@@ -124,6 +129,14 @@ export default function App() {
           element={
             <SuperAdminRoute>
               <AdminPage />
+            </SuperAdminRoute>
+          }
+        />
+        <Route
+          path='/admin/usage'
+          element={
+            <SuperAdminRoute>
+              <AdminUsagePage />
             </SuperAdminRoute>
           }
         />

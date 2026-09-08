@@ -5,7 +5,7 @@ import { useImpersonation } from '../context/ImpersonationContext';
 import { adminApi, type AdminStats, type AdminUser } from '../lib/api';
 import {
   Users, Layers, GitBranch, Search, X,
-  ShieldCheck, UserCheck, ChevronRight, Loader2, ArrowLeft,
+  ShieldCheck, UserCheck, ChevronRight, Loader2, ArrowLeft, CreditCard,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -130,6 +130,13 @@ export default function AdminPage() {
           <ShieldCheck className='w-5 h-5 text-brand' />
           Super Admin
         </h1>
+        <button
+          onClick={() => navigate('/admin/usage')}
+          className='ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-meta font-medium border border-border-soft bg-surface-card text-text-secondary hover:border-brand/50 hover:text-brand transition-all'
+        >
+          <CreditCard className='w-4 h-4' />
+          <span className='hidden sm:inline'>Usage &amp; Billing</span>
+        </button>
       </header>
 
       <div className='flex-1 overflow-y-auto'>

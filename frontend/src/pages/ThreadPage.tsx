@@ -334,7 +334,7 @@ export default function ThreadPage() {
               </p>
             </div>
           ) : (
-            <div className='max-w-3xl mx-auto space-y-4'>
+            <div className='max-w-4xl mx-auto space-y-4'>
               {messages.map((msg) => (
                 <ChatMessage
                   key={msg.id}
@@ -377,7 +377,7 @@ export default function ThreadPage() {
 
         {/* Input */}
         <div className='border-t border-border-soft/60 bg-surface/50 backdrop-blur-xl p-4'>
-          <div className='max-w-3xl mx-auto'>
+          <div className='max-w-4xl mx-auto'>
             <ChatInput
               slug={slug!}
               threadId={threadId}

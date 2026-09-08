@@ -19,13 +19,17 @@ export function calcTextCost(model: string, inputTokens: number, outputTokens: n
 //   1024×1536 / 1536×1024:   $0.063
 // dall-e-3: standard quality $0.04 (all sizes)
 
+const IMAGE_COSTS: Record<string, { flat?: number; square?: number; nonSquare?: number }> = {
+  'dall-e-3':    { flat: 0.04 },
+  'gpt-image-1': { square: 0.042, nonSquare: 0.063 },
+};
+
 export function calcImageCost(model: string, size: string): number {
-  if (model === 'dall-e-3') return 0.04;
-  if (model === 'gpt-image-1') {
-    const isSquare = size === '1024x1024';
-    return isSquare ? 0.042 : 0.063;
-  }
-  return 0;
+  const pricing = IMAGE_COSTS[model];
+  if (!pricing) return 0;
+  if (pricing.flat != null) return pricing.flat;
+  const isSquare = size === '1024x1024';
+  return (isSquare ? pricing.square : pricing.nonSquare) ?? 0;
 }
 
 // ─── Video model pricing (USD per second) ────────────────────────────────────

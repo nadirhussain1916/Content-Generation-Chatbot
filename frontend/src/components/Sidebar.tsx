@@ -4,8 +4,9 @@ import { UserButton } from '@clerk/clerk-react';
 import { useAuthToken } from '../hooks/useAuthToken';
 import { api } from '../lib/api';
 import type { TfResponse, Workspace, Thread } from '../types';
-import { Zap, Plus, Settings, MessageSquare, ChevronDown, Loader2, Image, Cpu } from 'lucide-react';
+import { Zap, Plus, Settings, MessageSquare, ChevronDown, Loader2, Image, Cpu, CreditCard, ShieldAlert, X } from 'lucide-react';
 import { cn, formatRelativeTime } from '../lib/utils';
+import { useImpersonation } from '../context/ImpersonationContext';
 import ThemeToggle from './ThemeToggle';
 
 interface SidebarProps {
@@ -17,6 +18,7 @@ export default function Sidebar({ onNewThread, refreshKey = 0 }: SidebarProps) {
   const { getAuthToken } = useAuthToken();
   const { slug, threadId } = useParams();
   const navigate = useNavigate();
+  const { isImpersonating, impersonatedUser, stopImpersonation } = useImpersonation();
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [threads, setThreads] = useState<Thread[]>([]);
@@ -142,6 +144,28 @@ export default function Sidebar({ onNewThread, refreshKey = 0 }: SidebarProps) {
         )}
       </div>
 
+      {/* Impersonation indicator */}
+      {isImpersonating && impersonatedUser && (
+        <div className='mx-3 mb-2 rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2'>
+          <div className='flex items-center gap-1.5 mb-1'>
+            <ShieldAlert size={12} className='text-red-500 flex-shrink-0' />
+            <span className='text-meta font-semibold uppercase tracking-wide text-red-500'>Impersonating</span>
+          </div>
+          <p className='text-message font-medium text-text-primary truncate leading-tight'>
+            {impersonatedUser.name ?? impersonatedUser.email ?? impersonatedUser.id}
+          </p>
+          {impersonatedUser.name && impersonatedUser.email && (
+            <p className='text-meta text-text-muted truncate'>{impersonatedUser.email}</p>
+          )}
+          <button
+            onClick={() => { stopImpersonation(); navigate('/admin'); }}
+            className='mt-2 w-full flex items-center justify-center gap-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 py-1.5 text-meta font-semibold text-red-500 transition-colors'
+          >
+            <X size={12} /> Exit impersonation
+          </button>
+        </div>
+      )}
+
       {/* Footer */}
       <div className='p-3 border-t border-border-soft flex items-center justify-between'>
         <UserButton
@@ -169,6 +193,13 @@ export default function Sidebar({ onNewThread, refreshKey = 0 }: SidebarProps) {
             title='Models guide'
           >
             <Cpu size={16} />
+          </Link>
+          <Link
+            to={`/workspaces/${slug}/billing`}
+            className='p-2 text-text-muted hover:text-text-primary hover:bg-surface-card rounded-full transition-colors'
+            title='Billing & usage'
+          >
+            <CreditCard size={16} />
           </Link>
           <Link
             to={`/workspaces/${slug}/settings`}

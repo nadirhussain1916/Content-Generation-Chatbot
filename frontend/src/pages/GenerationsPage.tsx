@@ -7,7 +7,7 @@ import { usePublishStatus } from '../hooks/usePublishStatus';
 import AppShell from '../components/AppShell';
 import Sidebar from '../components/Sidebar';
 import {
-  ImageIcon, VideoIcon, Loader2, AlertCircle, X,
+  ImageIcon, VideoIcon, Loader2, AlertCircle, X, Play,
   Copy, Check, Hash, Share2, CheckCircle, ExternalLink, RefreshCw, Download, Cpu, DollarSign,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -149,7 +149,7 @@ export default function GenerationsPage() {
               </p>
             </div>
           ) : (
-            <div className='grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4'>
+            <div className='grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 auto-rows-fr gap-4'>
               {filtered.map((asset) => (
                 <AssetCard
                   key={asset.id}
@@ -240,110 +240,138 @@ function AssetCard({
   const isImage = asset.type === 'image';
   const isGenerating = asset.status === 'generating' || asset.status === 'pending';
   const isFailed = asset.status === 'failed';
+  const isReady = asset.status === 'ready';
 
   useEffect(() => { onVisible(); }, []);
 
   return (
     <div className={cn(
-      'group relative bg-surface-card border rounded-xl overflow-hidden flex flex-col transition-colors',
-      isGenerating ? 'border-amber-300/60 dark:border-amber-700/40 hover:border-amber-400 dark:hover:border-amber-600/60'
-      : isFailed ? 'border-red-300/60 dark:border-red-800/40 hover:border-red-400 dark:hover:border-red-700/60'
-      : 'border-border-soft hover:border-ink/30'
+      'group relative flex h-full flex-col overflow-hidden rounded-2xl bg-surface-card border transition-all duration-200',
+      'shadow-[0_1px_3px_rgba(0,0,0,0.04)] hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(0,0,0,0.10)]',
+      isGenerating ? 'border-amber-300/50 dark:border-amber-700/30'
+      : isFailed ? 'border-red-300/50 dark:border-red-800/30'
+      : 'border-border-soft/70 hover:border-ink/25'
     )}>
-      {/* Thumbnail */}
-      <div className='aspect-square bg-surface-white flex items-center justify-center relative'>
+      {/* Media — fixed square. Content is absolutely positioned so a portrait
+          video can never override the aspect ratio and stretch the grid row. */}
+      <div className='relative aspect-square w-full overflow-hidden bg-gradient-to-br from-surface-white to-surface-card'>
         {isGenerating ? (
-          <div className='flex flex-col items-center gap-2'>
+          <div className='absolute inset-0 flex flex-col items-center justify-center gap-2'>
             <Loader2 size={22} className='animate-spin text-amber-500' />
-            <span className='text-meta text-amber-600 dark:text-amber-400/80 font-medium'>Generating…</span>
+            <span className='text-meta font-medium text-amber-600 dark:text-amber-400/80'>Generating…</span>
+            <div className='absolute inset-0 bg-gradient-to-r from-transparent via-amber-100/25 dark:via-amber-900/10 to-transparent animate-pulse' />
           </div>
         ) : isFailed ? (
-          <div className='flex flex-col items-center gap-2 px-3 text-center'>
-            <AlertCircle size={20} className='text-red-500 dark:text-red-400' />
-            <span className='text-meta text-red-600 dark:text-red-400/80 leading-tight'>
-              {asset.error_message
-                ? asset.error_message.slice(0, 60) + (asset.error_message.length > 60 ? '…' : '')
-                : 'Generation failed'}
+          <div className='absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center'>
+            <div className='flex h-9 w-9 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30'>
+              <AlertCircle size={18} className='text-red-500 dark:text-red-400' />
+            </div>
+            <span className='text-meta leading-tight text-red-600/90 dark:text-red-400/80 line-clamp-2'>
+              {asset.error_message ? asset.error_message.slice(0, 90) : 'Generation failed'}
             </span>
           </div>
         ) : isLoadingBlob ? (
-          <Loader2 size={18} className='animate-spin text-text-muted' />
+          <div className='absolute inset-0 flex items-center justify-center'>
+            <Loader2 size={18} className='animate-spin text-text-muted' />
+          </div>
         ) : blobUrl ? (
           isImage ? (
-            <img src={blobUrl} alt={asset.prompt ?? ''} className='w-full h-full object-cover' />
+            <img
+              src={blobUrl}
+              alt={asset.prompt ?? ''}
+              className='absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]'
+            />
           ) : (
-            <video src={blobUrl} className='w-full h-full object-cover' muted playsInline />
+            <>
+              <video
+                src={blobUrl}
+                className='absolute inset-0 h-full w-full object-cover'
+                muted
+                playsInline
+                preload='metadata'
+              />
+              <div className='pointer-events-none absolute inset-0 flex items-center justify-center opacity-90 transition-opacity group-hover:opacity-100'>
+                <div className='flex h-11 w-11 items-center justify-center rounded-full bg-black/45 backdrop-blur-sm ring-1 ring-white/20'>
+                  <Play size={18} className='translate-x-0.5 text-white' fill='currentColor' />
+                </div>
+              </div>
+            </>
           )
         ) : (
-          <AlertCircle size={18} className='text-text-muted' />
+          <div className='absolute inset-0 flex items-center justify-center'>
+            <AlertCircle size={18} className='text-text-muted' />
+          </div>
         )}
 
-        {/* Animated shimmer overlay for generating */}
-        {isGenerating && (
-          <div className='absolute inset-0 bg-gradient-to-r from-transparent via-amber-100/20 dark:via-amber-900/10 to-transparent animate-pulse' />
+        {/* Scrim so badges stay legible over any media */}
+        {isReady && blobUrl && (
+          <div className='pointer-events-none absolute inset-x-0 top-0 h-14 bg-gradient-to-b from-black/35 to-transparent' />
         )}
-      </div>
 
-      {/* Type + status badge */}
-      <div className='absolute top-2 left-2 flex items-center gap-1'>
-        <span className={cn(
-          'flex items-center gap-1 text-meta font-medium px-1.5 py-0.5 rounded-full',
-          isImage ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300' : 'bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-300'
-        )}>
-          {isImage ? <ImageIcon size={9} /> : <VideoIcon size={9} />}
-          {asset.type}
-        </span>
-        {isGenerating && (
-          <span className='text-meta font-medium px-1.5 py-0.5 rounded-full bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-300'>
-            in progress
+        {/* Badges */}
+        <div className='absolute left-2 top-2 flex items-center gap-1'>
+          <span className={cn(
+            'flex items-center gap-1 rounded-full px-2 py-0.5 text-meta font-semibold text-white shadow-sm backdrop-blur-sm',
+            isImage ? 'bg-blue-500/85' : 'bg-purple-500/85'
+          )}>
+            {isImage ? <ImageIcon size={9} /> : <VideoIcon size={9} />}
+            {asset.type}
           </span>
-        )}
-        {isFailed && (
-          <span className='text-meta font-medium px-1.5 py-0.5 rounded-full bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-300'>
-            failed
-          </span>
-        )}
-      </div>
-
-      {/* Model + cost */}
-      {(asset.model || asset.cost_usd != null) && asset.status !== 'failed' && (
-        <div className='px-2 pt-1.5 flex items-center gap-1.5 flex-wrap'>
-          {asset.model && (
-            <span className='flex items-center gap-1 text-meta px-1.5 py-0.5 rounded-full bg-surface-white border border-border-soft text-text-muted'>
-              <Cpu size={8} />
-              {shortModelLabel(asset.model)}
+          {isGenerating && (
+            <span className='rounded-full bg-amber-500/85 px-2 py-0.5 text-meta font-semibold text-white shadow-sm backdrop-blur-sm'>
+              in progress
             </span>
           )}
-          {formatCost(asset.cost_usd) && (
-            <span className='flex items-center gap-0.5 text-meta px-1.5 py-0.5 rounded-full bg-surface-white border border-border-soft text-text-muted'>
-              {formatCost(asset.cost_usd)}
+          {isFailed && (
+            <span className='rounded-full bg-red-500/85 px-2 py-0.5 text-meta font-semibold text-white shadow-sm backdrop-blur-sm'>
+              failed
             </span>
           )}
         </div>
-      )}
 
-      {/* Action buttons */}
-      <div className='p-2 flex gap-1.5'>
-        {asset.status === 'ready' ? (
-          <>
-            <button
-              onClick={onDetails}
-              className='flex-1 py-1.5 text-meta font-medium bg-brand hover:bg-brand-hover text-on-brand rounded-lg transition-colors'
-            >
-              Details
-            </button>
-            <button
-              onClick={() => downloadAsset(asset, blobUrl, false)}
-              title='Download'
-              className='p-1.5 text-meta font-medium bg-surface-white border border-border-soft text-text-secondary hover:text-text-primary hover:border-ink/30 rounded-lg transition-colors flex items-center justify-center'
-            >
-              <Download size={11} />
-            </button>
-          </>
+        {/* Hover-reveal download for ready assets */}
+        {isReady && blobUrl && (
+          <button
+            onClick={() => downloadAsset(asset, blobUrl, false)}
+            title='Download'
+            className='absolute right-2 top-2 rounded-full bg-black/45 p-1.5 text-white opacity-0 shadow-sm backdrop-blur-sm transition-all hover:bg-black/70 group-hover:opacity-100'
+          >
+            <Download size={12} />
+          </button>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className='flex flex-1 flex-col justify-between gap-2 p-2.5'>
+        {isReady && (asset.model || formatCost(asset.cost_usd)) ? (
+          <div className='flex flex-wrap items-center gap-1.5'>
+            {asset.model && (
+              <span className='flex items-center gap-1 rounded-md border border-border-soft bg-surface-white px-1.5 py-0.5 text-meta text-text-muted'>
+                <Cpu size={8} />
+                {shortModelLabel(asset.model)}
+              </span>
+            )}
+            {formatCost(asset.cost_usd) && (
+              <span className='rounded-md border border-border-soft bg-surface-white px-1.5 py-0.5 text-meta text-text-muted'>
+                {formatCost(asset.cost_usd)}
+              </span>
+            )}
+          </div>
+        ) : (
+          <div className='min-h-0' />
+        )}
+
+        {isReady ? (
+          <button
+            onClick={onDetails}
+            className='w-full rounded-lg bg-brand py-1.5 text-meta font-semibold text-on-brand transition-colors hover:bg-brand-hover'
+          >
+            Details
+          </button>
         ) : (
           <button
             onClick={() => navigate(`/workspaces/${slug}/threads/${asset.thread_id}`)}
-            className='flex-1 py-1.5 text-meta font-medium bg-surface-white hover:bg-surface border border-border-soft text-text-secondary hover:text-text-primary rounded-lg transition-colors flex items-center justify-center gap-1'
+            className='flex w-full items-center justify-center gap-1 rounded-lg border border-border-soft bg-surface-white py-1.5 text-meta font-medium text-text-secondary transition-colors hover:bg-surface hover:text-text-primary'
           >
             <ExternalLink size={10} />
             View thread
