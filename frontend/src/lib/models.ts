@@ -31,7 +31,9 @@ export const VIDEO_MODELS = [
   { id: 'lightricks/ltx-2.3-fast',   label: 'LTX 2.3 Fast',      desc: 'Portrait · Audio · Up to 20s · ~$0.06/s · Default' },
   { id: 'lightricks/ltx-2.3-pro',    label: 'LTX 2.3 Pro',       desc: 'Portrait · Audio · High quality · ~$0.08/s' },
   { id: 'bytedance/seedance-2.0',     label: 'Seedance 2.0',      desc: 'Portrait · Audio · 4K · Up to 15s · ~$0.18/s' },
+  { id: 'bytedance/seedance-2.0-fast',label: 'Seedance 2.0 Fast', desc: 'Portrait · Audio · Faster · Up to 15s · ~$0.10/s' },
   { id: 'wan-video/wan-2.7-t2v',      label: 'Wan 2.7 T2V',       desc: 'Text · Audio · Up to 15s · ~$0.09/s' },
+  { id: 'wan-video/wan-2.7-i2v',      label: 'Wan 2.7 I2V',       desc: 'Image · Audio · Up to 15s · ~$0.09/s' },
   { id: 'google/veo-2',               label: 'Google Veo 2',      desc: 'Fast · Portrait & landscape · ~$0.50/s' },
 ] as const;
 
@@ -52,8 +54,8 @@ export const VIDEO_ASPECT_RATIO_KEY = 'tf_video_aspect_ratio';
 
 // ─── Video duration ───────────────────────────────────────────────────────────
 // Veo-2: 5–8s | LTX Fast: 6–20s | LTX Pro: 6–10s
-// Seedance 2.0: 5–15s (was wrongly fixed at 5s)
-// Wan 2.7 T2V: 2–15s (confirmed via live API test 2026-07-28)
+// Seedance 2.0/Fast: 5–15s (was wrongly fixed at 5s)
+// Wan 2.7 T2V/I2V: 2–15s (confirmed via live API test 2026-07-28)
 
 const SEEDANCE_DURATIONS = [
   { id: '5',  label: '5s',  desc: 'Default' },
@@ -97,7 +99,9 @@ export const VIDEO_DURATIONS: Record<VideoModelId, readonly { id: string; label:
     { id: '10', label: '10s', desc: 'Longest' },
   ],
   'bytedance/seedance-2.0':      SEEDANCE_DURATIONS,
+  'bytedance/seedance-2.0-fast': SEEDANCE_DURATIONS,
   'wan-video/wan-2.7-t2v':       WAN_27_DURATIONS,
+  'wan-video/wan-2.7-i2v':       WAN_27_DURATIONS,
 };
 
 export const DEFAULT_VIDEO_DURATIONS: Record<VideoModelId, string> = {
@@ -105,7 +109,9 @@ export const DEFAULT_VIDEO_DURATIONS: Record<VideoModelId, string> = {
   'lightricks/ltx-2.3-fast':  '6',
   'lightricks/ltx-2.3-pro':   '6',
   'bytedance/seedance-2.0':    '5',
+  'bytedance/seedance-2.0-fast': '5',
   'wan-video/wan-2.7-t2v':    '5',
+  'wan-video/wan-2.7-i2v':    '5',
 };
 
 export const VIDEO_DURATION_KEY = 'tf_video_duration';
@@ -118,7 +124,9 @@ export const ASPECT_RATIO_MODEL_IDS: VideoModelId[] = [
   'lightricks/ltx-2.3-fast',
   'lightricks/ltx-2.3-pro',
   'bytedance/seedance-2.0',
+  'bytedance/seedance-2.0-fast',
   'wan-video/wan-2.7-t2v',
+  'wan-video/wan-2.7-i2v',
 ];
 
 /** Models where the duration picker should be shown */
@@ -127,7 +135,9 @@ export const DURATION_MODEL_IDS: VideoModelId[] = [
   'lightricks/ltx-2.3-fast',
   'lightricks/ltx-2.3-pro',
   'bytedance/seedance-2.0',
+  'bytedance/seedance-2.0-fast',
   'wan-video/wan-2.7-t2v',
+  'wan-video/wan-2.7-i2v',
 ];
 
 // ─── LTX 2.3 Pro extend chain options ────────────────────────────────────────
@@ -171,7 +181,9 @@ export const VIDEO_MODEL_REF_CAPS: Record<VideoModelId, number> = {
   'lightricks/ltx-2.3-fast':    1,
   'lightricks/ltx-2.3-pro':     1,
   'bytedance/seedance-2.0':      1,
+  'bytedance/seedance-2.0-fast': 1,
   'wan-video/wan-2.7-t2v':       0, // text-only model — ignores reference images
+  'wan-video/wan-2.7-i2v':       1,
   'google/veo-2':                1,
 };
 

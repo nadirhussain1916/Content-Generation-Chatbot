@@ -196,6 +196,30 @@ const VIDEO_MODELS = [
     ],
   },
   {
+    id: 'bytedance/seedance-2.0-fast',
+    name: 'Seedance 2.0 Fast',
+    badge: 'Best value',
+    badgeColor: 'bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20',
+    price: '~$0.10 / sec',
+    priceLevel: 2,
+    speed: 'Fast',
+    maxDuration: 'Up to 15s',
+    aspectRatios: ['9:16', '16:9', '1:1', '4:3', '3:4'],
+    supportsChain: false,
+    supportsReference: true,
+    tags: ['Balanced quality', 'Social clips', 'Affordable'],
+    description:
+      'A faster, cheaper version of Seedance 2.0. Comparable visual quality to full Seedance for most social content, at roughly half the price. The best single-clip model that isn\'t LTX.',
+    bestFor: [
+      'Single clips that need to look polished without the Seedance 2.0 price tag',
+      'Non-default model to verify (Task 5 in the spec)',
+      'Everyday social content at Seedance quality levels',
+    ],
+    watchOut: [
+      'Not 4K — slight quality drop vs full Seedance on very large screens',
+    ],
+  },
+  {
     id: 'wan-video/wan-2.7-t2v',
     name: 'Wan 2.7 T2V',
     badge: 'Text only',
@@ -218,6 +242,31 @@ const VIDEO_MODELS = [
     watchOut: [
       'Cannot use reference images at all — any attached reference is ignored',
       'Weaker at consistent human subjects compared to LTX models',
+    ],
+  },
+  {
+    id: 'wan-video/wan-2.7-i2v',
+    name: 'Wan 2.7 I2V',
+    badge: 'Image to video',
+    badgeColor: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20',
+    price: '~$0.09 / sec',
+    priceLevel: 1,
+    speed: 'Fast',
+    maxDuration: 'Up to 15s',
+    aspectRatios: ['9:16', '16:9', '1:1', '4:3', '3:4'],
+    supportsChain: false,
+    supportsReference: true,
+    tags: ['Animate stills', 'Product photos', 'Portraits'],
+    description:
+      'Image-to-video — takes your reference image as the starting frame and animates it. Great for bringing a product photo or character illustration to life. The opening frame will closely match your reference.',
+    bestFor: [
+      'Animating an existing product photo or brand image',
+      'Creating motion from a still character illustration',
+      'Intros where the first frame matters',
+    ],
+    watchOut: [
+      'The reference image strongly locks the opening frame — prompt controls what happens after',
+      'Not ideal for scenes with no starting image in mind',
     ],
   },
   {
@@ -311,7 +360,7 @@ export default function ModelsPage() {
           <div className='mt-6 mb-10 grid grid-cols-1 sm:grid-cols-3 gap-3'>
             {[
               { icon: MessageSquare, label: 'Everyday scripts', model: 'GPT-4o', sub: 'Best all-rounder' },
-              { icon: ImageIcon,     label: 'Brand images',     model: 'GPT Image 1', sub: 'With a reference photo' },
+              { icon: ImageIcon,     label: 'Brand images',     model: 'GPT Image 2', sub: 'With a reference photo' },
               { icon: VideoIcon,     label: '45s demo video',   model: 'LTX 2.3 Pro', sub: 'Use ~45s length option' },
             ].map(({ icon: Icon, label, model, sub }) => (
               <div key={label} className='flex items-center gap-3 bg-surface-card rounded-xl p-3.5 border border-border-soft'>

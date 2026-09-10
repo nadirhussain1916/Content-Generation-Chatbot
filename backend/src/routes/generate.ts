@@ -276,6 +276,15 @@ generateRouter.post('/video', async (c) => {
           ...(referenceImageUrl && { image: referenceImageUrl }),
         }),
       },
+      'bytedance/seedance-2.0-fast': {
+        slug: 'bytedance/seedance-2.0-fast',
+        buildInput: (prompt, aspectRatio, duration, referenceImageUrl) => ({
+          prompt,
+          aspect_ratio: aspectRatio,
+          duration,
+          ...(referenceImageUrl && { image: referenceImageUrl }),
+        }),
+      },
       'wan-video/wan-2.7-t2v': {
         slug: 'wan-video/wan-2.7-t2v',
         // Text-only model — ignores referenceImageUrl
@@ -284,6 +293,16 @@ generateRouter.post('/video', async (c) => {
           aspect_ratio: aspectRatio,
           duration,
           resolution: '720p',
+        }),
+      },
+      'wan-video/wan-2.7-i2v': {
+        slug: 'wan-video/wan-2.7-i2v',
+        buildInput: (prompt, aspectRatio, duration, referenceImageUrl) => ({
+          prompt,
+          aspect_ratio: aspectRatio,
+          duration,
+          resolution: '720p',
+          ...(referenceImageUrl && { image_url: referenceImageUrl }),
         }),
       },
     };
@@ -303,7 +322,7 @@ generateRouter.post('/video', async (c) => {
     }
 
     // Veo-2: 5-8 | LTX Fast: 6,8,10,12,14,16,18,20 | LTX Pro: 6,8,10
-    // Seedance 2.0: 5,8,10,12,15 | Wan 2.7 T2V: 2,3,4,5,8,10,12,15
+    // Seedance 2.0/Fast: 5,8,10,12,15 | Wan 2.7: 2,3,4,5,8,10,12,15
     const VALID_DURATIONS = new Set([2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 15, 16, 18, 20]);
     // Duration: prefer explicit body param, fall back to workspace default clip length, then 5s
     const requestedDuration = body.duration ?? workspace.default_video_duration;

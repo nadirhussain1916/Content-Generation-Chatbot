@@ -12,7 +12,7 @@ AI-powered content creation and publishing platform. Chat with an AI to create p
 | Storage | Cloudflare R2 |
 | KV Cache | Cloudflare KV |
 | Auth | Clerk |
-| AI | OpenAI GPT-4o (text) + GPT Image 1 (images) |
+| AI | OpenAI GPT-4o (text) + GPT Image 2 (images) |
 | Publishing | Instagram Graph API + TikTok Content Posting API |
 
 ## Project Structure
@@ -111,7 +111,7 @@ Open http://localhost:5173
 | GET | `/api/workspaces/:slug/threads` | List threads |
 | POST | `/api/workspaces/:slug/threads` | Create thread |
 | POST | `/api/workspaces/:slug/threads/:id/messages` | Chat + AI |
-| POST | `/api/workspaces/:slug/generate/image` | GPT Image 1 image |
+| POST | `/api/workspaces/:slug/generate/image` | GPT Image 2 image |
 | POST | `/api/workspaces/:slug/generate/video` | Replicate video |
 | GET | `/api/workspaces/:slug/generate/assets/:id/status` | Asset status |
 | GET | `/api/workspaces/:slug/social/connect/instagram` | Instagram OAuth |

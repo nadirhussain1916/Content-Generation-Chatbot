@@ -4,6 +4,7 @@ import { updateAsset } from '../db/queries';
 import { generateDalleImage } from '../services/openai';
 import { uploadFromUrl } from '../services/r2';
 import { Logger } from '../utils/Logger';
+import { friendlyReplicateError } from '../utils/replicateErrors';
 
 export type GenerationParams =
   | {
@@ -131,7 +132,7 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
           if (prediction.status === 'failed' || prediction.status === 'canceled') {
             return {
               ok: false as const,
-              reason: `Replicate prediction ${prediction.status}: ${prediction.error ?? 'unknown'}`,
+              reason: friendlyReplicateError(`Replicate prediction ${prediction.status}: ${prediction.error ?? 'unknown'}`),
             };
           }
 
@@ -168,7 +169,7 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
           await writeKv(this.env.KV, p.assetId, { status: 'ready', r2_key: r2Key });
         });
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = friendlyReplicateError(err instanceof Error ? err.message : String(err));
         Logger.log('WorkflowVideoFailed', { assetId: p.assetId }, err);
         await updateAsset(this.env.DB, p.assetId, { status: 'failed', error_message: msg });
         await writeKv(this.env.KV, p.assetId, { status: 'failed' });
@@ -188,7 +189,7 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
         const prediction = await res.json() as { status: string; output?: string | string[]; error?: string };
 
         if (prediction.status === 'failed' || prediction.status === 'canceled') {
-          return { ok: false, reason: `Prediction ${prediction.status}: ${prediction.error ?? 'unknown'}` };
+          return { ok: false, reason: friendlyReplicateError(`Prediction ${prediction.status}: ${prediction.error ?? 'unknown'}`) };
         }
 
         const outputUrl = Array.isArray(prediction.output) ? prediction.output[0] : prediction.output;
@@ -271,7 +272,7 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
         });
 
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = friendlyReplicateError(err instanceof Error ? err.message : String(err));
         Logger.log('VideoChainFailed', { assetId: p.assetId }, err);
         await updateAsset(this.env.DB, p.assetId, { status: 'failed', error_message: msg });
         await writeKv(this.env.KV, p.assetId, { status: 'failed' });

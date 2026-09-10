@@ -267,7 +267,7 @@ function AssetCard({
               <AlertCircle size={18} className='text-red-500 dark:text-red-400' />
             </div>
             <span className='text-meta leading-tight text-red-600/90 dark:text-red-400/80 line-clamp-2'>
-              {asset.error_message ? asset.error_message.slice(0, 90) : 'Generation failed'}
+              {asset.error_message ? asset.error_message.slice(0, 160) : 'Generation failed'}
             </span>
           </div>
         ) : isLoadingBlob ? (

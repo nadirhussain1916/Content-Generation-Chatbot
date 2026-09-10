@@ -91,8 +91,16 @@ describe('calcVideoClipCost', () => {
     expect(calcVideoClipCost('bytedance/seedance-2.0', 15)).toBeCloseTo(2.70);
   });
 
+  it('seedance-2.0-fast: $0.10/s × 8s = $0.80', () => {
+    expect(calcVideoClipCost('bytedance/seedance-2.0-fast', 8)).toBeCloseTo(0.80);
+  });
+
   it('wan-2.7-t2v: $0.09/s × 10s = $0.90', () => {
     expect(calcVideoClipCost('wan-video/wan-2.7-t2v', 10)).toBeCloseTo(0.90);
+  });
+
+  it('wan-2.7-i2v: same rate as t2v', () => {
+    expect(calcVideoClipCost('wan-video/wan-2.7-i2v', 10)).toBeCloseTo(0.90);
   });
 
   it('veo-2: $0.50/s × 8s = $4.00', () => {
