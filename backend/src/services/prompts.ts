@@ -39,10 +39,13 @@ export function brandBlock(ws: {
     );
   }
   if (ws.character_name || ws.character_appearance) {
-    const charLines = ['\nLOCKED CHARACTER (inject into every video generation prompt, verbatim — never alter appearance):'];
+    const charLines = ['\nLOCKED CHARACTER (available in this workspace — inclusion is decided PER DRAFT via the includeCharacter field):'];
     if (ws.character_name)       charLines.push(`  Name: ${ws.character_name}`);
     if (ws.character_appearance) charLines.push(`  Appearance: ${ws.character_appearance}`);
-    charLines.push('  The videoPrompt MUST begin with this character block before any other scene description.');
+    charLines.push('  Before creating the FIRST draft, confirm whether this character should appear — if the user has not made it clear, ask via ask_questions.');
+    charLines.push('  When includeCharacter=true: write the image/video prompt AROUND this character and never describe a different or competing person. The system automatically injects the exact appearance text + reference photos, so identity stays locked — you do not need to restate the appearance verbatim.');
+    charLines.push('  When includeCharacter=false: ignore the character entirely and write the prompt normally.');
+    charLines.push('  The user CANNOT change this on a finished draft — only you can, by regenerating the draft with includeCharacter flipped and the prompt rewritten to match.');
     lines.push(charLines.join('\n'));
   }
   if (ws.agent_instructions) lines.push(`\nCustom agent instructions (follow strictly):\n${ws.agent_instructions}`);
@@ -137,6 +140,7 @@ ask_questions (TERMINAL — REQUIRED for any content request when info is missin
   → Do NOT use chat_reply to ask a question — ALWAYS use this tool instead.
   → Provide 2-4 chip question groups covering angle, audience, format, and key requirements.
   → Use existing WORKSPACE CONTEXT to skip questions about things already known.
+  → If a LOCKED CHARACTER exists and the user hasn't indicated whether to feature it, ALWAYS include a question asking whether to feature the character — this decision drives includeCharacter and how the prompt is written, and can't be changed by the user afterward.
   → HARD LIMIT: Max 2 rounds of clarifying questions total across the entire conversation. After 2 rounds, generate content immediately.
 
 generate_image_draft (TERMINAL):
@@ -163,6 +167,7 @@ generate_image_draft (TERMINAL):
   → imageSize: "1024x1024" (square / Instagram feed) | "1024x1792" (portrait 9:16 / Stories / TikTok) | "1792x1024" (landscape 16:9 / YouTube).
   → imageStyle: brief label like "photorealistic", "illustration", "minimalist", etc.
   → tone: the actual tone applied.
+  → includeCharacter: true to feature the workspace's locked character (then write imagePrompt around them — the system injects their exact appearance + reference photos), false to omit. Set false if no locked character is configured. Confirm the choice with the user before the first draft if it isn't already clear.
   → suggestedPlatforms: array from ["instagram", "tiktok"].
 
 generate_video_script (TERMINAL):
@@ -196,6 +201,7 @@ generate_video_script (TERMINAL):
   → videoAspectRatio: "9:16" (portrait — Reels / Shorts / TikTok) or "16:9" (landscape — YouTube). Match the workspace default video dimensions unless the user requests otherwise.
   → videoDurationSeconds: integer per-clip length in seconds. Set to the workspace default clip length unless the user requests a different length.
   → tone: the actual tone applied.
+  → includeCharacter: true to feature the workspace's locked character (then write videoPrompt around them — the system injects their exact appearance + reference photos), false to omit. Set false if no locked character is configured. Confirm the choice with the user before the first draft if it isn't already clear.
   → suggestedPlatforms: array from ["instagram", "tiktok"].
 
 chat_reply (TERMINAL — NOT for content requests):

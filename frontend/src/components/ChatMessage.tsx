@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import { useAuthToken } from '../hooks/useAuthToken';
 import type { Message, PlannerResult, PlannerQuestion, ImagePostPackage, VideoPostPackage, Asset, WorkspaceUpload } from '../types';
 import { cn, formatMessageTime } from '../lib/utils';
-import { ChevronDown, ChevronUp, Copy, Check, Hash, Loader2, Share2, CheckCircle, AlertCircle, Star, X, Plus, Pencil } from 'lucide-react';
+import { ChevronDown, ChevronUp, Copy, Check, Hash, Loader2, Share2, CheckCircle, AlertCircle, Star, X, Plus, Pencil, RotateCcw } from 'lucide-react';
 import GenerateImageButton from './GenerateImageButton';
 import GenerateVideoButton from './GenerateVideoButton';
 import EditDraftModal from './EditDraftModal';
@@ -23,12 +23,17 @@ interface ChatMessageProps {
   // For the draft card reference picker
   uploads?: WorkspaceUpload[];
   imageAssets?: Asset[];
-  // Locked-character toggle on draft generation buttons
+  // Locked-character toggle + mirror on the draft card
   hasCharacter?: boolean;
   characterName?: string | null;
+  characterAppearance?: string | null;
+  characterReferenceIds?: string[];
+  // Optimistic user message that failed to send — shows an inline retry affordance
+  sendFailed?: boolean;
+  onRetry?: () => void;
 }
 
-export default function ChatMessage({ message, onOptionSelect, asset, assetBlobUrl, slug, threadId, onAssetGenerated, attachedImages, uploads = [], imageAssets = [], hasCharacter = false, characterName = null }: ChatMessageProps) {
+export default function ChatMessage({ message, onOptionSelect, asset, assetBlobUrl, slug, threadId, onAssetGenerated, attachedImages, uploads = [], imageAssets = [], hasCharacter = false, characterName = null, characterAppearance = null, characterReferenceIds = [], sendFailed = false, onRetry }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState(true);
   const { status: publishStatus, publish } = usePublishStatus(slug, asset?.id);
@@ -196,12 +201,33 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
               ))}
             </div>
           )}
-          <div className='bg-surface-white border border-black/[0.04] dark:border-white/[0.06] text-text-primary rounded-2xl rounded-br-[4px] px-4 py-2.5 text-message shadow-[0_2px_10px_rgba(0,0,0,0.03)]'>
+          <div className={cn(
+            'bg-surface-white border text-text-primary rounded-2xl rounded-br-[4px] px-4 py-2.5 text-message shadow-[0_2px_10px_rgba(0,0,0,0.03)]',
+            sendFailed
+              ? 'border-red-400/60 dark:border-red-500/40'
+              : 'border-black/[0.04] dark:border-white/[0.06]'
+          )}>
             {message.content}
           </div>
-          <p className='text-right text-[10px] text-text-muted mt-1 px-1'>
-            {formatMessageTime(message.created_at)}
-          </p>
+          {sendFailed ? (
+            <div className='flex items-center justify-end gap-2 mt-1 px-1'>
+              <span className='flex items-center gap-1 text-[10px] text-red-500 dark:text-red-400'>
+                <AlertCircle size={11} />
+                Failed to send
+              </span>
+              <button
+                onClick={onRetry}
+                className='flex items-center gap-1 text-[10px] font-medium text-brand hover:text-brand-hover transition-colors'
+              >
+                <RotateCcw size={11} />
+                Retry
+              </button>
+            </div>
+          ) : (
+            <p className='text-right text-[10px] text-text-muted mt-1 px-1'>
+              {formatMessageTime(message.created_at)}
+            </p>
+          )}
         </div>
       </div>
     );
@@ -236,6 +262,14 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
     const isVideo = 'script' in (postPackage as object);
     const refIds: string[] = pkg.referenceUploadIds ?? [];
     const primaryId = pkg.primaryReferenceUploadId ?? null;
+
+    // ── Locked character (mirrored from workspace, gated by the draft flag) ──
+    // Absent flag = legacy draft → default ON so behaviour matches the old backend.
+    const includeCharacter = pkg.includeCharacter ?? true;
+    const characterRefs = characterReferenceIds
+      .map((id) => ({ id, url: getRefUrl(id) }))
+      .filter((r): r is { id: string; url: string } => !!r.url);
+    const hasCharacterText = !!(characterName || characterAppearance);
 
     // The generate buttons re-parse post_package internally, so hand them the
     // authoritative package (with optimistic reference/prompt/size edits) rather
@@ -436,10 +470,62 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
               )}
 
               {/* ── References section ── */}
-              {(refIds.length > 0 || (uploads.length > 0 || imageAssets.length > 0)) && (
+              {(hasCharacter || refIds.length > 0 || uploads.length > 0 || imageAssets.length > 0) && (
                 <div>
                   <p className='text-xs font-semibold text-text-secondary uppercase tracking-wide mb-2'>References</p>
+
+                  {/* Locked-character status — READ-ONLY. The include/exclude decision is
+                      made with the assistant before the draft (the prompt is written to
+                      match it), so it can't be flipped here. Ask the assistant to change it. */}
+                  {hasCharacter && (
+                    <div className='mb-2 rounded-lg border border-border-soft bg-surface-white p-2.5'>
+                      <div className='flex items-center gap-2'>
+                        <span className={cn(
+                          'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold',
+                          includeCharacter
+                            ? 'bg-purple-500/15 text-purple-600 dark:text-purple-300'
+                            : 'bg-surface-card text-text-muted'
+                        )}>
+                          {includeCharacter ? <Check size={9} /> : <X size={9} />}
+                          Character {includeCharacter ? 'included' : 'excluded'}
+                        </span>
+                        {includeCharacter && characterName && (
+                          <span className='text-meta text-text-muted'>{characterName}</span>
+                        )}
+                      </div>
+                      <p className='mt-1 text-[10px] text-text-muted'>
+                        Decided when the draft was created — ask the assistant to change it.
+                      </p>
+                      {includeCharacter && hasCharacterText && (
+                        <div className='mt-2 text-meta text-text-secondary leading-relaxed'>
+                          {characterName && (
+                            <p><span className='font-medium text-text-primary'>Name: </span>{characterName}</p>
+                          )}
+                          {characterAppearance && (
+                            <p><span className='font-medium text-text-primary'>Appearance: </span>{characterAppearance}</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <div className='flex flex-wrap gap-2 items-start'>
+                    {/* Character reference images — read-only mirror of Workspace Settings.
+                        Managed via the toggle above (and edited in Settings), not here. */}
+                    {includeCharacter && characterRefs.map(({ id, url }) => (
+                      <div key={`char-${id}`} className='relative'>
+                        <img
+                          src={url}
+                          alt='Character reference'
+                          title='Locked character (edit in Workspace Settings)'
+                          className='w-14 h-14 object-cover rounded-lg border-2 border-purple-400/70'
+                        />
+                        <span className='absolute -bottom-1.5 left-1/2 -translate-x-1/2 rounded-full bg-purple-500 px-1.5 py-px text-[9px] font-semibold text-white shadow-sm'>
+                          Character
+                        </span>
+                      </div>
+                    ))}
+
                     {refIds.map((id) => {
                       const url = getRefUrl(id);
                       const isPrimary = id === primaryId;

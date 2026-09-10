@@ -5,13 +5,13 @@ import type { TfResponse, Asset, Message, VideoPostPackage } from '../types';
 import { Video, Loader2, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
 import { cn } from '../lib/utils';
 import ModelPicker from './ModelPicker';
+import { friendlyErrorMessage } from '../lib/display';
 import {
   VIDEO_MODELS, DEFAULT_VIDEO_MODEL, VIDEO_MODEL_KEY,
   VIDEO_ASPECT_RATIOS, DEFAULT_VIDEO_ASPECT_RATIO, VIDEO_ASPECT_RATIO_KEY,
   VIDEO_DURATIONS, DEFAULT_VIDEO_DURATIONS, VIDEO_DURATION_KEY,
   ASPECT_RATIO_MODEL_IDS, DURATION_MODEL_IDS,
   LTX_EXTEND_OPTIONS, LTX_EXTEND_KEY,
-  INCLUDE_CHARACTER_KEY,
   type VideoModelId, type LtxExtendOption,
   readPref, writePref,
 } from '../lib/models';
@@ -29,7 +29,7 @@ interface GenerateVideoButtonProps {
 const POLL_INTERVAL_MS = 5000;
 const POLL_TIMEOUT_MS = 900_000; // 15 min — covers slow cold starts
 
-export default function GenerateVideoButton({ slug, threadId, message, existingAsset, onGenerated, hasCharacter = false, characterName = null }: GenerateVideoButtonProps) {
+export default function GenerateVideoButton({ slug, threadId, message, existingAsset, onGenerated, hasCharacter = false }: GenerateVideoButtonProps) {
   const { getAuthToken } = useAuthToken();
   const [loading, setLoading] = useState(false);
   // only treat as done when the asset is actually ready — not failed/pending
@@ -37,7 +37,7 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
   // pre-populate the error if the asset already failed before mounting
   const [error, setError] = useState<string | null>(
     existingAsset?.status === 'failed'
-      ? (existingAsset.error_message ?? 'Video generation failed')
+      ? friendlyErrorMessage(existingAsset.error_message)
       : null
   );
   // AI-chosen video params from the draft package (fall back to saved prefs)
@@ -59,7 +59,8 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
     return readPref(VIDEO_DURATION_KEY, DEFAULT_VIDEO_DURATIONS[DEFAULT_VIDEO_MODEL]);
   });
   const [ltxExtendId, setLtxExtendId] = useState<string>(() => readPref(LTX_EXTEND_KEY, '0'));
-  const [includeCharacter, setIncludeCharacter] = useState<boolean>(() => readPref(INCLUDE_CHARACTER_KEY, '1') === '1');
+  // Include-character is now saved on the draft (toggled in the card); absent = on.
+  const includeCharacter = pkg.includeCharacter ?? true;
 
   const currentModelId = videoModel as VideoModelId;
   const supportsAspectRatio = ASPECT_RATIO_MODEL_IDS.includes(currentModelId);
@@ -82,7 +83,7 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
       );
       if (!res.success) throw new Error(res.message ?? 'Polling failed');
       if (res.data?.status === 'ready') return res.data;
-      if (res.data?.status === 'failed') throw new Error('Video generation failed');
+      if (res.data?.status === 'failed') throw new Error(friendlyErrorMessage(res.data.error_message));
     }
     throw new Error('Video generation timed out');
   }
@@ -187,24 +188,6 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
                 onChange={(id) => { setLtxExtendId(id); writePref(LTX_EXTEND_KEY, id); }}
               />
             </div>
-          )}
-          {/* Include locked character — only shown when a workspace character exists */}
-          {hasCharacter && (
-            <label className='flex items-center gap-1.5 cursor-pointer select-none'>
-              <input
-                type='checkbox'
-                checked={includeCharacter}
-                disabled={loading}
-                onChange={(e) => {
-                  setIncludeCharacter(e.target.checked);
-                  writePref(INCLUDE_CHARACTER_KEY, e.target.checked ? '1' : '0');
-                }}
-                className='accent-brand h-3.5 w-3.5'
-              />
-              <span className='text-meta text-text-secondary'>
-                Include character{characterName ? ` (${characterName})` : ''}
-              </span>
-            </label>
           )}
         </div>
       )}

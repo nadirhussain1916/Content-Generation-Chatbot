@@ -41,6 +41,51 @@ export function formatUsd(cost: number | null | undefined): string {
   return `$${n.toFixed(2)}`;
 }
 
+const SENSITIVE_CONTENT_MESSAGE =
+  'Content flagged as sensitive. Try a different image, model, or character — or generate without a character.';
+
+// Internal noise prefixes Replicate/the model chain onto errors, e.g.
+// "Replicate prediction failed: Prediction failed: Async prediction failed: ValueError: <msg>".
+// We strip these (and the trailing "(requestId)") so the user only sees the real message.
+const NOISE_PREFIXES = [
+  /^replicate prediction (failed|canceled):\s*/i,
+  /^prediction (failed|canceled):\s*/i,
+  /^async prediction (failed|canceled):\s*/i,
+  /^\w*error:\s*/i, // ValueError:, ModelError:, RuntimeError:, …
+];
+
+/** Strip the technical prefix chain and a trailing "(requestId)" from a raw model error. */
+function stripErrorNoise(raw: string): string {
+  let msg = raw.trim();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const re of NOISE_PREFIXES) {
+      if (re.test(msg)) { msg = msg.replace(re, '').trim(); changed = true; }
+    }
+  }
+  // Drop a trailing Replicate request id like " (uIJ6l3ruRD)".
+  msg = msg.replace(/\s*\([A-Za-z0-9]{6,}\)\s*$/, '').trim();
+  return msg;
+}
+
+/**
+ * Normalize a stored asset `error_message` into a user-friendly string at display time.
+ * The backend intentionally stores the exact/detailed error — all user-facing cleanup
+ * happens here, so it also fixes historical records.
+ * - Content-moderation flag (E005) → actionable message.
+ * - Everything else → "Error: <real message>" with the technical prefix chain stripped.
+ */
+export function friendlyErrorMessage(raw: string | null | undefined): string {
+  if (!raw) return 'Generation failed';
+  const lower = raw.toLowerCase();
+  if (lower.includes('flagged as sensitive') || lower.includes('(e005)')) {
+    return SENSITIVE_CONTENT_MESSAGE;
+  }
+  const cleaned = stripErrorNoise(raw);
+  return cleaned ? `Error: ${cleaned}` : 'Generation failed';
+}
+
 /** Compact token counts: 1234 → 1.2K, 3_400_000 → 3.4M. */
 export function formatTokens(tokens: number | null | undefined): string {
   const n = tokens ?? 0;

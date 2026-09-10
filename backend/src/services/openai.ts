@@ -41,6 +41,12 @@ const ImagePostPackageSchema = z.object({
   imageStyle: z.string(),
   tone: z.string(),
   suggestedPlatforms: z.array(z.enum(['instagram', 'tiktok'])),
+  includeCharacter: z.boolean().describe(
+    "Whether the workspace's locked character appears in this image. " +
+    'Decide BEFORE writing imagePrompt and author the prompt to match: if true, build the scene ' +
+    'around the locked character (do NOT describe a different/competing person); if false, write it normally. ' +
+    'Set false when the workspace has no locked character.'
+  ),
 });
 
 const VideoPostPackageSchema = z.object({
@@ -55,6 +61,12 @@ const VideoPostPackageSchema = z.object({
   videoDurationSeconds: z.number().int().describe('Per-clip generation length in seconds. Set to the workspace default clip length unless the user requests a different length.'),
   tone: z.string(),
   suggestedPlatforms: z.array(z.enum(['instagram', 'tiktok'])),
+  includeCharacter: z.boolean().describe(
+    "Whether the workspace's locked character appears in this video. " +
+    'Decide BEFORE writing videoPrompt and author the prompt to match: if true, build the scenes ' +
+    'around the locked character (do NOT describe a different/competing person); if false, write it normally. ' +
+    'Set false when the workspace has no locked character.'
+  ),
 });
 
 // ─── Public types ─────────────────────────────────────────────────────────────

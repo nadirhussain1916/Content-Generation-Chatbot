@@ -25,7 +25,12 @@ export default function ThreadPage() {
   const [thread, setThread] = useState<Thread | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   // Locked-character info for the include/exclude toggle on draft cards
-  const [character, setCharacter] = useState<{ name: string | null; has: boolean }>({ name: null, has: false });
+  const [character, setCharacter] = useState<{
+    name: string | null;
+    appearance: string | null;
+    referenceIds: string[];
+    has: boolean;
+  }>({ name: null, appearance: null, referenceIds: [], has: false });
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sidebarRefreshKey, setSidebarRefreshKey] = useState(0);
@@ -38,6 +43,8 @@ export default function ThreadPage() {
 
   // Map tempId → attached images for optimistic user bubble rendering
   const attachmentsByTempId = useRef<Record<string, ImageReference[]>>({});
+  // Optimistic user messages whose send failed — keyed by tempId, holds the payload to retry
+  const [failedSends, setFailedSends] = useState<Record<string, { content: string; imageReferences: ImageReference[] }>>({});
 
   const { uploads, uploading, uploadFile } = useWorkspaceUploads(slug, getToken);
 
@@ -120,11 +127,13 @@ export default function ThreadPage() {
     ]);
     if (workspaceRes.success && workspaceRes.data) {
       const ws = workspaceRes.data;
-      let hasRefs = false;
-      try { hasRefs = (JSON.parse(ws.character_reference_ids ?? '[]') as string[]).length > 0; } catch { /* ignore */ }
+      let referenceIds: string[] = [];
+      try { referenceIds = JSON.parse(ws.character_reference_ids ?? '[]') as string[]; } catch { /* ignore */ }
       setCharacter({
         name: ws.character_name,
-        has: !!(ws.character_name || ws.character_appearance || hasRefs),
+        appearance: ws.character_appearance,
+        referenceIds,
+        has: !!(ws.character_name || ws.character_appearance || referenceIds.length > 0),
       });
     }
     if (threadRes.success && threadRes.data) {
@@ -260,10 +269,30 @@ export default function ThreadPage() {
           setThread(threadRes.data.thread);
           setSidebarRefreshKey((k) => k + 1);
         }
+      } else {
+        // API responded but reported failure — keep the optimistic bubble and flag it for retry
+        setFailedSends((prev) => ({ ...prev, [tempId]: { content: content.trim(), imageReferences } }));
       }
+    } catch {
+      // Network / unexpected error — keep the optimistic bubble and flag it for retry
+      setFailedSends((prev) => ({ ...prev, [tempId]: { content: content.trim(), imageReferences } }));
     } finally {
       setSending(false);
     }
+  }
+
+  // Retry a failed send: drop the failed optimistic bubble and re-send its payload
+  function retrySend(tempId: string) {
+    const payload = failedSends[tempId];
+    if (!payload) return;
+    setFailedSends((prev) => {
+      const next = { ...prev };
+      delete next[tempId];
+      return next;
+    });
+    setMessages((prev) => prev.filter((m) => m.id !== tempId));
+    delete attachmentsByTempId.current[tempId];
+    sendMessage(payload.content, payload.imageReferences);
   }
 
   function handleOptionSelect(text: string) {
@@ -368,6 +397,10 @@ export default function ThreadPage() {
                   imageAssets={imageAssets}
                   hasCharacter={character.has}
                   characterName={character.name}
+                  characterAppearance={character.appearance}
+                  characterReferenceIds={character.referenceIds}
+                  sendFailed={!!failedSends[msg.id]}
+                  onRetry={() => retrySend(msg.id)}
                 />
               ))}
               {sending && (

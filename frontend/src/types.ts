@@ -89,6 +89,9 @@ export interface ImagePostPackage {
   // Reference images (injected by backend after AI generation)
   referenceUploadIds?: string[];
   primaryReferenceUploadId?: string | null;
+  // Whether the workspace's locked character is applied to this draft.
+  // Absent = treat as true (legacy drafts). Controlled from the draft UI.
+  includeCharacter?: boolean;
 }
 
 export interface VideoPostPackage {
@@ -113,6 +116,9 @@ export interface VideoPostPackage {
   // Reference images (injected by backend after AI generation)
   referenceUploadIds?: string[];
   primaryReferenceUploadId?: string | null;
+  // Whether the workspace's locked character is applied to this draft.
+  // Absent = treat as true (legacy drafts). Controlled from the draft UI.
+  includeCharacter?: boolean;
 }
 
 export interface WorkspaceUpload {

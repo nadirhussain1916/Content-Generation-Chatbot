@@ -2,19 +2,19 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthToken } from '../hooks/useAuthToken';
 import { api } from '../lib/api';
-import type { TfResponse, Asset, Message, ImagePostPackage, VideoPostPackage } from '../types';
+import type { TfResponse, Asset, Message, ImagePostPackage, VideoPostPackage, WorkspaceUpload, Workspace } from '../types';
 import { usePublishStatus } from '../hooks/usePublishStatus';
 import AppShell from '../components/AppShell';
 import Sidebar from '../components/Sidebar';
 import {
   ImageIcon, VideoIcon, Loader2, AlertCircle, X, Play,
-  Copy, Check, Hash, Share2, CheckCircle, ExternalLink, RefreshCw, Download, Cpu, DollarSign,
+  Copy, Check, Hash, Share2, CheckCircle, ExternalLink, RefreshCw, Download, Cpu, DollarSign, Star,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 // ─── Model display helpers ─────────────────────────────────────────────────────
 
-import { shortModelLabel, formatCost } from '../lib/display';
+import { shortModelLabel, formatCost, friendlyErrorMessage } from '../lib/display';
 
 const BACKEND = import.meta.env.VITE_API_BASE_URL ?? '';
 const POLL_INTERVAL_MS = 5000; // re-fetch list every 5 s when any asset is in-progress
@@ -172,6 +172,7 @@ export default function GenerationsPage() {
           asset={detailAsset}
           slug={slug!}
           blobUrl={blobUrls[detailAsset.id]}
+          assets={assets}
           onClose={() => setDetailAsset(null)}
           onOpenThread={() => navigate(`/workspaces/${slug}/threads/${detailAsset.thread_id}`)}
         />
@@ -267,7 +268,7 @@ function AssetCard({
               <AlertCircle size={18} className='text-red-500 dark:text-red-400' />
             </div>
             <span className='text-meta leading-tight text-red-600/90 dark:text-red-400/80 line-clamp-2'>
-              {asset.error_message ? asset.error_message.slice(0, 160) : 'Generation failed'}
+              {friendlyErrorMessage(asset.error_message).slice(0, 160)}
             </span>
           </div>
         ) : isLoadingBlob ? (
@@ -385,9 +386,9 @@ function AssetCard({
 // ─── Details modal ────────────────────────────────────────────────────────────
 
 function DetailsModal({
-  asset, slug, blobUrl, onClose, onOpenThread,
+  asset, slug, blobUrl, assets, onClose, onOpenThread,
 }: {
-  asset: Asset; slug: string; blobUrl?: string;
+  asset: Asset; slug: string; blobUrl?: string; assets: Asset[];
   onClose: () => void; onOpenThread: () => void;
 }) {
   const { getAuthToken: getToken } = useAuthToken();
@@ -395,25 +396,47 @@ function DetailsModal({
   const [loadingPkg, setLoadingPkg] = useState(true);
   const [copied, setCopied] = useState(false);
   const [aiLabel, setAiLabel] = useState(false);
+  // Uploads + workspace character — needed to mirror the draft's reference images
+  const [uploads, setUploads] = useState<WorkspaceUpload[]>([]);
+  const [character, setCharacter] = useState<{ name: string | null; appearance: string | null; referenceIds: string[] }>(
+    { name: null, appearance: null, referenceIds: [] }
+  );
   const { status: publishStatus, publish: publishAsset } = usePublishStatus(slug, asset.id);
 
   useEffect(() => {
     if (!asset.message_id) { setLoadingPkg(false); return; }
     (async () => {
       const token = await getToken();
-      const res = await api.get<TfResponse<{ thread: unknown; messages: Message[] }>>(
-        `/api/workspaces/${slug}/threads/${asset.thread_id}`,
-        token ?? undefined
-      );
-      if (res.success && res.data) {
-        const msg = res.data.messages.find((m) => m.id === asset.message_id);
+      const [threadRes, wsRes, uploadsRes] = await Promise.all([
+        api.get<TfResponse<{ thread: unknown; messages: Message[] }>>(
+          `/api/workspaces/${slug}/threads/${asset.thread_id}`,
+          token ?? undefined
+        ),
+        api.get<TfResponse<Workspace>>(`/api/workspaces/${slug}`, token ?? undefined),
+        api.get<TfResponse<WorkspaceUpload[]>>(`/api/workspaces/${slug}/uploads`, token ?? undefined),
+      ]);
+      if (threadRes.success && threadRes.data) {
+        const msg = threadRes.data.messages.find((m) => m.id === asset.message_id);
         if (msg?.post_package) {
           try { setPkg(JSON.parse(msg.post_package)); } catch {}
         }
       }
+      if (wsRes.success && wsRes.data) {
+        let referenceIds: string[] = [];
+        try { referenceIds = JSON.parse(wsRes.data.character_reference_ids ?? '[]') as string[]; } catch { /* ignore */ }
+        setCharacter({ name: wsRes.data.character_name, appearance: wsRes.data.character_appearance, referenceIds });
+      }
+      if (uploadsRes.success && uploadsRes.data) setUploads(uploadsRes.data);
       setLoadingPkg(false);
     })();
   }, [asset.id]);
+
+  // Resolve a reference id (workspace upload or generated-image asset) to a URL.
+  function resolveRefUrl(id: string): string | undefined {
+    const u = uploads.find((up) => up.id === id);
+    if (u) return u.public_url;
+    return assets.find((a) => a.id === id)?.public_url ?? undefined;
+  }
 
   function copy(text: string) {
     navigator.clipboard.writeText(text);
@@ -429,6 +452,20 @@ function DetailsModal({
   }
 
   const isVideo = asset.type === 'video';
+
+  // ── Draft references + locked character (mirror of what was sent) ──
+  const includeCharacter = pkg?.includeCharacter ?? true;
+  const primaryRefId = pkg?.primaryReferenceUploadId ?? null;
+  const draftRefIds = pkg?.referenceUploadIds?.length
+    ? pkg.referenceUploadIds
+    : (primaryRefId ? [primaryRefId] : []);
+  const isResolved = (r: { id: string; url: string | undefined }): r is { id: string; url: string } => !!r.url;
+  const draftRefs = draftRefIds.map((id) => ({ id, url: resolveRefUrl(id) })).filter(isResolved);
+  const characterRefs = includeCharacter
+    ? character.referenceIds.map((id) => ({ id, url: resolveRefUrl(id) })).filter(isResolved)
+    : [];
+  const hasCharacterText = includeCharacter && !!(character.name || character.appearance);
+  const hasAnyRefs = characterRefs.length > 0 || draftRefs.length > 0;
 
   return (
     <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4'>
@@ -456,13 +493,14 @@ function DetailsModal({
         </div>
 
         <div className='overflow-y-auto flex-1 p-5 space-y-5'>
-          {/* Preview */}
+          {/* Preview — sized to the media's own aspect ratio (portrait stays portrait),
+              capped by max width/height so it never overflows the modal. */}
           {blobUrl && (
-            <div className='rounded-xl overflow-hidden bg-surface-card'>
+            <div className='flex justify-center rounded-xl overflow-hidden bg-surface-card'>
               {isVideo ? (
-                <video src={blobUrl} controls className='w-full max-h-64 object-contain' />
+                <video src={blobUrl} controls className='w-auto max-w-full max-h-[60vh] object-contain' />
               ) : (
-                <img src={blobUrl} alt='Generated' className='w-full max-h-64 object-contain' />
+                <img src={blobUrl} alt='Generated' className='w-auto max-w-full max-h-[60vh] object-contain' />
               )}
             </div>
           )}
@@ -511,6 +549,41 @@ function DetailsModal({
                         <Hash size={9} />{h}
                       </span>
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Locked character text (mirror) */}
+              {hasCharacterText && (
+                <div>
+                  <p className='text-meta font-semibold text-text-muted uppercase tracking-wide mb-1.5'>Character</p>
+                  <div className='text-message text-text-secondary leading-relaxed'>
+                    {character.name && <p><span className='font-medium text-text-primary'>Name: </span>{character.name}</p>}
+                    {character.appearance && <p><span className='font-medium text-text-primary'>Appearance: </span>{character.appearance}</p>}
+                  </div>
+                </div>
+              )}
+
+              {/* Reference images — character (badged) + draft references */}
+              {hasAnyRefs && (
+                <div>
+                  <p className='text-meta font-semibold text-text-muted uppercase tracking-wide mb-2'>References</p>
+                  <div className='flex flex-wrap gap-2'>
+                    {characterRefs.map(({ id, url }) => (
+                      <div key={`char-${id}`} className='relative'>
+                        <img src={url} alt='Character reference' className='w-14 h-14 object-cover rounded-lg border-2 border-purple-400/70' />
+                        <span className='absolute -bottom-1.5 left-1/2 -translate-x-1/2 rounded-full bg-purple-500 px-1.5 py-px text-[9px] font-semibold text-white shadow-sm'>Character</span>
+                      </div>
+                    ))}
+                    {draftRefs.map(({ id, url }) => {
+                      const isPrimary = id === primaryRefId;
+                      return (
+                        <div key={id} className='relative'>
+                          <img src={url} alt='Reference' className={cn('w-14 h-14 object-cover rounded-lg border-2', isPrimary ? 'border-brand' : 'border-border-soft')} />
+                          {isPrimary && <Star size={12} className='absolute -top-1.5 -left-1.5 fill-brand text-brand' />}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

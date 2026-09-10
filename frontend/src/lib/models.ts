@@ -21,10 +21,6 @@ export type ImageModelId = (typeof IMAGE_MODELS)[number]['id'];
 export const DEFAULT_IMAGE_MODEL: ImageModelId = 'gpt-image-2';
 export const IMAGE_MODEL_KEY = 'tf_image_model';
 
-// Per-generation toggle: include the workspace's locked character (name +
-// appearance text, and its reference image) in image/video generations.
-export const INCLUDE_CHARACTER_KEY = 'tf_include_character';
-
 // ─── Video generation models ──────────────────────────────────────────────────
 
 export const VIDEO_MODELS = [
@@ -153,13 +149,16 @@ export type LtxExtendOption = {
   extendDuration: number;
 };
 
+// NOTE: LTX 2.3 Pro only accepts duration ∈ {6, 8, 10} on every task (initial +
+// extend). Each extend therefore adds at most 10s, and chainCount is capped at 6
+// server-side, so the reachable maximum is 10 + 6×10 = ~70s.
 export const LTX_EXTEND_OPTIONS: readonly LtxExtendOption[] = [
-  { id: '0',   label: 'Single clip', desc: 'Up to 10s · No extend',        chainCount: 0, extendDuration: 0  },
-  { id: '30',  label: '~30s',        desc: '10s + 1×20s extend',            chainCount: 1, extendDuration: 20 },
-  { id: '45',  label: '~45s',        desc: '10s + 5×7s extends · Reels',    chainCount: 5, extendDuration: 7  },
-  { id: '50',  label: '~50s',        desc: '10s + 2×20s extends',           chainCount: 2, extendDuration: 20 },
-  { id: '70',  label: '~70s',        desc: '10s + 3×20s extends',           chainCount: 3, extendDuration: 20 },
-  { id: '130', label: '~130s',       desc: '10s + 6×20s extends · ~2 min',  chainCount: 6, extendDuration: 20 },
+  { id: '0',  label: 'Single clip', desc: 'Up to 10s · No extend',        chainCount: 0, extendDuration: 0  },
+  { id: '30', label: '~30s',        desc: '10s + 2×10s extends',           chainCount: 2, extendDuration: 10 },
+  { id: '40', label: '~40s',        desc: '10s + 3×10s extends',           chainCount: 3, extendDuration: 10 },
+  { id: '50', label: '~50s',        desc: '10s + 4×10s extends',           chainCount: 4, extendDuration: 10 },
+  { id: '60', label: '~60s',        desc: '10s + 5×10s extends',           chainCount: 5, extendDuration: 10 },
+  { id: '70', label: '~70s',        desc: '10s + 6×10s extends · Reels',   chainCount: 6, extendDuration: 10 },
 ] as const;
 
 export const LTX_EXTEND_KEY = 'tf_ltx_extend';

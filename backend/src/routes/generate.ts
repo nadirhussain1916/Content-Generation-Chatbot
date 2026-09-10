@@ -12,6 +12,28 @@ import { characterBlock } from '../services/prompts';
 
 type Env = { Bindings: CloudflareBindings; Variables: ContextVariables };
 
+// Per-model allowed generation durations (seconds). Each Replicate model rejects
+// out-of-range values (e.g. LTX Pro only accepts 6/8/10), so we snap the requested
+// duration to the nearest allowed value before creating the prediction. Mirrors
+// VIDEO_DURATIONS in the frontend (frontend/src/lib/models.ts).
+const MODEL_VALID_DURATIONS: Record<string, number[]> = {
+  'google/veo-2': [5, 6, 7, 8],
+  'lightricks/ltx-2.3-fast': [6, 8, 10, 12, 14, 16, 18, 20],
+  'lightricks/ltx-2.3-pro': [6, 8, 10],
+  'bytedance/seedance-2.0': [5, 8, 10, 12, 15],
+  'bytedance/seedance-2.0-fast': [5, 8, 10, 12, 15],
+  'wan-video/wan-2.7-t2v': [2, 3, 4, 5, 8, 10, 12, 15],
+  'wan-video/wan-2.7-i2v': [2, 3, 4, 5, 8, 10, 12, 15],
+};
+
+// Snap a requested duration to the nearest value the model actually accepts.
+function snapDuration(modelId: string, requested: number): number {
+  const allowed = MODEL_VALID_DURATIONS[modelId];
+  if (!allowed || allowed.length === 0) return requested;
+  if (allowed.includes(requested)) return requested;
+  return allowed.reduce((best, d) => (Math.abs(d - requested) < Math.abs(best - requested) ? d : best));
+}
+
 const generateRouter = new Hono<Env>();
 
 generateRouter.use('*', authMiddleware);
@@ -297,18 +319,30 @@ generateRouter.post('/video', async (c) => {
       },
       'wan-video/wan-2.7-i2v': {
         slug: 'wan-video/wan-2.7-i2v',
+        // Image-to-video: the starting frame MUST be passed as `first_frame`
+        // (the model rejects the request with a ValueError otherwise).
         buildInput: (prompt, aspectRatio, duration, referenceImageUrl) => ({
           prompt,
           aspect_ratio: aspectRatio,
           duration,
           resolution: '720p',
-          ...(referenceImageUrl && { image_url: referenceImageUrl }),
+          ...(referenceImageUrl && { first_frame: referenceImageUrl }),
         }),
       },
     };
 
     const modelId = body.videoModel ?? 'lightricks/ltx-2.3-fast';
     const modelConfig = VIDEO_MODEL_CONFIGS[modelId] ?? VIDEO_MODEL_CONFIGS['lightricks/ltx-2.3-fast'];
+
+    // Image-to-video models need a starting frame — fail fast with a clear message
+    // rather than letting Replicate reject it with an opaque ValueError.
+    const I2V_MODELS = new Set(['wan-video/wan-2.7-i2v']);
+    if (I2V_MODELS.has(modelId) && !videoReferenceImageUrl) {
+      return c.json<TfResponse<null>>({
+        success: false,
+        message: 'This image-to-video model requires a reference image. Attach one (or include the character) and generate again.',
+      }, 400);
+    }
 
     // Aspect ratio: prefer explicit body param, fall back to workspace default
     const VALID_ASPECT_RATIOS = new Set(['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', '9:21']);
@@ -321,12 +355,11 @@ generateRouter.post('/video', async (c) => {
       videoAspectRatio = videoWidth >= videoHeight ? '16:9' : '9:16';
     }
 
-    // Veo-2: 5-8 | LTX Fast: 6,8,10,12,14,16,18,20 | LTX Pro: 6,8,10
-    // Seedance 2.0/Fast: 5,8,10,12,15 | Wan 2.7: 2,3,4,5,8,10,12,15
-    const VALID_DURATIONS = new Set([2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 15, 16, 18, 20]);
-    // Duration: prefer explicit body param, fall back to workspace default clip length, then 5s
-    const requestedDuration = body.duration ?? workspace.default_video_duration;
-    const videoDuration = requestedDuration && VALID_DURATIONS.has(requestedDuration) ? requestedDuration : 5;
+    // Duration: prefer explicit body param, fall back to workspace default clip length,
+    // then snap to the SELECTED model's allowed set (see MODEL_VALID_DURATIONS) so we
+    // never send a value Replicate will 422 on (e.g. 5s/20s to LTX Pro).
+    const requestedDuration = body.duration ?? workspace.default_video_duration ?? 5;
+    const videoDuration = snapDuration(modelId, requestedDuration);
 
     const assetId = crypto.randomUUID();
     const r2KeyPrefix = `${workspace.id}/${body.threadId}/${assetId}`;
@@ -340,11 +373,11 @@ generateRouter.post('/video', async (c) => {
       : 0;
 
     if (chainCount > 0) {
-      const extendDuration = body.extendDuration && body.extendDuration >= 1
-        ? Math.min(Math.round(body.extendDuration), 20)
-        : 20;
-
-      const initialDuration = VALID_DURATIONS.has(videoDuration) ? videoDuration : 10;
+      // Both the initial clip and every extend call must use a model-valid duration
+      // (LTX Pro only accepts 6/8/10 for input.duration on text/image/extend tasks).
+      const requestedExtend = body.extendDuration && body.extendDuration >= 1 ? Math.round(body.extendDuration) : 10;
+      const extendDuration = snapDuration(modelId, requestedExtend);
+      const initialDuration = snapDuration(modelId, videoDuration);
       await createAsset(c.env.DB, {
         id: assetId,
         thread_id: body.threadId,
