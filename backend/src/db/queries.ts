@@ -143,7 +143,7 @@ export async function createAsset(db: D1Database, data: {
   ).run();
 }
 
-export async function updateAsset(db: D1Database, id: string, data: Partial<Pick<Asset, 'status' | 'r2_key' | 'public_url' | 'prediction_id' | 'error_message'>>) {
+export async function updateAsset(db: D1Database, id: string, data: Partial<Pick<Asset, 'status' | 'r2_key' | 'public_url' | 'prediction_id' | 'error_message' | 'cost_usd'>>) {
   const fields = Object.entries(data).map(([k]) => `${k} = ?`).join(', ');
   const values = Object.values(data);
   return db.prepare(`UPDATE assets SET ${fields} WHERE id = ?`).bind(...values, id).run();

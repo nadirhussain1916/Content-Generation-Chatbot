@@ -3,7 +3,11 @@ import type { CloudflareBindings } from '../env';
 import { updateAsset } from '../db/queries';
 import { generateDalleImage } from '../services/openai';
 import { uploadFromUrl } from '../services/r2';
+import { calcVideoClipCost } from '../services/costs';
 import { Logger } from '../utils/Logger';
+
+// LTX extend chains always run on this model (see createReplicatePrediction calls below).
+const CHAIN_MODEL = 'lightricks/ltx-2.3-pro';
 
 export type GenerationParams =
   | {
@@ -180,12 +184,20 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
       const token = this.env.REPLICATE_API_TOKEN;
 
       // Shared poll helper — throws on non-terminal status so step.do retries it.
-      // Returns the output URL on success, returns { ok: false } on permanent failure.
-      const pollPrediction = async (predictionId: string): Promise<{ ok: true; url: string } | { ok: false; reason: string }> => {
+      // Returns the output URL + real output duration on success (durationSec drives
+      // the actual-cost accrual below), or { ok: false } on permanent failure.
+      const pollPrediction = async (
+        predictionId: string,
+      ): Promise<{ ok: true; url: string; durationSec?: number } | { ok: false; reason: string }> => {
         const res = await fetch(`https://api.replicate.com/v1/predictions/${predictionId}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        const prediction = await res.json() as { status: string; output?: string | string[]; error?: string };
+        const prediction = await res.json() as {
+          status: string;
+          output?: string | string[];
+          error?: string;
+          metrics?: { video_output_duration_seconds?: number };
+        };
 
         if (prediction.status === 'failed' || prediction.status === 'canceled') {
           return { ok: false, reason: `Prediction ${prediction.status}: ${prediction.error ?? 'unknown'}` };
@@ -195,7 +207,7 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
         if (prediction.status !== 'succeeded' || !outputUrl) {
           throw new Error(`Prediction still ${prediction.status}`);
         }
-        return { ok: true, url: outputUrl };
+        return { ok: true, url: outputUrl, durationSec: prediction.metrics?.video_output_duration_seconds };
       };
 
       try {
@@ -212,7 +224,7 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
           if (p.referenceImageUrl) {
             input['image'] = p.referenceImageUrl;
           }
-          return createReplicatePrediction(token, 'lightricks/ltx-2.3-pro', input);
+          return createReplicatePrediction(token, CHAIN_MODEL, input);
         });
 
         const initialResult = await step.do('wait-for-initial', {
@@ -227,12 +239,18 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
           return;
         }
 
-        // Persist the last known-good prediction ID. Each LTX extend output is the FULL
-        // cumulative video, so this ID always points at the most complete clip generated
-        // so far — letting the Recover endpoint rescue it if a later step (or the Worker's
-        // subrequest limit) kills the chain before the final upload.
+        // Track ACTUAL accrued cost as we go. LTX bills per second of output video and
+        // every extend re-emits the full cumulative clip, so cost = Σ (each step's output
+        // length × rate). We accrue from real metrics (falling back to configured lengths),
+        // which is why the final figure exceeds a naive "final length × rate" estimate.
+        let accruedCostUsd = calcVideoClipCost(CHAIN_MODEL, initialResult.durationSec ?? p.initialDuration);
+
+        // Persist the last known-good prediction ID + accrued cost. Each LTX extend output is
+        // the FULL cumulative video, so this ID always points at the most complete clip
+        // generated so far — letting the Recover endpoint rescue it (with the correct cost) if
+        // a later step (or the Worker's subrequest limit) kills the chain before the final upload.
         await step.do('save-initial-progress', async () => {
-          await updateAsset(this.env.DB, p.assetId, { prediction_id: initialPredId });
+          await updateAsset(this.env.DB, p.assetId, { prediction_id: initialPredId, cost_usd: accruedCostUsd });
         });
 
         // Steps 2..N+1 — sequential extend calls, each receiving the full previous video
@@ -240,7 +258,7 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
 
         for (let i = 0; i < p.chainCount; i++) {
           const extendPredId = await step.do(`create-extend-${i}`, async () => {
-            return createReplicatePrediction(token, 'lightricks/ltx-2.3-pro', {
+            return createReplicatePrediction(token, CHAIN_MODEL, {
               task: 'extend',
               video: currentVideoUrl,
               prompt: p.prompt,
@@ -265,9 +283,13 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
 
           currentVideoUrl = extendResult.url;
 
-          // Advance the recoverable checkpoint to this extend's (fully cumulative) output.
+          // This extend's output IS the full cumulative video, so bill its whole length.
+          const stepDurationSec = extendResult.durationSec ?? (p.initialDuration + (i + 1) * p.extendDuration);
+          accruedCostUsd += calcVideoClipCost(CHAIN_MODEL, stepDurationSec);
+
+          // Advance the recoverable checkpoint to this extend's output + updated real cost.
           await step.do(`save-extend-${i}-progress`, async () => {
-            await updateAsset(this.env.DB, p.assetId, { prediction_id: extendPredId });
+            await updateAsset(this.env.DB, p.assetId, { prediction_id: extendPredId, cost_usd: accruedCostUsd });
           });
         }
 

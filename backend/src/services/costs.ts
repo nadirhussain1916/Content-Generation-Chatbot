@@ -55,7 +55,12 @@ export function calcVideoClipCost(model: string, durationSec: number): number {
 
 /**
  * Calculate the total cost of an LTX Pro extend-chain generation.
- * Total duration = initialDuration + chainCount × extendDuration.
+ *
+ * IMPORTANT: LTX extend chains are billed per second of OUTPUT video, and each
+ * extend call re-emits the FULL cumulative video. So the true cost is the sum of
+ * every step's length — not just the final length billed once. e.g. a 10s clip
+ * extended to 40s (3 × 10s extends) bills 10 + 20 + 30 + 40 = 100 output-seconds,
+ * not 40. This matches Replicate's per-prediction "Approximate cost".
  */
 export function calcLtxChainCost(
   model: string,
@@ -63,6 +68,12 @@ export function calcLtxChainCost(
   chainCount: number,
   extendDuration: number,
 ): number {
-  const totalSec = initialDuration + chainCount * extendDuration;
-  return calcVideoClipCost(model, totalSec);
+  const rate = VIDEO_COST_PER_SEC[model] ?? 0;
+  let cumulativeSec = initialDuration;
+  let total = rate * cumulativeSec; // initial clip
+  for (let i = 0; i < chainCount; i++) {
+    cumulativeSec += extendDuration;
+    total += rate * cumulativeSec; // each extend re-bills the full cumulative length
+  }
+  return total;
 }
