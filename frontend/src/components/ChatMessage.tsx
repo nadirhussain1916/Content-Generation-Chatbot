@@ -296,6 +296,15 @@ export default function ChatMessage({ message, onOptionSelect, asset, assetBlobU
             onSave={savePackage}
           />
         )}
+      {/* Agent's conversational reply that accompanies the draft (e.g. "Updated the
+          caption as you asked"). Stored in message.content but previously not shown. */}
+      {message.content?.trim() && (
+        <div className='flex justify-start mb-2'>
+          <div className='max-w-[85%] bg-surface-card text-text-primary border border-border-soft rounded-2xl rounded-tl-none px-4 py-2.5 text-message leading-relaxed'>
+            <ReactMarkdown components={mdComponents}>{message.content}</ReactMarkdown>
+          </div>
+        </div>
+      )}
       <div className='flex justify-start'>
         <div className='max-w-[90%] w-full bg-surface-card border border-border-soft rounded-2xl overflow-hidden'>
           {/* Header */}

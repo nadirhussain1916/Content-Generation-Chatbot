@@ -9,12 +9,93 @@ import Sidebar from '../components/Sidebar';
 import ChatMessage from '../components/ChatMessage';
 import PublishBar from '../components/PublishBar';
 import ChatInput, { type ImageReference } from '../components/ChatInput';
-import { Loader2, ArrowLeft } from 'lucide-react';
+import { Loader2, ArrowLeft, Check } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useWorkspaceUploads } from '../hooks/useWorkspaceUploads';
 import { DEFAULT_TEXT_MODEL, TEXT_MODEL_KEY, readPref, writePref } from '../lib/models';
 
 const POLL_INTERVAL_MS = 8000; // poll every 8 s — video generation can take 2-3 min
+const STREAM_BACKEND = import.meta.env.VITE_API_BASE_URL ?? '';
+
+// Friendly labels for the agent's live tool steps streamed over SSE.
+const AGENT_ACTION_LABELS: Record<string, string> = {
+  analyze_image: 'Looking at your reference image',
+  ask_questions: 'Putting together a few questions',
+  generate_image_draft: 'Writing your image post',
+  generate_video_script: 'Writing your video script',
+  chat_reply: 'Composing a reply',
+};
+
+type SendResponseData = {
+  userMessage: { id: string; image_references: string | null };
+  assistantMessage: Message;
+};
+
+/**
+ * POST to the streaming message endpoint and parse the Server-Sent Events.
+ * Calls onProgress with a friendly label for each agent tool step, and resolves
+ * with the final message payload (from the `done` event). Throws on error/`error` event.
+ */
+async function streamAgentMessage(opts: {
+  slug: string;
+  threadId: string;
+  token?: string;
+  content: string;
+  textModel: string;
+  imageReferences: ImageReference[];
+  onProgress: (label: string) => void;
+}): Promise<SendResponseData | null> {
+  const res = await fetch(
+    `${STREAM_BACKEND}/api/workspaces/${opts.slug}/threads/${opts.threadId}/messages/stream`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(opts.token && { Authorization: `Bearer ${opts.token}` }),
+      },
+      body: JSON.stringify({ content: opts.content, textModel: opts.textModel, imageReferences: opts.imageReferences }),
+    }
+  );
+  if (!res.ok || !res.body) throw new Error(`Stream request failed (${res.status})`);
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let done: SendResponseData | null = null;
+
+  // Parse the SSE frames as they arrive (frames separated by a blank line).
+  for (;;) {
+    const { done: streamDone, value } = await reader.read();
+    if (streamDone) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const frames = buffer.split('\n\n');
+    buffer = frames.pop() ?? '';
+
+    for (const frame of frames) {
+      let event = 'message';
+      let dataStr = '';
+      for (const line of frame.split('\n')) {
+        if (line.startsWith('event:')) event = line.slice(6).trim();
+        else if (line.startsWith('data:')) dataStr += line.slice(5).trim();
+      }
+      if (!dataStr) continue;
+
+      if (event === 'progress') {
+        try {
+          const e = JSON.parse(dataStr) as { type: 'tool'; tool: string };
+          opts.onProgress(AGENT_ACTION_LABELS[e.tool] ?? 'Working on it');
+        } catch { /* ignore malformed frame */ }
+      } else if (event === 'done') {
+        done = JSON.parse(dataStr) as SendResponseData;
+      } else if (event === 'error') {
+        throw new Error('Agent reported an error');
+      }
+    }
+  }
+
+  return done;
+}
 
 export default function ThreadPage() {
   const { slug, threadId } = useParams<{ slug: string; threadId: string }>();
@@ -32,6 +113,8 @@ export default function ThreadPage() {
     has: boolean;
   }>({ name: null, appearance: null, referenceIds: [], has: false });
   const [sending, setSending] = useState(false);
+  // Live agent step labels for the in-flight send (streamed over SSE).
+  const [activity, setActivity] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [sidebarRefreshKey, setSidebarRefreshKey] = useState(0);
   const [textModel, setTextModel] = useState<string>(() => readPref(TEXT_MODEL_KEY, DEFAULT_TEXT_MODEL));
@@ -232,32 +315,36 @@ export default function ThreadPage() {
       attachmentsByTempId.current[tempId] = imageReferences;
     }
     setMessages((prev) => [...prev, tempMsg]);
+    setActivity([]);
 
     try {
       const token = await getToken();
-      const res = await api.post<TfResponse<{
-        userMessage: { id: string; image_references: string | null };
-        assistantMessage: Message;
-      }>>(
-        `/api/workspaces/${slug}/threads/${threadId}/messages`,
-        { content: content.trim(), textModel, imageReferences },
-        token ?? undefined
-      );
+      // Stream the agent run — progress labels update the live activity indicator,
+      // and the final `done` payload carries the persisted messages.
+      const done = await streamAgentMessage({
+        slug: slug!,
+        threadId: threadId!,
+        token: token ?? undefined,
+        content: content.trim(),
+        textModel,
+        imageReferences,
+        onProgress: (label) => setActivity((prev) => [...prev, label]),
+      });
 
-      if (res.success && res.data) {
+      if (done) {
         const realUserMsg: Message = {
           ...tempMsg,
-          id: res.data.userMessage.id,
-          image_references: res.data.userMessage.image_references,
+          id: done.userMessage.id,
+          image_references: done.userMessage.image_references,
         };
         setMessages((prev) => [
           ...prev.filter((m) => m.id !== tempId),
           realUserMsg,
-          res.data!.assistantMessage,
+          done.assistantMessage,
         ]);
         // Migrate attachment annotation to real message id
         if (imageReferences.length > 0) {
-          attachmentsByTempId.current[res.data.userMessage.id] = imageReferences;
+          attachmentsByTempId.current[done.userMessage.id] = imageReferences;
           delete attachmentsByTempId.current[tempId];
         }
         // Refresh thread title + status
@@ -270,7 +357,7 @@ export default function ThreadPage() {
           setSidebarRefreshKey((k) => k + 1);
         }
       } else {
-        // API responded but reported failure — keep the optimistic bubble and flag it for retry
+        // Stream ended without a final payload — keep the optimistic bubble and flag for retry
         setFailedSends((prev) => ({ ...prev, [tempId]: { content: content.trim(), imageReferences } }));
       }
     } catch {
@@ -278,6 +365,7 @@ export default function ThreadPage() {
       setFailedSends((prev) => ({ ...prev, [tempId]: { content: content.trim(), imageReferences } }));
     } finally {
       setSending(false);
+      setActivity([]);
     }
   }
 
@@ -405,8 +493,27 @@ export default function ThreadPage() {
               ))}
               {sending && (
                 <div className='flex justify-start'>
-                  <div className='bg-ink rounded-2xl rounded-tl-md px-4 py-3'>
-                    <Loader2 size={14} className='animate-spin text-on-ink' />
+                  <div className='bg-ink rounded-2xl rounded-tl-md px-4 py-3 min-w-[190px] space-y-1.5'>
+                    {activity.length === 0 ? (
+                      <div className='flex items-center gap-2 text-on-ink'>
+                        <Loader2 size={14} className='animate-spin' />
+                        <span className='text-meta'>Thinking…</span>
+                      </div>
+                    ) : (
+                      activity.map((label, i) => {
+                        const isLast = i === activity.length - 1;
+                        return (
+                          <div key={i} className='flex items-center gap-2 text-on-ink'>
+                            {isLast
+                              ? <Loader2 size={12} className='animate-spin flex-shrink-0' />
+                              : <Check size={12} className='flex-shrink-0 opacity-60' />}
+                            <span className={cn('text-meta', !isLast && 'opacity-60')}>
+                              {label}{isLast ? '…' : ''}
+                            </span>
+                          </div>
+                        );
+                      })
+                    )}
                   </div>
                 </div>
               )}

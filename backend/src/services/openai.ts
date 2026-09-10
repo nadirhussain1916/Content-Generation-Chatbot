@@ -1,9 +1,10 @@
 import { createOpenAI } from '@ai-sdk/openai';
 import { NonRetryableError } from 'cloudflare:workflows';
-import { generateText, tool, stepCountIs } from 'ai';
+import { generateText, streamText, tool, stepCountIs } from 'ai';
 import { z } from 'zod';
 import { AGENT_SYSTEM_PROMPT, type WorkspaceBrand } from './prompts';
 import type { ImagePostPackage, VideoPostPackage } from '../types';
+import { IMAGE_MODELS, GENERATION_MODES, VIDEO_MODELS } from './generationConfig';
 import { Logger } from '../utils/Logger';
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
@@ -47,6 +48,15 @@ const ImagePostPackageSchema = z.object({
     'around the locked character (do NOT describe a different/competing person); if false, write it normally. ' +
     'Set false when the workspace has no locked character.'
   ),
+  imageModel: z.enum(IMAGE_MODELS).optional().describe(
+    'Image generation model. Default (and currently the only option) is "gpt-image-2". Always set this to "gpt-image-2".'
+  ),
+  generationMode: z.enum(GENERATION_MODES).optional().describe(
+    'How reference images attached to this draft are used. ONLY meaningful when a reference image is present. ' +
+    '"edit" = feed the reference in as pixels to faithfully reproduce/composite it (use for products, logos, a specific ' +
+    'person/scene that must be preserved). "inspire" = use the reference only as stylistic guidance described in words ' +
+    '(use for mood/style/palette inspiration). Omit when there is no reference image. Default is "inspire".'
+  ),
 });
 
 const VideoPostPackageSchema = z.object({
@@ -58,7 +68,7 @@ const VideoPostPackageSchema = z.object({
   script: VideoScriptSchema,
   videoPrompt: z.string().describe('Replicate/Runway visual prompt'),
   videoAspectRatio: z.enum(['9:16', '16:9']).describe('9:16=portrait (Reels/Shorts/TikTok) | 16:9=landscape (YouTube). Match the workspace default video dimensions unless the user requests otherwise.'),
-  videoDurationSeconds: z.number().int().describe('Per-clip generation length in seconds. Set to the workspace default clip length unless the user requests a different length.'),
+  videoDurationSeconds: z.number().int().describe('Per-clip generation length in seconds. Set to the workspace default clip length unless the user requests a different length. Must be valid for the chosen videoModel (the backend snaps it to the nearest allowed value otherwise).'),
   tone: z.string(),
   suggestedPlatforms: z.array(z.enum(['instagram', 'tiktok'])),
   includeCharacter: z.boolean().describe(
@@ -66,6 +76,13 @@ const VideoPostPackageSchema = z.object({
     'Decide BEFORE writing videoPrompt and author the prompt to match: if true, build the scenes ' +
     'around the locked character (do NOT describe a different/competing person); if false, write it normally. ' +
     'Set false when the workspace has no locked character.'
+  ),
+  videoModel: z.enum(VIDEO_MODELS).optional().describe(
+    'Replicate video model. Default "lightricks/ltx-2.3-fast" (portrait, audio, up to 20s, cheap — good general choice). ' +
+    'Options: "lightricks/ltx-2.3-pro" (higher quality, up to 10s), "bytedance/seedance-2.0" / "bytedance/seedance-2.0-fast" ' +
+    '(4K, up to 15s), "wan-video/wan-2.7-t2v" (text-only), "wan-video/wan-2.7-i2v" (image-to-video — REQUIRES a reference image), ' +
+    '"google/veo-2" (fast, portrait & landscape, premium). Only pick "wan-video/wan-2.7-i2v" when a reference image is attached. ' +
+    'Pick "wan-video/wan-2.7-t2v" only when there is no reference image to preserve.'
   ),
 });
 
@@ -104,7 +121,7 @@ function buildHistory(messages: { role: 'user' | 'assistant'; content: string }[
  * The model decides autonomously which terminal tool to call based on context.
  * analyze_image may be called 0-N times before the terminal tool.
  */
-export async function runAgent(params: {
+export type RunAgentParams = {
   apiKey: string;
   messages: { role: 'user' | 'assistant'; content: string }[];
   tone: string;
@@ -118,10 +135,13 @@ export async function runAgent(params: {
   saveVisionDescription: (uploadId: string, description: string) => Promise<void>;
   /** Resolve any upload ID the agent finds in the conversation (e.g. POST_PACKAGE.referenceUploadIds) */
   resolveUpload: (uploadId: string) => Promise<{ publicUrl: string; name: string } | null>;
-}): Promise<AgentResult> {
-  const openai = createOpenAI({ apiKey: params.apiKey });
-  const imageReferences = params.imageReferences ?? [];
+};
 
+/** A single live progress event describing what the agent is currently doing. */
+export type AgentProgressEvent = { type: 'tool'; tool: string };
+
+function logAgentStart(params: RunAgentParams) {
+  const imageReferences = params.imageReferences ?? [];
   // Log the last user message so logs can be correlated to the user's input
   const lastUserMsg = [...params.messages].reverse().find((m) => m.role === 'user');
   Logger.log('AgentStart', {
@@ -131,8 +151,17 @@ export async function runAgent(params: {
     hasPersistedContext: !!params.persistedImageContext,
     userMessage: lastUserMsg?.content?.slice(0, 200) ?? '',
   });
+}
 
-  const result = await generateText({
+/**
+ * Build the shared generateText/streamText configuration (system prompt, history,
+ * tools). Used by both the buffered (runAgent) and streaming (runAgentStreaming) paths.
+ */
+function buildAgentGenerationConfig(params: RunAgentParams) {
+  const openai = createOpenAI({ apiKey: params.apiKey });
+  const imageReferences = params.imageReferences ?? [];
+
+  return {
     model: openai.chat(params.textModel ?? 'gpt-4o'),
     // Allow steps for: current-message refs + draft refs (unknown count) + reasoning + terminal tool
     stopWhen: stepCountIs(Math.max(imageReferences.length + 8, 12)),
@@ -254,39 +283,27 @@ export async function runAgent(params: {
         },
       }),
     },
-  }).catch((err: unknown) => {
-    Logger.log('AgentGenerateTextFailed', {
-      model: params.textModel ?? 'gpt-4o',
-      threadStatus: params.threadStatus,
-      attachedImageCount: imageReferences.length,
-    }, err);
-    throw err; // re-throw so messages.ts returns a 500
-  });
-
-  const usage: AgentUsage = {
-    inputTokens: result.usage?.inputTokens ?? 0,
-    outputTokens: result.usage?.outputTokens ?? 0,
   };
+}
 
-  Logger.log('AgentComplete', {
-    stepCount: result.steps.length,
-    totalInputTokens: usage.inputTokens,
-    totalOutputTokens: usage.outputTokens,
-    finishReason: result.finishReason,
-  });
-
-  // ── Extract result from the FIRST terminal tool call ─────────────────────
-  // Scan forward so that if the model incorrectly calls a second terminal tool
-  // after seeing the first tool's result, we still use the first decision.
-  // (e.g. model calls ask_questions → gets result back → calls chat_reply to
-  //  "summarize" — we want ask_questions, not the follow-up chat_reply)
+/**
+ * Extract the AgentResult from the FIRST terminal tool call across the completed steps.
+ * Scan forward so that if the model incorrectly calls a second terminal tool after seeing
+ * the first tool's result, we still use the first decision. (e.g. model calls ask_questions
+ * → gets result back → calls chat_reply to "summarize" — we want ask_questions.)
+ */
+function extractAgentResult(
+  steps: Array<{ toolCalls: unknown[] }>,
+  text: string,
+  usage: AgentUsage,
+): AgentResult {
   const terminalTools = new Set(['ask_questions', 'generate_image_draft', 'generate_video_script', 'chat_reply']);
 
   // AI SDK v6 uses `input` (not `args`) on both StaticToolCall and DynamicToolCall
   type FlatToolCall = { toolName: string; input: Record<string, unknown> };
 
-  for (let i = 0; i < result.steps.length; i++) {
-    const step = result.steps[i];
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
     for (const tc of step.toolCalls as unknown as FlatToolCall[]) {
       if (!terminalTools.has(tc.toolName)) continue;
       const { toolName, input } = tc;
@@ -316,15 +333,88 @@ export async function runAgent(params: {
   }
 
   // Fallback: no terminal tool found — use raw text output
-  Logger.log('AgentFallbackToText', {
-    stepCount: result.steps.length,
-    textLength: result.text?.length ?? 0,
-  });
+  Logger.log('AgentFallbackToText', { stepCount: steps.length, textLength: text?.length ?? 0 });
   return {
     action: 'chat',
-    reply: result.text || "I'm here to help! What would you like to create?",
+    reply: text || "I'm here to help! What would you like to create?",
     usage,
   };
+}
+
+/**
+ * Buffered agent run — returns the final structured result once the whole agentic
+ * loop completes. Used by the non-streaming message endpoint.
+ */
+export async function runAgent(params: RunAgentParams): Promise<AgentResult> {
+  logAgentStart(params);
+
+  const result = await generateText(buildAgentGenerationConfig(params)).catch((err: unknown) => {
+    Logger.log('AgentGenerateTextFailed', {
+      model: params.textModel ?? 'gpt-4o',
+      threadStatus: params.threadStatus,
+      attachedImageCount: params.imageReferences?.length ?? 0,
+    }, err);
+    throw err; // re-throw so messages.ts returns a 500
+  });
+
+  const usage: AgentUsage = {
+    inputTokens: result.usage?.inputTokens ?? 0,
+    outputTokens: result.usage?.outputTokens ?? 0,
+  };
+
+  Logger.log('AgentComplete', {
+    stepCount: result.steps.length,
+    totalInputTokens: usage.inputTokens,
+    totalOutputTokens: usage.outputTokens,
+    finishReason: result.finishReason,
+  });
+
+  return extractAgentResult(result.steps as unknown as Array<{ toolCalls: unknown[] }>, result.text ?? '', usage);
+}
+
+/**
+ * Streaming agent run — emits an AgentProgressEvent each time the model invokes a tool
+ * (analyze_image, ask_questions, generate_image_draft, …) so the UI can show live progress,
+ * then returns the same final structured AgentResult once the loop completes.
+ */
+export async function runAgentStreaming(
+  params: RunAgentParams & { onEvent: (e: AgentProgressEvent) => void | Promise<void> },
+): Promise<AgentResult> {
+  logAgentStart(params);
+
+  const result = streamText(buildAgentGenerationConfig(params));
+
+  try {
+    for await (const part of result.fullStream) {
+      if (part.type === 'tool-call') {
+        await params.onEvent({ type: 'tool', tool: part.toolName });
+      } else if (part.type === 'error') {
+        throw part.error;
+      }
+    }
+  } catch (err) {
+    Logger.log('AgentStreamFailed', {
+      model: params.textModel ?? 'gpt-4o',
+      threadStatus: params.threadStatus,
+    }, err);
+    throw err; // surfaced to the SSE handler which emits an error event
+  }
+
+  const steps = await result.steps;
+  const text = await result.text;
+  const finalUsage = await result.usage;
+  const usage: AgentUsage = {
+    inputTokens: finalUsage?.inputTokens ?? 0,
+    outputTokens: finalUsage?.outputTokens ?? 0,
+  };
+
+  Logger.log('AgentStreamComplete', {
+    stepCount: steps.length,
+    totalInputTokens: usage.inputTokens,
+    totalOutputTokens: usage.outputTokens,
+  });
+
+  return extractAgentResult(steps as unknown as Array<{ toolCalls: unknown[] }>, text ?? '', usage);
 }
 
 // ─── Image description via GPT-4o vision ─────────────────────────────────────

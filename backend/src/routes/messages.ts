@@ -1,10 +1,11 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
+import { streamSSE } from 'hono/streaming';
 import { authMiddleware, workspaceMiddleware } from '../middleware/auth';
 import {
   getThread, getMessages, createMessage, updateThread,
   getWorkspaceUploads, getWorkspaceUploadsByIds, updateWorkspaceUploadVisionDescription, updateMessage,
 } from '../db/queries';
-import { runAgent, type AgentResult } from '../services/openai';
+import { runAgent, runAgentStreaming, type AgentResult, type RunAgentParams } from '../services/openai';
 import { calcTextCost } from '../services/costs';
 import type { CloudflareBindings } from '../env';
 import type { ContextVariables, TfResponse, Thread, Message } from '../types';
@@ -12,34 +13,46 @@ import { Logger } from '../utils/Logger';
 
 type Env = { Bindings: CloudflareBindings; Variables: ContextVariables };
 
+type MessageBody = {
+  content: string;
+  textModel?: string;
+  imageReferences?: { uploadId: string; publicUrl: string; name: string }[];
+};
+
+type SendResponseData = {
+  userMessage: { id: string; image_references: string | null };
+  assistantMessage: Message;
+};
+
+type AgentRunContext = {
+  userMsgId: string;
+  allMessages: Awaited<ReturnType<typeof getMessages>>;
+  imageReferences: { uploadId: string; publicUrl: string; name: string }[];
+  textModel: string;
+  runParams: RunAgentParams;
+};
+
 const messagesRouter = new Hono<Env>();
 
 messagesRouter.use('*', authMiddleware);
 messagesRouter.use('*', workspaceMiddleware);
 
-// POST /api/workspaces/:slug/threads/:threadId/messages
-// Single agentic handler — covers planning, questioning, drafting, and refinement
-messagesRouter.post('/:threadId/messages', async (c) => {
+// ── Shared pipeline used by both the buffered and streaming message endpoints ──
+
+/**
+ * Persist the incoming user message, gather image/vision context, build the
+ * conversation history, and assemble the RunAgentParams. Does NOT invoke the model —
+ * the caller runs either runAgent (buffered) or runAgentStreaming (SSE).
+ */
+async function prepareAgentRun(
+  c: Context<Env>,
+  thread: Thread,
+  body: MessageBody,
+): Promise<AgentRunContext> {
   const workspace = c.get('workspace');
-  const threadId = c.req.param('threadId');
-
-  try {
-    const thread = await getThread(c.env.DB, threadId);
-    if (!thread || thread.workspace_id !== workspace.id) {
-      return c.json<TfResponse<null>>({ success: false, message: 'Thread not found' }, 404);
-    }
-
-    const body = await c.req.json() as {
-      content: string;
-      textModel?: string;
-      imageReferences?: { uploadId: string; publicUrl: string; name: string }[];
-    };
-    if (!body.content?.trim()) {
-      return c.json<TfResponse<null>>({ success: false, message: 'Message content is required' }, 400);
-    }
-
-    const textModel = body.textModel ?? 'gpt-4o';
-    const imageReferences = body.imageReferences ?? [];
+  const threadId = thread.id;
+  const textModel = body.textModel ?? 'gpt-4o';
+  const imageReferences = body.imageReferences ?? [];
 
     // ── Pre-load cached vision descriptions for newly attached images ─────────
     // uploadMap is also used as an in-process cache by getVisionDescription /
@@ -107,8 +120,8 @@ messagesRouter.post('/:threadId/messages', async (c) => {
       character_appearance:     workspace.character_appearance,
     };
 
-    // 3. Run unified agent
-    const agentResult: AgentResult = await runAgent({
+    // Assemble the agent params — the model is invoked by the route handler.
+    const runParams: RunAgentParams = {
       apiKey: c.env.OPENAI_API_KEY,
       messages: history,
       tone,
@@ -148,7 +161,25 @@ messagesRouter.post('/:threadId/messages', async (c) => {
           return { publicUrl: u.public_url, name: u.name };
         } catch (err) { Logger.log('ResolveUploadError', { uploadId, workspaceId: workspace.id }, err); return null; }
       },
-    });
+    };
+
+    return { userMsgId, allMessages, imageReferences, textModel, runParams };
+}
+
+/**
+ * Apply reference-injection rules, persist the assistant message, update thread
+ * state, and return the response payload. Shared by both endpoints.
+ */
+async function finalizeAssistantResponse(
+  c: Context<Env>,
+  thread: Thread,
+  body: MessageBody,
+  agentResult: AgentResult,
+  ctx: AgentRunContext,
+): Promise<SendResponseData> {
+  const workspace = c.get('workspace');
+  const threadId = thread.id;
+  const { userMsgId, allMessages, imageReferences, textModel } = ctx;
 
     // 4. Map agent result → message fields + thread state
     let assistantContent: string;
@@ -282,36 +313,84 @@ messagesRouter.post('/:threadId/messages', async (c) => {
       await updateThread(c.env.DB, threadId, threadUpdate);
     }
 
-    return c.json<TfResponse<{
-      userMessage: { id: string; image_references: string | null };
-      assistantMessage: Message;
-    }>>({
-      success: true,
-      data: {
-        userMessage: {
-          id: userMsgId,
-          image_references: imageReferences.length > 0 ? JSON.stringify(imageReferences) : null,
-        },
-        assistantMessage: {
-          id: assistantMsgId,
-          thread_id: threadId,
-          role: 'assistant',
-          type: messageType,
-          content: assistantContent,
-          post_package: postPackageJson ?? null,
-          image_references: null,
-          model: textModel,
-          cost_usd: agentCost,
-          input_tokens: agentResult.usage.inputTokens,
-          output_tokens: agentResult.usage.outputTokens,
-          created_at: Math.floor(Date.now() / 1000),
-        },
+    return {
+      userMessage: {
+        id: userMsgId,
+        image_references: imageReferences.length > 0 ? JSON.stringify(imageReferences) : null,
       },
-    });
+      assistantMessage: {
+        id: assistantMsgId,
+        thread_id: threadId,
+        role: 'assistant',
+        type: messageType,
+        content: assistantContent,
+        post_package: postPackageJson ?? null,
+        image_references: null,
+        model: textModel,
+        cost_usd: agentCost,
+        input_tokens: agentResult.usage.inputTokens,
+        output_tokens: agentResult.usage.outputTokens,
+        created_at: Math.floor(Date.now() / 1000),
+      },
+    };
+}
+
+// POST /api/workspaces/:slug/threads/:threadId/messages
+// Buffered agentic handler — covers planning, questioning, drafting, and refinement.
+messagesRouter.post('/:threadId/messages', async (c) => {
+  const workspace = c.get('workspace');
+  const threadId = c.req.param('threadId');
+
+  try {
+    const thread = await getThread(c.env.DB, threadId);
+    if (!thread || thread.workspace_id !== workspace.id) {
+      return c.json<TfResponse<null>>({ success: false, message: 'Thread not found' }, 404);
+    }
+    const body = await c.req.json() as MessageBody;
+    if (!body.content?.trim()) {
+      return c.json<TfResponse<null>>({ success: false, message: 'Message content is required' }, 400);
+    }
+
+    const ctx = await prepareAgentRun(c, thread, body);
+    const agentResult = await runAgent(ctx.runParams);
+    const data = await finalizeAssistantResponse(c, thread, body, agentResult, ctx);
+    return c.json<TfResponse<SendResponseData>>({ success: true, data });
   } catch (error) {
     Logger.log('SendMessageError', { threadId, workspaceId: workspace.id }, error);
     return c.json<TfResponse<null>>({ success: false, message: 'Failed to generate AI response' }, 500);
   }
+});
+
+// POST /api/workspaces/:slug/threads/:threadId/messages/stream
+// Same pipeline, but streams live agent progress via Server-Sent Events and emits
+// the final message payload as a `done` event (or `error` on failure).
+messagesRouter.post('/:threadId/messages/stream', async (c) => {
+  const workspace = c.get('workspace');
+  const threadId = c.req.param('threadId');
+
+  const thread = await getThread(c.env.DB, threadId);
+  if (!thread || thread.workspace_id !== workspace.id) {
+    return c.json<TfResponse<null>>({ success: false, message: 'Thread not found' }, 404);
+  }
+  const body = await c.req.json() as MessageBody;
+  if (!body.content?.trim()) {
+    return c.json<TfResponse<null>>({ success: false, message: 'Message content is required' }, 400);
+  }
+
+  return streamSSE(c, async (stream) => {
+    try {
+      const ctx = await prepareAgentRun(c, thread, body);
+      const agentResult = await runAgentStreaming({
+        ...ctx.runParams,
+        onEvent: async (e) => { await stream.writeSSE({ event: 'progress', data: JSON.stringify(e) }); },
+      });
+      const data = await finalizeAssistantResponse(c, thread, body, agentResult, ctx);
+      await stream.writeSSE({ event: 'done', data: JSON.stringify(data) });
+    } catch (error) {
+      Logger.log('SendMessageStreamError', { threadId, workspaceId: workspace.id }, error);
+      await stream.writeSSE({ event: 'error', data: JSON.stringify({ message: 'Failed to generate AI response' }) });
+    }
+  });
 });
 
 // PATCH /api/workspaces/:slug/threads/:threadId/messages/:messageId/references

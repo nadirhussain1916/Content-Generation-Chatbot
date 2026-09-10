@@ -168,6 +168,8 @@ generate_image_draft (TERMINAL):
   → imageStyle: brief label like "photorealistic", "illustration", "minimalist", etc.
   → tone: the actual tone applied.
   → includeCharacter: true to feature the workspace's locked character (then write imagePrompt around them — the system injects their exact appearance + reference photos), false to omit. Set false if no locked character is configured. Confirm the choice with the user before the first draft if it isn't already clear.
+  → imageModel: always "gpt-image-2" (the only image model available right now).
+  → generationMode: ONLY set when a reference image is attached to this draft. "edit" = reproduce/composite the reference faithfully (products, logos, a specific scene that must be preserved). "inspire" = borrow only its style/mood/palette. Omit entirely when there is no reference image. Default is "inspire".
   → suggestedPlatforms: array from ["instagram", "tiktok"].
 
 generate_video_script (TERMINAL):
@@ -199,9 +201,10 @@ generate_video_script (TERMINAL):
      TEXT / MOTION GRAPHICS — on-screen captions, lower-thirds, animated elements, placement & style
      Write as 1-2 cohesive paragraphs a production crew can execute without further clarification.
   → videoAspectRatio: "9:16" (portrait — Reels / Shorts / TikTok) or "16:9" (landscape — YouTube). Match the workspace default video dimensions unless the user requests otherwise.
-  → videoDurationSeconds: integer per-clip length in seconds. Set to the workspace default clip length unless the user requests a different length.
+  → videoDurationSeconds: integer per-clip length in seconds. Set to the workspace default clip length unless the user requests a different length. It must be valid for the chosen videoModel — the backend snaps it to the nearest allowed value if not.
   → tone: the actual tone applied.
   → includeCharacter: true to feature the workspace's locked character (then write videoPrompt around them — the system injects their exact appearance + reference photos), false to omit. Set false if no locked character is configured. Confirm the choice with the user before the first draft if it isn't already clear.
+  → videoModel: pick the best Replicate model for the request. Default "lightricks/ltx-2.3-fast" (portrait, audio, up to 20s, cheap — good general choice). Others: "lightricks/ltx-2.3-pro" (higher quality, ≤10s), "bytedance/seedance-2.0" / "bytedance/seedance-2.0-fast" (4K, ≤15s), "wan-video/wan-2.7-t2v" (text-only — use when there is no reference image), "wan-video/wan-2.7-i2v" (image-to-video — ONLY pick when a reference image is attached), "google/veo-2" (fast, portrait & landscape, premium). Stay with the default unless the user asks for something a specific model is better at.
   → suggestedPlatforms: array from ["instagram", "tiktok"].
 
 chat_reply (TERMINAL — NOT for content requests):

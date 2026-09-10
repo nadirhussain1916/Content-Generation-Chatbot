@@ -40,23 +40,31 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
       ? friendlyErrorMessage(existingAsset.error_message)
       : null
   );
-  // AI-chosen video params from the draft package (fall back to saved prefs)
+  // AI-chosen video params from the draft package (fall back to saved prefs). The
+  // agent may have picked the model / aspect ratio / duration; we pre-select those
+  // here and the user can still override below before generating.
   const pkg = (() => {
     try { return JSON.parse(message.post_package ?? '{}') as Partial<VideoPostPackage>; } catch { return {}; }
   })();
 
-  const [videoModel, setVideoModel] = useState(() => readPref(VIDEO_MODEL_KEY, DEFAULT_VIDEO_MODEL));
+  // Resolve the model first so aspect-ratio and duration defaults follow it.
+  const pkgVideoModel: VideoModelId =
+    pkg.videoModel && VIDEO_MODELS.some((m) => m.id === pkg.videoModel)
+      ? (pkg.videoModel as VideoModelId)
+      : (readPref(VIDEO_MODEL_KEY, DEFAULT_VIDEO_MODEL) as VideoModelId);
+
+  const [videoModel, setVideoModel] = useState<VideoModelId>(pkgVideoModel);
   const [aspectRatio, setAspectRatio] = useState(() => {
     const fromPkg = pkg.videoAspectRatio;
     if (fromPkg && VIDEO_ASPECT_RATIOS.some((r) => r.id === fromPkg)) return fromPkg;
     return readPref(VIDEO_ASPECT_RATIO_KEY, DEFAULT_VIDEO_ASPECT_RATIO);
   });
   const [duration, setDuration] = useState(() => {
-    const modelId = readPref(VIDEO_MODEL_KEY, DEFAULT_VIDEO_MODEL) as VideoModelId;
+    const modelId = pkgVideoModel;
     const opts = VIDEO_DURATIONS[modelId] ?? VIDEO_DURATIONS['google/veo-2'];
     const fromPkg = pkg.videoDurationSeconds != null ? String(pkg.videoDurationSeconds) : undefined;
     if (fromPkg && opts.some((o) => o.id === fromPkg)) return fromPkg;
-    return readPref(VIDEO_DURATION_KEY, DEFAULT_VIDEO_DURATIONS[DEFAULT_VIDEO_MODEL]);
+    return readPref(VIDEO_DURATION_KEY, DEFAULT_VIDEO_DURATIONS[modelId] ?? DEFAULT_VIDEO_DURATIONS[DEFAULT_VIDEO_MODEL]);
   });
   const [ltxExtendId, setLtxExtendId] = useState<string>(() => readPref(LTX_EXTEND_KEY, '0'));
   // Include-character is now saved on the draft (toggled in the card); absent = on.

@@ -5,7 +5,7 @@ import type { TfResponse, Asset, Message, ImagePostPackage, VideoPostPackage } f
 import { ImageIcon, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { cn } from '../lib/utils';
 import ModelPicker from './ModelPicker';
-import { IMAGE_MODELS, DEFAULT_IMAGE_MODEL, IMAGE_MODEL_KEY, readPref, writePref } from '../lib/models';
+import { IMAGE_MODELS, DEFAULT_IMAGE_MODEL, IMAGE_MODEL_KEY, readPref, writePref, type ImageModelId } from '../lib/models';
 import { friendlyErrorMessage } from '../lib/display';
 
 type ImageSize = '1024x1024' | '1024x1792' | '1792x1024';
@@ -41,13 +41,22 @@ export default function GenerateImageButton({ slug, threadId, message, existingA
       ? friendlyErrorMessage(existingAsset.error_message)
       : null
   );
-  const [imageModel, setImageModel] = useState(() => readPref(IMAGE_MODEL_KEY, DEFAULT_IMAGE_MODEL));
-  const [generationMode, setGenerationMode] = useState<GenerationMode>('inspire');
-
-  // Parse AI-chosen size and reference fields from package
+  // Parse AI-chosen settings + reference fields from the draft package. The agent
+  // may have picked the model / size / edit-vs-inspire mode; we pre-select those
+  // here (falling back to the saved pref) and the user can still override below.
   const pkg = (() => {
     try { return JSON.parse(message.post_package ?? '{}') as Partial<ImagePostPackage & VideoPostPackage>; } catch { return {}; }
   })();
+
+  const [imageModel, setImageModel] = useState<ImageModelId>(() => {
+    const fromPkg = pkg.imageModel;
+    if (fromPkg && IMAGE_MODELS.some((m) => m.id === fromPkg)) return fromPkg as ImageModelId;
+    return readPref(IMAGE_MODEL_KEY, DEFAULT_IMAGE_MODEL);
+  });
+  const [generationMode, setGenerationMode] = useState<GenerationMode>(() => {
+    const fromPkg = pkg.generationMode;
+    return fromPkg === 'edit' || fromPkg === 'inspire' ? fromPkg : 'inspire';
+  });
   // Include-character is now saved on the draft (toggled in the card); absent = on.
   const includeCharacter = pkg.includeCharacter ?? true;
   const pkgSize = pkg.imageSize as ImageSize | undefined;

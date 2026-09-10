@@ -86,6 +86,11 @@ export interface ImagePostPackage {
   imageStyle: string;
   tone: string;
   suggestedPlatforms: ('instagram' | 'tiktok')[];
+  // Generation settings the agent may choose (validated/coerced server-side).
+  // Absent = fall back to workspace/global defaults; the UI pre-selects these
+  // and the user can still override before generating.
+  imageModel?: string; // 'gpt-image-2' (default)
+  generationMode?: 'edit' | 'inspire'; // how a draft reference image is used
   // Reference images (injected by backend after AI generation)
   referenceUploadIds?: string[];
   primaryReferenceUploadId?: string | null;
@@ -111,6 +116,10 @@ export interface VideoPostPackage {
   videoPrompt: string;
   videoAspectRatio?: '9:16' | '16:9';
   videoDurationSeconds?: number;
+  // Video model the agent may choose (validated/coerced server-side). Absent =
+  // fall back to the default model; the UI pre-selects it and the user can still
+  // override before generating.
+  videoModel?: string;
   tone: string;
   suggestedPlatforms: ('instagram' | 'tiktok')[];
   // Reference images (injected by backend after AI generation)
