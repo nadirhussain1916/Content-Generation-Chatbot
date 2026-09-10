@@ -579,12 +579,23 @@ generateRouter.post('/assets/:assetId/recover', async (c) => {
       return c.json<TfResponse<null>>({ success: false, message: 'Asset not found' }, 404);
     }
 
-    const body = await c.req.json() as { predictionId?: string; sourceUrl?: string };
+    // Body is optional — the normal path sends nothing and we recover from the
+    // prediction ID the workflow persisted on the asset as generation progressed.
+    // predictionId / sourceUrl in the body are only for manual/admin overrides.
+    const body = await c.req.json().catch(() => ({})) as { predictionId?: string; sourceUrl?: string };
+    const predictionId = body.predictionId ?? asset.prediction_id ?? undefined;
+
+    if (!body.sourceUrl && !predictionId) {
+      return c.json<TfResponse<null>>({
+        success: false,
+        message: 'Nothing to recover — no Replicate prediction was recorded for this generation',
+      }, 422);
+    }
 
     // Resolve the source URL — prefer looking it up fresh from Replicate by id.
     let sourceUrl = body.sourceUrl;
-    if (!sourceUrl && body.predictionId) {
-      const res = await fetch(`https://api.replicate.com/v1/predictions/${body.predictionId}`, {
+    if (!sourceUrl && predictionId) {
+      const res = await fetch(`https://api.replicate.com/v1/predictions/${predictionId}`, {
         headers: { Authorization: `Bearer ${c.env.REPLICATE_API_TOKEN}` },
       });
       if (!res.ok) {
@@ -621,7 +632,11 @@ generateRouter.post('/assets/:assetId/recover', async (c) => {
     );
 
     const updated = await getAsset(c.env.DB, assetId);
-    Logger.log('AssetRecovered', { assetId, key, via: body.predictionId ? 'predictionId' : 'sourceUrl' });
+    Logger.log('AssetRecovered', {
+      assetId,
+      key,
+      via: body.sourceUrl ? 'sourceUrl' : body.predictionId ? 'body.predictionId' : 'asset.prediction_id',
+    });
     return c.json<TfResponse<Asset>>({ success: true, data: withPublicUrl(updated!, c.env.ASSETS_PUBLIC_URL) });
   } catch (error) {
     Logger.log('AssetRecoverError', { assetId }, error);

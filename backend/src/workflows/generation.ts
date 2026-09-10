@@ -227,6 +227,14 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
           return;
         }
 
+        // Persist the last known-good prediction ID. Each LTX extend output is the FULL
+        // cumulative video, so this ID always points at the most complete clip generated
+        // so far — letting the Recover endpoint rescue it if a later step (or the Worker's
+        // subrequest limit) kills the chain before the final upload.
+        await step.do('save-initial-progress', async () => {
+          await updateAsset(this.env.DB, p.assetId, { prediction_id: initialPredId });
+        });
+
         // Steps 2..N+1 — sequential extend calls, each receiving the full previous video
         let currentVideoUrl = initialResult.url;
 
@@ -256,6 +264,11 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
           }
 
           currentVideoUrl = extendResult.url;
+
+          // Advance the recoverable checkpoint to this extend's (fully cumulative) output.
+          await step.do(`save-extend-${i}-progress`, async () => {
+            await updateAsset(this.env.DB, p.assetId, { prediction_id: extendPredId });
+          });
         }
 
         // Upload final (fully extended) video to R2

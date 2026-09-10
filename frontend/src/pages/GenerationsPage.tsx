@@ -159,6 +159,18 @@ export default function GenerationsPage() {
                   isLoadingBlob={loadingImages[asset.id] ?? false}
                   onVisible={() => loadBlobUrl(asset)}
                   onDetails={() => setDetailAsset(asset)}
+                  onRecover={async () => {
+                    const token = await getToken();
+                    // No body — the backend recovers from the prediction ID it stored
+                    // for this asset as the generation progressed.
+                    const res = await api.post<TfResponse<Asset>>(
+                      `/api/workspaces/${slug}/generate/assets/${asset.id}/recover`,
+                      {},
+                      token ?? undefined
+                    );
+                    if (!res.success) throw new Error(res.message ?? 'Recovery failed');
+                    await load(true);
+                  }}
                 />
               ))}
             </div>
@@ -232,16 +244,33 @@ async function downloadAsset(asset: Asset, blobUrl?: string, aiLabel = false) {
 }
 
 function AssetCard({
-  asset, slug, blobUrl, isLoadingBlob, onVisible, onDetails,
+  asset, slug, blobUrl, isLoadingBlob, onVisible, onDetails, onRecover,
 }: {
   asset: Asset; slug: string; blobUrl?: string; isLoadingBlob: boolean;
-  onVisible: () => void; onDetails: () => void;
+  onVisible: () => void; onDetails: () => void; onRecover: () => Promise<void>;
 }) {
   const navigate = useNavigate();
   const isImage = asset.type === 'image';
   const isGenerating = asset.status === 'generating' || asset.status === 'pending';
   const isFailed = asset.status === 'failed';
   const isReady = asset.status === 'ready';
+  // Recovery is only meaningful for videos (Replicate predictions we can re-import).
+  const canRecover = isFailed && asset.type === 'video';
+
+  const [recovering, setRecovering] = useState(false);
+  const [recoverError, setRecoverError] = useState<string | null>(null);
+
+  async function handleRecover() {
+    setRecovering(true);
+    setRecoverError(null);
+    try {
+      await onRecover();
+    } catch (e) {
+      setRecoverError(e instanceof Error ? e.message : 'Recovery failed');
+    } finally {
+      setRecovering(false);
+    }
+  }
 
   // Re-run when the asset flips to ready or gains a public_url (e.g. via the in-page
   // refresh/poll). A mount-only effect misses the generating→ready transition because
@@ -373,6 +402,32 @@ function AssetCard({
           >
             Details
           </button>
+        ) : canRecover ? (
+          <div className='flex flex-col gap-1'>
+            <div className='flex items-center gap-1.5'>
+              <button
+                onClick={handleRecover}
+                disabled={recovering}
+                title='Re-import this generation from Replicate (it succeeded but failed to save)'
+                className='flex flex-1 items-center justify-center gap-1 rounded-lg bg-brand py-1.5 text-meta font-semibold text-on-brand transition-colors hover:bg-brand-hover disabled:opacity-60 disabled:cursor-not-allowed'
+              >
+                {recovering ? <Loader2 size={10} className='animate-spin' /> : <RefreshCw size={10} />}
+                {recovering ? 'Recovering…' : 'Recover'}
+              </button>
+              <button
+                onClick={() => navigate(`/workspaces/${slug}/threads/${asset.thread_id}`)}
+                title='View thread'
+                className='flex items-center justify-center rounded-lg border border-border-soft bg-surface-white px-2 py-1.5 text-text-secondary transition-colors hover:bg-surface hover:text-text-primary'
+              >
+                <ExternalLink size={12} />
+              </button>
+            </div>
+            {recoverError && (
+              <span className='text-[10px] leading-snug text-red-600/90 dark:text-red-400/80 line-clamp-2'>
+                {recoverError}
+              </span>
+            )}
+          </div>
         ) : (
           <button
             onClick={() => navigate(`/workspaces/${slug}/threads/${asset.thread_id}`)}
