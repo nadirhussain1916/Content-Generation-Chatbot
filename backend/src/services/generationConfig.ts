@@ -151,3 +151,141 @@ export function snapDuration(modelId: string, requested: number): Coerced<number
     warning: `Duration ${requested}s is not valid for ${modelId} (allowed: ${allowed.join('/')}s) — using ${snapped}s.`,
   };
 }
+
+// ─── Per-model Replicate input builders (single source of truth) ──────────────
+// Each model exposes a slightly different input shape; in particular the name of
+// the reference-image / starting-frame field differs. Both the /video route and
+// the stitching workflow (chain / continue modes, which seed each chunk with the
+// previous chunk's last frame) build inputs through this map so they always agree.
+
+export type VideoModelConfig = {
+  slug: string;
+  buildInput: (
+    prompt: string,
+    aspectRatio: string,
+    duration: number,
+    referenceImageUrl?: string,
+  ) => Record<string, unknown>;
+};
+
+export const VIDEO_MODEL_CONFIGS: Record<VideoModelId, VideoModelConfig> = {
+  'google/veo-2': {
+    slug: 'google/veo-2',
+    buildInput: (prompt, aspectRatio, duration, referenceImageUrl) => ({
+      prompt,
+      aspect_ratio: aspectRatio,
+      duration,
+      ...(referenceImageUrl && { image_url: referenceImageUrl }),
+    }),
+  },
+  'lightricks/ltx-2.3-fast': {
+    slug: 'lightricks/ltx-2.3-fast',
+    buildInput: (prompt, aspectRatio, duration, referenceImageUrl) => ({
+      prompt,
+      aspect_ratio: aspectRatio,
+      duration,
+      ...(referenceImageUrl && { image: referenceImageUrl }),
+    }),
+  },
+  'lightricks/ltx-2.3-pro': {
+    slug: 'lightricks/ltx-2.3-pro',
+    buildInput: (prompt, aspectRatio, duration, referenceImageUrl) => ({
+      prompt,
+      aspect_ratio: aspectRatio,
+      duration,
+      ...(referenceImageUrl && { image: referenceImageUrl }),
+    }),
+  },
+  'bytedance/seedance-2.0': {
+    slug: 'bytedance/seedance-2.0',
+    buildInput: (prompt, aspectRatio, duration, referenceImageUrl) => ({
+      prompt,
+      aspect_ratio: aspectRatio,
+      duration,
+      ...(referenceImageUrl && { image: referenceImageUrl }),
+    }),
+  },
+  'bytedance/seedance-2.0-fast': {
+    slug: 'bytedance/seedance-2.0-fast',
+    buildInput: (prompt, aspectRatio, duration, referenceImageUrl) => ({
+      prompt,
+      aspect_ratio: aspectRatio,
+      duration,
+      ...(referenceImageUrl && { image: referenceImageUrl }),
+    }),
+  },
+  'wan-video/wan-2.7-t2v': {
+    slug: 'wan-video/wan-2.7-t2v',
+    // Text-only model — ignores referenceImageUrl.
+    buildInput: (prompt, aspectRatio, duration) => ({
+      prompt,
+      aspect_ratio: aspectRatio,
+      duration,
+      resolution: '720p',
+    }),
+  },
+  'wan-video/wan-2.7-i2v': {
+    slug: 'wan-video/wan-2.7-i2v',
+    // Image-to-video: the starting frame MUST be passed as `first_frame`.
+    buildInput: (prompt, aspectRatio, duration, referenceImageUrl) => ({
+      prompt,
+      aspect_ratio: aspectRatio,
+      duration,
+      resolution: '720p',
+      ...(referenceImageUrl && { first_frame: referenceImageUrl }),
+    }),
+  },
+};
+
+// ─── Long-video (chunk + ffmpeg stitch) configuration ─────────────────────────
+
+/** Models that accept a starting frame — i.e. can be frame-chained ("Seamless"). */
+export const I2V_CAPABLE = new Set<VideoModelId>(
+  (VIDEO_MODELS as readonly VideoModelId[]).filter((m) => !TEXT_ONLY_VIDEO_MODELS.has(m)),
+);
+
+/** The Replicate input field used for the starting frame, per model (null = text-only). */
+export function referenceParamFor(modelId: string): 'image' | 'image_url' | 'first_frame' | null {
+  if (modelId === 'google/veo-2') return 'image_url';
+  if (modelId === 'wan-video/wan-2.7-i2v') return 'first_frame';
+  if (modelId === 'wan-video/wan-2.7-t2v') return null;
+  return 'image';
+}
+
+/** Longest single-clip length each model accepts (derived from MODEL_VALID_DURATIONS). */
+export const MODEL_MAX_CLIP_SECONDS: Record<VideoModelId, number> = Object.fromEntries(
+  (Object.keys(MODEL_VALID_DURATIONS) as VideoModelId[]).map((m) => [m, Math.max(...MODEL_VALID_DURATIONS[m])]),
+) as Record<VideoModelId, number>;
+
+// Bounds for how many chunks a stitched long video may contain. Concat can run all
+// chunks in parallel, so the ceiling is generous; chain (sequential) is slower and
+// the agent/UI discourage very high counts.
+export const STITCH_MIN_CHUNKS = 2;
+export const STITCH_MAX_CHUNKS = 20;
+export const STITCH_MODES = ['concat', 'chain'] as const;
+export type StitchMode = (typeof STITCH_MODES)[number];
+
+export function isStitchMode(v: unknown): v is StitchMode {
+  return v === 'concat' || v === 'chain';
+}
+
+/**
+ * Plan how to reach `targetSeconds` with a given model: use the model's longest
+ * valid clip length and split into as many chunks as needed (clamped to
+ * STITCH_MAX_CHUNKS). `capped` is true when the target can't be fully reached.
+ * Single source of truth reused by the route, the agent guidance, and the UI.
+ */
+export function computeChunkPlan(
+  modelId: VideoModelId,
+  targetSeconds: number,
+): { chunkDuration: number; chunkCount: number; reachableSeconds: number; capped: boolean } {
+  const chunkDuration = MODEL_MAX_CLIP_SECONDS[modelId] ?? 5;
+  const rawCount = Math.max(1, Math.ceil(targetSeconds / chunkDuration));
+  const chunkCount = Math.min(rawCount, STITCH_MAX_CHUNKS);
+  return {
+    chunkDuration,
+    chunkCount,
+    reachableSeconds: chunkCount * chunkDuration,
+    capped: rawCount > STITCH_MAX_CHUNKS,
+  };
+}

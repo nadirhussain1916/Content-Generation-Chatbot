@@ -3,6 +3,8 @@ import type { CloudflareBindings } from './env';
 import type { ContextVariables } from './types';
 export { GenerationWorkflow } from './workflows/generation';
 export { PublishWorkflow } from './workflows/publish';
+// Required so the Sandbox container Durable Object is discoverable by the runtime.
+export { Sandbox } from '@cloudflare/sandbox';
 import { runAllMigrations } from './migrations';
 import { Logger } from './utils/Logger';
 

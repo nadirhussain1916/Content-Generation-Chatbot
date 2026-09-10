@@ -7,11 +7,14 @@ import { Logger } from '../utils/Logger';
 import { withPublicUrl, uploadFromUrl } from '../services/r2';
 import { kvRateLimiter } from '../middleware/rateLimiter';
 import { analyzeImageForDescription } from '../services/openai';
-import { calcImageCost, calcVideoClipCost, calcLtxChainCost } from '../services/costs';
+import { calcImageCost, calcVideoClipCost, calcLtxChainCost, calcStitchCost } from '../services/costs';
 import { characterBlock } from '../services/prompts';
 import {
   coerceImageModel, coerceImageSize, coerceGenerationMode,
   coerceVideoModel, snapDuration, I2V_MODELS,
+  VIDEO_MODEL_CONFIGS, I2V_CAPABLE, isStitchMode,
+  STITCH_MIN_CHUNKS, STITCH_MAX_CHUNKS, MODEL_MAX_CLIP_SECONDS,
+  type StitchMode,
 } from '../services/generationConfig';
 
 type Env = { Bindings: CloudflareBindings; Variables: ContextVariables };
@@ -205,6 +208,9 @@ generateRouter.post('/video', async (c) => {
       // LTX 2.3 Pro extend chaining — only honoured when videoModel is 'lightricks/ltx-2.3-pro'
       chainCount?: number;    // number of extend calls to append (1–6); 0 or absent = no chaining
       extendDuration?: number; // seconds per extend (1–20); defaults to 20
+      // Long video via chunk + ffmpeg stitch (any model). chunkCount >= 2 triggers it.
+      chunkCount?: number;         // number of chunks to generate + stitch (2–STITCH_MAX_CHUNKS)
+      stitchMode?: string;         // 'concat' (fast cuts) | 'chain' (seamless, i2v only)
       referenceUploadId?: string;
       includeCharacter?: boolean;
     };
@@ -247,83 +253,8 @@ generateRouter.post('/video', async (c) => {
       if (charBlock) videoPrompt = `${charBlock}\n\n${body.prompt}`;
     }
 
-    // ── Per-model config ──────────────────────────────────────────────────────
-    // Each entry defines the Replicate model slug and how to build its input.
-    // The workflow just polls the prediction ID — it doesn't need to know the model.
-    type VideoModelConfig = {
-      slug: string;
-      buildInput: (prompt: string, aspectRatio: string, duration: number, referenceImageUrl?: string) => Record<string, unknown>;
-    };
-
-    const VIDEO_MODEL_CONFIGS: Record<string, VideoModelConfig> = {
-      'google/veo-2': {
-        slug: 'google/veo-2',
-        buildInput: (prompt, aspectRatio, duration, referenceImageUrl) => ({
-          prompt,
-          aspect_ratio: aspectRatio,
-          duration,
-          ...(referenceImageUrl && { image_url: referenceImageUrl }),
-        }),
-      },
-      'lightricks/ltx-2.3-fast': {
-        slug: 'lightricks/ltx-2.3-fast',
-        buildInput: (prompt, aspectRatio, duration, referenceImageUrl) => ({
-          prompt,
-          aspect_ratio: aspectRatio,
-          duration,
-          ...(referenceImageUrl && { image: referenceImageUrl }),
-        }),
-      },
-      'lightricks/ltx-2.3-pro': {
-        slug: 'lightricks/ltx-2.3-pro',
-        buildInput: (prompt, aspectRatio, duration, referenceImageUrl) => ({
-          prompt,
-          aspect_ratio: aspectRatio,
-          duration,
-          ...(referenceImageUrl && { image: referenceImageUrl }),
-        }),
-      },
-      'bytedance/seedance-2.0': {
-        slug: 'bytedance/seedance-2.0',
-        buildInput: (prompt, aspectRatio, duration, referenceImageUrl) => ({
-          prompt,
-          aspect_ratio: aspectRatio,
-          duration,
-          ...(referenceImageUrl && { image: referenceImageUrl }),
-        }),
-      },
-      'bytedance/seedance-2.0-fast': {
-        slug: 'bytedance/seedance-2.0-fast',
-        buildInput: (prompt, aspectRatio, duration, referenceImageUrl) => ({
-          prompt,
-          aspect_ratio: aspectRatio,
-          duration,
-          ...(referenceImageUrl && { image: referenceImageUrl }),
-        }),
-      },
-      'wan-video/wan-2.7-t2v': {
-        slug: 'wan-video/wan-2.7-t2v',
-        // Text-only model — ignores referenceImageUrl
-        buildInput: (prompt, aspectRatio, duration) => ({
-          prompt,
-          aspect_ratio: aspectRatio,
-          duration,
-          resolution: '720p',
-        }),
-      },
-      'wan-video/wan-2.7-i2v': {
-        slug: 'wan-video/wan-2.7-i2v',
-        // Image-to-video: the starting frame MUST be passed as `first_frame`
-        // (the model rejects the request with a ValueError otherwise).
-        buildInput: (prompt, aspectRatio, duration, referenceImageUrl) => ({
-          prompt,
-          aspect_ratio: aspectRatio,
-          duration,
-          resolution: '720p',
-          ...(referenceImageUrl && { first_frame: referenceImageUrl }),
-        }),
-      },
-    };
+    // Per-model Replicate input builders now live in generationConfig.ts
+    // (VIDEO_MODEL_CONFIGS) so the /video route and the stitching workflow agree.
 
     // Validate/coerce the video model. It may have been chosen by the agent (it
     // rides in from the draft package via the frontend) or overridden by the user.
@@ -422,6 +353,69 @@ generateRouter.post('/video', async (c) => {
       }, 202);
     }
 
+    // ── Long video via chunk generation + ffmpeg stitch (any model) ───────────
+    // Triggered when the caller asks for >= 2 chunks. The Workflow generates each
+    // chunk on Replicate then stitches them in a container. LTX Pro's native extend
+    // (chainCount > 0) is handled above and returns before reaching here.
+    const wantsStitch = typeof body.chunkCount === 'number' && body.chunkCount >= STITCH_MIN_CHUNKS;
+    if (wantsStitch) {
+      const stitchChunkCount = Math.min(Math.max(Math.round(body.chunkCount!), STITCH_MIN_CHUNKS), STITCH_MAX_CHUNKS);
+
+      // Mode: default concat; force concat when the model can't do image-to-video.
+      let stitchMode: StitchMode = isStitchMode(body.stitchMode) ? body.stitchMode : 'concat';
+      if (stitchMode === 'chain' && !I2V_CAPABLE.has(modelId)) {
+        stitchMode = 'concat';
+        Logger.log('VideoParamCoerced', { workspaceId: workspace.id, threadId: body.threadId, stitch: `chain not supported by ${modelId} — using concat` });
+      }
+
+      // Per-chunk length: honour the chosen duration, else the model's longest clip
+      // (fewer chunks for a given target). Snap to a model-valid value either way.
+      const requestedChunkDuration = body.duration ?? MODEL_MAX_CLIP_SECONDS[modelId] ?? videoDuration;
+      const chunkDuration = snapDuration(modelId, requestedChunkDuration).value;
+
+      await createAsset(c.env.DB, {
+        id: assetId,
+        thread_id: body.threadId,
+        workspace_id: workspace.id,
+        type: 'video',
+        message_id: body.messageId,
+        prompt: body.prompt,
+        model: modelId,
+        cost_usd: calcStitchCost(modelId, chunkDuration, stitchChunkCount),
+      });
+
+      await c.env.KV.put(
+        `asset:status:${assetId}`,
+        JSON.stringify({ status: 'generating' }),
+        { expirationTtl: 60 * 60 * 24 }
+      );
+
+      await c.env.GENERATION_WORKFLOW.create({
+        id: assetId,
+        params: {
+          type: 'video_stitch',
+          op: 'generate',
+          assetId,
+          workspaceId: workspace.id,
+          r2KeyPrefix,
+          prompt: videoPrompt,
+          modelSlug: modelId,
+          aspectRatio: videoAspectRatio as '16:9' | '9:16',
+          mode: stitchMode,
+          chunkCount: stitchChunkCount,
+          chunkDuration,
+          referenceImageUrl: videoReferenceImageUrl,
+        },
+      });
+
+      Logger.log('VideoStitchDispatched', { assetId, op: 'generate', mode: stitchMode, chunkCount: stitchChunkCount, chunkDuration, model: modelId });
+
+      return c.json<TfResponse<{ assetId: string; status: string }>>({
+        success: true,
+        data: { assetId, status: 'generating' },
+      }, 202);
+    }
+
     // ── Single-clip prediction (all other models + LTX Pro without chain) ─────
     const replicateRes = await fetch(
       `https://api.replicate.com/v1/models/${modelConfig.slug}/predictions`,
@@ -491,6 +485,179 @@ generateRouter.post('/video', async (c) => {
   } catch (error) {
     Logger.log('VideoGenerationError', { workspaceId: workspace.id }, error);
     return c.json<TfResponse<null>>({ success: false, message: 'Video generation failed' }, 500);
+  }
+});
+
+// POST /api/workspaces/:slug/generate/combine
+// Flow B — stitch several EXISTING ready video assets into one longer video.
+// No Replicate generation; ffmpeg normalizes + concatenates the clips in order.
+generateRouter.post('/combine', async (c) => {
+  const workspace = c.get('workspace');
+
+  try {
+    const body = await c.req.json() as { assetIds: string[]; aspectRatio?: string };
+    if (!Array.isArray(body.assetIds) || body.assetIds.length < STITCH_MIN_CHUNKS) {
+      return c.json<TfResponse<null>>({ success: false, message: `Select at least ${STITCH_MIN_CHUNKS} videos to combine` }, 400);
+    }
+    if (body.assetIds.length > STITCH_MAX_CHUNKS) {
+      return c.json<TfResponse<null>>({ success: false, message: `You can combine at most ${STITCH_MAX_CHUNKS} videos at once` }, 400);
+    }
+
+    // Resolve each asset in the given order; validate it's a ready video we can fetch.
+    const clipUrls: string[] = [];
+    let firstThreadId: string | null = null;
+    for (const id of body.assetIds) {
+      const asset = await getAsset(c.env.DB, id);
+      if (!asset || asset.workspace_id !== workspace.id) {
+        return c.json<TfResponse<null>>({ success: false, message: `Asset ${id} not found` }, 404);
+      }
+      if (asset.type !== 'video' || asset.status !== 'ready' || !asset.r2_key) {
+        return c.json<TfResponse<null>>({ success: false, message: 'All selected assets must be ready videos' }, 400);
+      }
+      const url = withPublicUrl(asset, c.env.ASSETS_PUBLIC_URL).public_url;
+      if (!url) return c.json<TfResponse<null>>({ success: false, message: `Asset ${id} has no public URL` }, 400);
+      clipUrls.push(url);
+      if (!firstThreadId) firstThreadId = asset.thread_id;
+    }
+
+    const aspectRatio: '16:9' | '9:16' = body.aspectRatio === '16:9' ? '16:9' : '9:16';
+    const assetId = crypto.randomUUID();
+    const threadId = firstThreadId!;
+    const r2KeyPrefix = `${workspace.id}/${threadId}/${assetId}`;
+
+    await createAsset(c.env.DB, {
+      id: assetId,
+      thread_id: threadId,
+      workspace_id: workspace.id,
+      type: 'video',
+      prompt: `Combined from ${clipUrls.length} clips`,
+      model: 'ffmpeg-concat',
+      cost_usd: 0,
+    });
+
+    await c.env.KV.put(
+      `asset:status:${assetId}`,
+      JSON.stringify({ status: 'generating' }),
+      { expirationTtl: 60 * 60 * 24 }
+    );
+
+    await c.env.GENERATION_WORKFLOW.create({
+      id: assetId,
+      params: {
+        type: 'video_stitch',
+        op: 'combine',
+        assetId,
+        workspaceId: workspace.id,
+        r2KeyPrefix,
+        aspectRatio,
+        sourceClipUrls: clipUrls,
+      },
+    });
+
+    Logger.log('VideoStitchDispatched', { assetId, op: 'combine', clips: clipUrls.length });
+
+    return c.json<TfResponse<{ assetId: string; status: string }>>({
+      success: true,
+      data: { assetId, status: 'generating' },
+    }, 202);
+  } catch (error) {
+    Logger.log('VideoCombineError', { workspaceId: workspace.id }, error);
+    return c.json<TfResponse<null>>({ success: false, message: 'Combine failed' }, 500);
+  }
+});
+
+// POST /api/workspaces/:slug/generate/continue
+// Flow C — extend an EXISTING video: extract its last frame, generate the next
+// part(s) as image-to-video, then stitch [original, ...newParts] into one clip.
+generateRouter.post('/continue', async (c) => {
+  const workspace = c.get('workspace');
+
+  try {
+    const body = await c.req.json() as {
+      assetId: string;
+      prompt: string;
+      videoModel?: string;
+      aspectRatio?: string;
+      duration?: number;
+      chunkCount?: number;
+    };
+    if (!body.assetId || !body.prompt) {
+      return c.json<TfResponse<null>>({ success: false, message: 'assetId and prompt are required' }, 400);
+    }
+    if (!c.env.REPLICATE_API_TOKEN) {
+      return c.json<TfResponse<null>>({ success: false, message: 'Video generation is not configured' }, 501);
+    }
+
+    const source = await getAsset(c.env.DB, body.assetId);
+    if (!source || source.workspace_id !== workspace.id) {
+      return c.json<TfResponse<null>>({ success: false, message: 'Source video not found' }, 404);
+    }
+    if (source.type !== 'video' || source.status !== 'ready' || !source.r2_key) {
+      return c.json<TfResponse<null>>({ success: false, message: 'Source must be a ready video' }, 400);
+    }
+    const sourceUrl = withPublicUrl(source, c.env.ASSETS_PUBLIC_URL).public_url;
+    if (!sourceUrl) return c.json<TfResponse<null>>({ success: false, message: 'Source video has no public URL' }, 400);
+
+    // Continuation must use an image-to-video-capable model (it's seeded from a frame).
+    const modelC = coerceVideoModel(body.videoModel);
+    let modelId = modelC.value;
+    if (!I2V_CAPABLE.has(modelId)) {
+      return c.json<TfResponse<null>>({
+        success: false,
+        message: 'Continuing a video needs an image-to-video-capable model (Wan 2.7 T2V is not supported).',
+      }, 400);
+    }
+
+    const aspectRatio: '16:9' | '9:16' = body.aspectRatio === '16:9' ? '16:9' : '9:16';
+    const requestedChunkDuration = body.duration ?? MODEL_MAX_CLIP_SECONDS[modelId];
+    const chunkDuration = snapDuration(modelId, requestedChunkDuration).value;
+    const chunkCount = Math.min(Math.max(Math.round(body.chunkCount ?? 1), 1), STITCH_MAX_CHUNKS);
+
+    const assetId = crypto.randomUUID();
+    const r2KeyPrefix = `${workspace.id}/${source.thread_id}/${assetId}`;
+
+    await createAsset(c.env.DB, {
+      id: assetId,
+      thread_id: source.thread_id,
+      workspace_id: workspace.id,
+      type: 'video',
+      prompt: body.prompt,
+      model: modelId,
+      cost_usd: calcStitchCost(modelId, chunkDuration, chunkCount),
+    });
+
+    await c.env.KV.put(
+      `asset:status:${assetId}`,
+      JSON.stringify({ status: 'generating' }),
+      { expirationTtl: 60 * 60 * 24 }
+    );
+
+    await c.env.GENERATION_WORKFLOW.create({
+      id: assetId,
+      params: {
+        type: 'video_stitch',
+        op: 'continue',
+        assetId,
+        workspaceId: workspace.id,
+        r2KeyPrefix,
+        prompt: body.prompt,
+        modelSlug: modelId,
+        aspectRatio,
+        chunkCount,
+        chunkDuration,
+        sourceClipUrls: [sourceUrl],
+      },
+    });
+
+    Logger.log('VideoStitchDispatched', { assetId, op: 'continue', chunkCount, chunkDuration, model: modelId });
+
+    return c.json<TfResponse<{ assetId: string; status: string }>>({
+      success: true,
+      data: { assetId, status: 'generating' },
+    }, 202);
+  } catch (error) {
+    Logger.log('VideoContinueError', { workspaceId: workspace.id }, error);
+    return c.json<TfResponse<null>>({ success: false, message: 'Continue failed' }, 500);
   }
 });
 

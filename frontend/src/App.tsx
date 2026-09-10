@@ -10,6 +10,7 @@ import ModelsPage from './pages/ModelsPage';
 import BillingPage from './pages/BillingPage';
 import AdminPage from './pages/AdminPage';
 import AdminUsagePage from './pages/AdminUsagePage';
+import AdminStitchTestPage from './pages/AdminStitchTestPage';
 import AuthGuard from './components/AuthGuard';
 import TermsPage from './pages/TermsPage';
 import PrivacyPage from './pages/PrivacyPage';
@@ -137,6 +138,14 @@ export default function App() {
           element={
             <SuperAdminRoute>
               <AdminUsagePage />
+            </SuperAdminRoute>
+          }
+        />
+        <Route
+          path='/admin/stitch'
+          element={
+            <SuperAdminRoute>
+              <AdminStitchTestPage />
             </SuperAdminRoute>
           }
         />

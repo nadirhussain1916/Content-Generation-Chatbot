@@ -4,6 +4,9 @@ import { superAdminMiddleware } from '../../middleware/superAdmin';
 import { runAllMigrations } from '../../migrations';
 import { getAllWorkspacesAssetUsage, getAllWorkspacesMessageUsage } from '../../db/queries';
 import { parseDateRange } from '../billing';
+import { concatClips, extractLastFrame } from '../../services/videoStitch';
+import { getPublicUrl } from '../../services/r2';
+import { STITCH_MIN_CHUNKS, STITCH_MAX_CHUNKS } from '../../services/generationConfig';
 import type { CloudflareBindings } from '../../env';
 import type { ContextVariables, TfResponse } from '../../types';
 import { Logger } from '../../utils/Logger';
@@ -26,6 +29,87 @@ adminRouter.post('/migrate', async (c) => {
   } catch (error) {
     Logger.log('MigrationsError', undefined, error);
     return c.json<TfResponse<null>>({ success: false, message: 'Migration failed' }, 500);
+  }
+});
+
+// ─── POST /api/admin/stitch-test ──────────────────────────────────────────────
+// Isolated harness for the ffmpeg-in-a-container + R2-egress-mount path. It runs
+// concatClips / extractLastFrame DIRECTLY on arbitrary public clip URLs — no
+// Replicate generation, no cost, no D1 asset row — so we can verify the parts
+// that only work live (real container + mount) and see whether the write went
+// straight to R2 (`mounted: true`) or fell back to reading bytes back.
+
+interface StitchTestResult {
+  op: 'concat' | 'frame';
+  outKey: string;
+  publicUrl: string;
+  mounted: boolean;       // true = wrote straight to R2 via the egress mount
+  sizeBytes: number;
+  ms: number;             // wall-clock time for the ffmpeg job
+  clipCount?: number;
+}
+
+const isHttpUrl = (u: string) => /^https?:\/\/\S+$/i.test(u);
+
+adminRouter.post('/stitch-test', async (c) => {
+  const body = await c.req
+    .json<{ op?: string; clipUrls?: unknown; clipUrl?: unknown; aspectRatio?: string }>()
+    .catch(() => ({} as { op?: string; clipUrls?: unknown; clipUrl?: unknown; aspectRatio?: string }));
+
+  const op: 'concat' | 'frame' = body.op === 'frame' ? 'frame' : 'concat';
+  const aspectRatio: '16:9' | '9:16' = body.aspectRatio === '16:9' ? '16:9' : '9:16';
+  const testId = crypto.randomUUID();
+  const startedAt = Date.now();
+
+  try {
+    if (op === 'frame') {
+      const clipUrl = typeof body.clipUrl === 'string' ? body.clipUrl.trim() : '';
+      if (!isHttpUrl(clipUrl)) {
+        return c.json<TfResponse<null>>({ success: false, message: 'Provide a valid http(s) clip URL.' }, 400);
+      }
+      const outKey = `_admin-stitch-tests/${testId}-frame.png`;
+      const r = await extractLastFrame(c.env, { assetId: `admin-${testId}`, clipUrl, outKey });
+      return c.json<TfResponse<StitchTestResult>>({
+        success: true,
+        data: { op, outKey, publicUrl: r.publicUrl, mounted: r.mounted, sizeBytes: r.sizeBytes, ms: Date.now() - startedAt },
+      });
+    }
+
+    // op === 'concat'
+    const clipUrls = Array.isArray(body.clipUrls)
+      ? body.clipUrls.filter((u): u is string => typeof u === 'string').map((u) => u.trim()).filter(Boolean)
+      : [];
+    if (clipUrls.length < STITCH_MIN_CHUNKS) {
+      return c.json<TfResponse<null>>({ success: false, message: `Need at least ${STITCH_MIN_CHUNKS} clip URLs.` }, 400);
+    }
+    if (clipUrls.length > STITCH_MAX_CHUNKS) {
+      return c.json<TfResponse<null>>({ success: false, message: `At most ${STITCH_MAX_CHUNKS} clip URLs.` }, 400);
+    }
+    const bad = clipUrls.find((u) => !isHttpUrl(u));
+    if (bad) {
+      return c.json<TfResponse<null>>({ success: false, message: `Not a valid http(s) URL: ${bad}` }, 400);
+    }
+
+    const outKey = `_admin-stitch-tests/${testId}.mp4`;
+    const r = await concatClips(c.env, { assetId: `admin-${testId}`, clipUrls, outKey, aspectRatio });
+    return c.json<TfResponse<StitchTestResult>>({
+      success: true,
+      data: {
+        op,
+        outKey,
+        publicUrl: getPublicUrl(c.env.ASSETS_PUBLIC_URL, outKey),
+        mounted: r.mounted,
+        sizeBytes: r.sizeBytes,
+        ms: Date.now() - startedAt,
+        clipCount: clipUrls.length,
+      },
+    });
+  } catch (error) {
+    Logger.log('AdminStitchTestError', { op, ms: Date.now() - startedAt }, error);
+    return c.json<TfResponse<null>>(
+      { success: false, message: error instanceof Error ? error.message : 'Stitch test failed' },
+      500,
+    );
   }
 });
 

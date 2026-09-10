@@ -182,6 +182,11 @@ export interface VideoPostPackage {
   // fall back to the default model. The UI pre-selects it and the user can still
   // override before generating.
   videoModel?: string;
+  // Long video (chunk + ffmpeg stitch). chunkCount >= 2 turns on stitching; the UI
+  // pre-selects these and the user can override. See LONG VIDEO CAPABILITIES prompt.
+  longVideoTargetSeconds?: number;
+  chunkCount?: number;
+  stitchMode?: 'concat' | 'chain';
   tone: string;
   suggestedPlatforms: ('instagram' | 'tiktok')[];
   // Reference images (injected by backend after AI generation)

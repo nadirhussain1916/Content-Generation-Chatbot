@@ -119,28 +119,33 @@ describe('calcVideoClipCost', () => {
 // ─── calcLtxChainCost ─────────────────────────────────────────────────────────
 
 describe('calcLtxChainCost', () => {
+  // LTX extend chains bill per second of OUTPUT video, and every extend re-emits
+  // the FULL cumulative clip — so cost = Σ (each step's cumulative length × rate),
+  // NOT (final length × rate). See calcLtxChainCost's docstring. These expectations
+  // mirror the cumulative model used in production (routes/generate.ts + the chain
+  // workflow) and the current UI presets (10s initial + 10s extends).
   it('single clip (chainCount=0): 10s at $0.08/s = $0.80', () => {
     expect(calcLtxChainCost('lightricks/ltx-2.3-pro', 10, 0, 0)).toBeCloseTo(0.80);
   });
 
-  it('~30s option: 10 + 1×20 = 30s at $0.08/s = $2.40', () => {
-    expect(calcLtxChainCost('lightricks/ltx-2.3-pro', 10, 1, 20)).toBeCloseTo(2.40);
+  it('~30s preset: Σ(10,20,30) = 60 output-s at $0.08/s = $4.80', () => {
+    expect(calcLtxChainCost('lightricks/ltx-2.3-pro', 10, 2, 10)).toBeCloseTo(4.80);
   });
 
-  it('~45s option: 10 + 5×7 = 45s at $0.08/s = $3.60', () => {
-    expect(calcLtxChainCost('lightricks/ltx-2.3-pro', 10, 5, 7)).toBeCloseTo(3.60);
+  it('~40s preset: Σ(10,20,30,40) = 100 output-s at $0.08/s = $8.00', () => {
+    expect(calcLtxChainCost('lightricks/ltx-2.3-pro', 10, 3, 10)).toBeCloseTo(8.00);
   });
 
-  it('~50s option: 10 + 2×20 = 50s at $0.08/s = $4.00', () => {
-    expect(calcLtxChainCost('lightricks/ltx-2.3-pro', 10, 2, 20)).toBeCloseTo(4.00);
+  it('~50s preset: Σ(10,20,30,40,50) = 150 output-s at $0.08/s = $12.00', () => {
+    expect(calcLtxChainCost('lightricks/ltx-2.3-pro', 10, 4, 10)).toBeCloseTo(12.00);
   });
 
-  it('~130s option: 10 + 6×20 = 130s at $0.08/s = $10.40', () => {
-    expect(calcLtxChainCost('lightricks/ltx-2.3-pro', 10, 6, 20)).toBeCloseTo(10.40);
+  it('~70s preset: Σ(10..70 step 10) = 280 output-s at $0.08/s = $22.40', () => {
+    expect(calcLtxChainCost('lightricks/ltx-2.3-pro', 10, 6, 10)).toBeCloseTo(22.40);
   });
 
   it('delegates rate lookup to calcVideoClipCost (ltx-fast rate)', () => {
-    // 10 + 1×10 = 20s at $0.06/s = $1.20
-    expect(calcLtxChainCost('lightricks/ltx-2.3-fast', 10, 1, 10)).toBeCloseTo(1.20);
+    // Σ(10,20) = 30 output-s at $0.06/s = $1.80
+    expect(calcLtxChainCost('lightricks/ltx-2.3-fast', 10, 1, 10)).toBeCloseTo(1.80);
   });
 });

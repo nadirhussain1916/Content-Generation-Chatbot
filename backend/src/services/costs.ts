@@ -77,3 +77,15 @@ export function calcLtxChainCost(
   }
   return total;
 }
+
+/**
+ * Calculate the cost of a chunked long video (concat / chain / continue).
+ *
+ * Unlike LTX extend chains, each chunk is an INDEPENDENT clip of `chunkDuration`
+ * seconds, so the total is simply the per-clip cost times the number of chunks.
+ * ffmpeg stitching runs in a Cloudflare container and is billed separately (not
+ * modelled here).
+ */
+export function calcStitchCost(model: string, chunkDuration: number, chunkCount: number): number {
+  return calcVideoClipCost(model, chunkDuration) * chunkCount;
+}

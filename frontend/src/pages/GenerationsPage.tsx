@@ -9,8 +9,15 @@ import Sidebar from '../components/Sidebar';
 import {
   ImageIcon, VideoIcon, Loader2, AlertCircle, X, Play,
   Copy, Check, Hash, Share2, CheckCircle, ExternalLink, RefreshCw, Download, Cpu, DollarSign, Star,
+  Combine, Wand2,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import ModelPicker from '../components/ModelPicker';
+import {
+  VIDEO_MODELS, DEFAULT_VIDEO_MODEL, I2V_CAPABLE_MODEL_IDS,
+  VIDEO_DURATIONS, MODEL_MAX_CLIP_SECONDS,
+  type VideoModelId,
+} from '../lib/models';
 
 // ─── Model display helpers ─────────────────────────────────────────────────────
 
@@ -33,6 +40,40 @@ export default function GenerationsPage() {
   const [filter, setFilter] = useState<'all' | 'image' | 'video'>('all');
   const [detailAsset, setDetailAsset] = useState<Asset | null>(null);
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Combine (Flow B) + Continue (Flow C) ──────────────────────────────────
+  const [combineMode, setCombineMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [combining, setCombining] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [continueAsset, setContinueAsset] = useState<Asset | null>(null);
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+  function enterCombine() { setCombineMode(true); setFilter('video'); setSelectedIds([]); setActionError(null); }
+  function exitCombine() { setCombineMode(false); setSelectedIds([]); setActionError(null); }
+
+  async function handleCombine() {
+    if (selectedIds.length < 2) return;
+    setCombining(true);
+    setActionError(null);
+    try {
+      const token = await getToken();
+      const res = await api.post<TfResponse<{ assetId: string; status: string }>>(
+        `/api/workspaces/${slug}/generate/combine`,
+        { assetIds: selectedIds },
+        token ?? undefined,
+      );
+      if (!res.success) throw new Error(res.message ?? 'Combine failed');
+      exitCombine();
+      await load(true);
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Combine failed');
+    } finally {
+      setCombining(false);
+    }
+  }
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -107,6 +148,22 @@ export default function GenerationsPage() {
             )}
           </div>
           <div className='flex items-center gap-2'>
+            {combineMode ? (
+              <button
+                onClick={exitCombine}
+                className='flex items-center gap-1.5 px-3 py-1.5 text-meta font-medium rounded-full bg-surface-card text-text-secondary hover:text-text-primary transition-colors'
+              >
+                <X size={13} /> Cancel
+              </button>
+            ) : (
+              <button
+                onClick={enterCombine}
+                title='Combine multiple videos into one'
+                className='flex items-center gap-1.5 px-3 py-1.5 text-meta font-medium rounded-full bg-surface-card text-text-secondary hover:text-text-primary transition-colors'
+              >
+                <Combine size={13} /> Combine
+              </button>
+            )}
             <button
               onClick={() => load(true)}
               disabled={refreshing}
@@ -157,6 +214,10 @@ export default function GenerationsPage() {
                   slug={slug!}
                   blobUrl={blobUrls[asset.id]}
                   isLoadingBlob={loadingImages[asset.id] ?? false}
+                  combineMode={combineMode}
+                  selectionIndex={selectedIds.indexOf(asset.id)}
+                  onToggleSelect={() => toggleSelect(asset.id)}
+                  onContinue={() => setContinueAsset(asset)}
                   onVisible={() => loadBlobUrl(asset)}
                   onDetails={() => setDetailAsset(asset)}
                   onRecover={async () => {
@@ -177,6 +238,37 @@ export default function GenerationsPage() {
           )}
         </div>
       </main>
+
+      {/* Floating Combine action bar */}
+      {combineMode && (
+        <div className='fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 rounded-full border border-border-soft bg-surface-white px-4 py-2.5 shadow-[0_12px_40px_rgba(0,0,0,0.16)]'>
+          <span className='text-meta text-text-secondary'>
+            {selectedIds.length === 0
+              ? 'Select videos to combine (in order)'
+              : `${selectedIds.length} selected`}
+          </span>
+          {actionError && <span className='text-meta text-red-500'>{actionError}</span>}
+          <button
+            onClick={handleCombine}
+            disabled={selectedIds.length < 2 || combining}
+            className='flex items-center gap-1.5 rounded-full bg-brand px-4 py-1.5 text-meta font-semibold text-on-brand transition-colors hover:bg-brand-hover disabled:opacity-50 disabled:cursor-not-allowed'
+          >
+            {combining ? <Loader2 size={13} className='animate-spin' /> : <Combine size={13} />}
+            {combining ? 'Combining…' : `Combine ${selectedIds.length || ''}`.trim()}
+          </button>
+        </div>
+      )}
+
+      {/* Continue modal */}
+      {continueAsset && (
+        <ContinueModal
+          asset={continueAsset}
+          slug={slug!}
+          blobUrl={blobUrls[continueAsset.id]}
+          onClose={() => setContinueAsset(null)}
+          onStarted={async () => { setContinueAsset(null); await load(true); }}
+        />
+      )}
 
       {/* Details modal */}
       {detailAsset && (
@@ -244,18 +336,24 @@ async function downloadAsset(asset: Asset, blobUrl?: string, aiLabel = false) {
 }
 
 function AssetCard({
-  asset, slug, blobUrl, isLoadingBlob, onVisible, onDetails, onRecover,
+  asset, slug, blobUrl, isLoadingBlob, combineMode, selectionIndex, onToggleSelect, onContinue, onVisible, onDetails, onRecover,
 }: {
   asset: Asset; slug: string; blobUrl?: string; isLoadingBlob: boolean;
+  combineMode: boolean; selectionIndex: number;
+  onToggleSelect: () => void; onContinue: () => void;
   onVisible: () => void; onDetails: () => void; onRecover: () => Promise<void>;
 }) {
   const navigate = useNavigate();
   const isImage = asset.type === 'image';
+  const isVideo = asset.type === 'video';
   const isGenerating = asset.status === 'generating' || asset.status === 'pending';
   const isFailed = asset.status === 'failed';
   const isReady = asset.status === 'ready';
   // Recovery is only meaningful for videos (Replicate predictions we can re-import).
   const canRecover = isFailed && asset.type === 'video';
+  // Combine (Flow B) only works on ready videos; other cards are inert while selecting.
+  const selectable = combineMode && isReady && isVideo;
+  const isSelected = selectionIndex >= 0;
 
   const [recovering, setRecovering] = useState(false);
   const [recoverError, setRecoverError] = useState<string | null>(null);
@@ -282,13 +380,33 @@ function AssetCard({
     <div className={cn(
       'group relative flex h-full flex-col overflow-hidden rounded-2xl bg-surface-card border transition-all duration-200',
       'shadow-[0_1px_3px_rgba(0,0,0,0.04)] hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(0,0,0,0.10)]',
-      isGenerating ? 'border-amber-300/50 dark:border-amber-700/30'
+      isSelected ? 'border-brand ring-2 ring-brand'
+      : isGenerating ? 'border-amber-300/50 dark:border-amber-700/30'
       : isFailed ? 'border-red-300/50 dark:border-red-800/30'
-      : 'border-border-soft/70 hover:border-ink/25'
+      : 'border-border-soft/70 hover:border-ink/25',
+      combineMode && !selectable && 'opacity-40',
     )}>
       {/* Media — fixed square. Content is absolutely positioned so a portrait
           video can never override the aspect ratio and stretch the grid row. */}
-      <div className='relative aspect-square w-full overflow-hidden bg-gradient-to-br from-surface-white to-surface-card'>
+      <div
+        onClick={selectable ? onToggleSelect : undefined}
+        className={cn(
+          'relative aspect-square w-full overflow-hidden bg-gradient-to-br from-surface-white to-surface-card',
+          selectable && 'cursor-pointer',
+        )}
+      >
+        {/* Selection indicator (Combine mode) */}
+        {selectable && (
+          <div className='absolute right-2 top-2 z-10'>
+            {isSelected ? (
+              <span className='flex h-6 w-6 items-center justify-center rounded-full bg-brand text-[11px] font-bold text-on-brand shadow'>
+                {selectionIndex + 1}
+              </span>
+            ) : (
+              <span className='block h-6 w-6 rounded-full border-2 border-white/80 bg-black/25 shadow' />
+            )}
+          </div>
+        )}
         {isGenerating ? (
           <div className='absolute inset-0 flex flex-col items-center justify-center gap-2'>
             <Loader2 size={22} className='animate-spin text-amber-500' />
@@ -364,7 +482,7 @@ function AssetCard({
         </div>
 
         {/* Hover-reveal download for ready assets */}
-        {isReady && blobUrl && (
+        {isReady && blobUrl && !combineMode && (
           <button
             onClick={() => downloadAsset(asset, blobUrl, false)}
             title='Download'
@@ -396,12 +514,33 @@ function AssetCard({
         )}
 
         {isReady ? (
-          <button
-            onClick={onDetails}
-            className='w-full rounded-lg bg-brand py-1.5 text-meta font-semibold text-on-brand transition-colors hover:bg-brand-hover'
-          >
-            Details
-          </button>
+          isVideo ? (
+            <div className='flex items-center gap-1.5'>
+              <button
+                onClick={onDetails}
+                disabled={combineMode}
+                className='flex-1 rounded-lg bg-brand py-1.5 text-meta font-semibold text-on-brand transition-colors hover:bg-brand-hover disabled:opacity-50 disabled:cursor-not-allowed'
+              >
+                Details
+              </button>
+              <button
+                onClick={onContinue}
+                disabled={combineMode}
+                title='Generate the next part of this video'
+                className='flex items-center justify-center gap-1 rounded-lg border border-border-soft bg-surface-white px-2 py-1.5 text-meta font-medium text-text-secondary transition-colors hover:bg-surface hover:text-text-primary disabled:opacity-50 disabled:cursor-not-allowed'
+              >
+                <Wand2 size={11} /> Continue
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={onDetails}
+              disabled={combineMode}
+              className='w-full rounded-lg bg-brand py-1.5 text-meta font-semibold text-on-brand transition-colors hover:bg-brand-hover disabled:opacity-50 disabled:cursor-not-allowed'
+            >
+              Details
+            </button>
+          )
         ) : canRecover ? (
           <div className='flex flex-col gap-1'>
             <div className='flex items-center gap-1.5'>
@@ -709,6 +848,136 @@ function DetailsModal({
             );
           })}
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Continue modal (Flow C) ──────────────────────────────────────────────────
+
+function ContinueModal({ asset, slug, blobUrl, onClose, onStarted }: {
+  asset: Asset; slug: string; blobUrl?: string; onClose: () => void; onStarted: () => Promise<void>;
+}) {
+  const { getAuthToken: getToken } = useAuthToken();
+  const i2vModels = VIDEO_MODELS.filter((m) => I2V_CAPABLE_MODEL_IDS.includes(m.id as VideoModelId));
+  const [prompt, setPrompt] = useState('');
+  const [model, setModel] = useState<VideoModelId>(
+    (I2V_CAPABLE_MODEL_IDS as string[]).includes(DEFAULT_VIDEO_MODEL)
+      ? DEFAULT_VIDEO_MODEL
+      : (i2vModels[0].id as VideoModelId),
+  );
+  const [duration, setDuration] = useState<string>(() => String(MODEL_MAX_CLIP_SECONDS[model]));
+  const [parts, setParts] = useState<string>('1');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const durationOptions = VIDEO_DURATIONS[model] ?? VIDEO_DURATIONS['google/veo-2'];
+  const partsOptions = [
+    { id: '1', label: '1 part', desc: '' },
+    { id: '2', label: '2 parts', desc: '' },
+    { id: '3', label: '3 parts', desc: '' },
+    { id: '4', label: '4 parts', desc: '' },
+    { id: '6', label: '6 parts', desc: '' },
+  ] as const;
+
+  async function submit() {
+    if (!prompt.trim()) { setError('Describe what happens next'); return; }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const token = await getToken();
+      const res = await api.post<TfResponse<{ assetId: string; status: string }>>(
+        `/api/workspaces/${slug}/generate/continue`,
+        { assetId: asset.id, prompt: prompt.trim(), videoModel: model, duration: Number(duration), chunkCount: Number(parts) },
+        token ?? undefined,
+      );
+      if (!res.success) throw new Error(res.message ?? 'Continue failed');
+      await onStarted();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Continue failed');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4'>
+      <div className='bg-surface-white border border-border-soft rounded-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden'>
+        <div className='flex items-center justify-between px-5 py-4 border-b border-border-soft'>
+          <div className='flex items-center gap-2'>
+            <Wand2 size={15} className='text-ink' />
+            <span className='text-message font-semibold text-text-primary'>Continue this video</span>
+          </div>
+          <button onClick={onClose} className='p-1.5 text-text-muted hover:text-text-primary rounded-lg hover:bg-surface-card transition-colors'>
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className='overflow-y-auto flex-1 p-5 space-y-4'>
+          {blobUrl && (
+            <div className='flex justify-center rounded-xl overflow-hidden bg-surface-card'>
+              <video src={blobUrl} muted playsInline className='w-auto max-h-[30vh] object-contain' />
+            </div>
+          )}
+          <p className='text-meta text-text-muted'>
+            We take the last frame of this video and generate the next part from it, then stitch them into one longer clip.
+          </p>
+
+          <div>
+            <p className='text-meta font-semibold text-text-muted uppercase tracking-wide mb-1.5'>Next part prompt</p>
+            <textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder='Describe what happens next…'
+              rows={3}
+              className='w-full rounded-lg border border-border-soft bg-surface-white px-3 py-2 text-message text-text-primary resize-none focus:outline-none focus:ring-2 focus:ring-brand/40'
+            />
+          </div>
+
+          <div className='flex items-center gap-4 flex-wrap'>
+            <div className='flex items-center gap-1.5'>
+              <span className='text-meta text-text-secondary'>Model</span>
+              <ModelPicker
+                options={i2vModels}
+                value={model}
+                onChange={(id) => {
+                  const m = id as VideoModelId;
+                  setModel(m);
+                  setDuration(String(MODEL_MAX_CLIP_SECONDS[m]));
+                }}
+              />
+            </div>
+            <div className='flex items-center gap-1.5'>
+              <span className='text-meta text-text-secondary'>Clip</span>
+              <ModelPicker options={durationOptions} value={duration} onChange={setDuration} />
+            </div>
+            <div className='flex items-center gap-1.5'>
+              <span className='text-meta text-text-secondary'>Parts</span>
+              <ModelPicker options={partsOptions} value={parts} onChange={setParts} />
+            </div>
+          </div>
+
+          {error && (
+            <div className='flex items-start gap-1.5 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-700/40 rounded-lg px-3 py-2'>
+              <AlertCircle size={12} className='text-red-500 mt-0.5 flex-shrink-0' />
+              <p className='text-meta text-red-600 dark:text-red-300'>{error}</p>
+            </div>
+          )}
+        </div>
+
+        <div className='px-5 py-4 border-t border-border-soft flex items-center justify-end gap-2'>
+          <button onClick={onClose} className='px-3 py-2 rounded-lg text-meta font-medium text-text-secondary hover:text-text-primary transition-colors'>
+            Cancel
+          </button>
+          <button
+            onClick={submit}
+            disabled={submitting || !prompt.trim()}
+            className='flex items-center gap-1.5 rounded-lg bg-brand px-4 py-2 text-meta font-semibold text-on-brand transition-colors hover:bg-brand-hover disabled:opacity-50 disabled:cursor-not-allowed'
+          >
+            {submitting ? <Loader2 size={13} className='animate-spin' /> : <Wand2 size={13} />}
+            {submitting ? 'Starting…' : 'Generate next part'}
+          </button>
         </div>
       </div>
     </div>

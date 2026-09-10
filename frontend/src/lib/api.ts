@@ -65,6 +65,23 @@ export interface ImpersonateResponse {
   workspaceSlug: string | null;
 }
 
+export interface StitchTestResult {
+  op: 'concat' | 'frame';
+  outKey: string;
+  publicUrl: string;
+  mounted: boolean;
+  sizeBytes: number;
+  ms: number;
+  clipCount?: number;
+}
+
+export interface StitchTestRequest {
+  op: 'concat' | 'frame';
+  clipUrls?: string[];
+  clipUrl?: string;
+  aspectRatio?: '16:9' | '9:16';
+}
+
 export const adminApi = {
   getStats: (token: string) =>
     request<{ success: boolean; data: AdminStats }>('/api/admin/stats', { method: 'GET' }, token),
@@ -85,6 +102,13 @@ export const adminApi = {
 
   getUsage: (token: string, range?: DateRange) =>
     request<{ success: boolean; data: AdminUsageResponse }>(`/api/admin/usage${rangeQuery(range)}`, { method: 'GET' }, token),
+
+  stitchTest: (token: string, req: StitchTestRequest) =>
+    request<{ success: boolean; data?: StitchTestResult; message?: string }>(
+      '/api/admin/stitch-test',
+      { method: 'POST', body: JSON.stringify(req) },
+      token,
+    ),
 };
 
 // ─── Billing / usage ──────────────────────────────────────────────────────────

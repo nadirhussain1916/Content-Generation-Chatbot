@@ -4,6 +4,9 @@ import { updateAsset } from '../db/queries';
 import { generateDalleImage } from '../services/openai';
 import { uploadFromUrl } from '../services/r2';
 import { calcVideoClipCost } from '../services/costs';
+import { VIDEO_MODEL_CONFIGS } from '../services/generationConfig';
+import type { VideoModelId } from '../services/generationConfig';
+import { concatClips, extractLastFrame } from '../services/videoStitch';
 import { Logger } from '../utils/Logger';
 
 // LTX extend chains always run on this model (see createReplicatePrediction calls below).
@@ -45,6 +48,27 @@ export type GenerationParams =
       extendDuration: number;   // seconds to add per extend call (max 20)
       chainCount: number;       // number of extend calls after the initial clip (1–6)
       referenceImageUrl?: string;
+    }
+  | {
+      // Long video via chunk generation + ffmpeg stitching (works with ANY model).
+      //   • generate — produce chunkCount chunks then stitch. mode 'concat' (parallel,
+      //     jump-cuts) or 'chain' (sequential; each chunk's last frame seeds the next i2v).
+      //   • combine  — no generation; stitch the provided existing clips (sourceClipUrls).
+      //   • continue — extend an existing clip: extract its last frame, generate chunkCount
+      //     next part(s) as i2v, then stitch [original, ...newParts].
+      type: 'video_stitch';
+      assetId: string;
+      workspaceId: string;
+      r2KeyPrefix: string;
+      op: 'generate' | 'combine' | 'continue';
+      aspectRatio: '16:9' | '9:16';
+      prompt?: string;
+      modelSlug?: string;
+      mode?: 'concat' | 'chain';
+      chunkCount?: number;
+      chunkDuration?: number;
+      referenceImageUrl?: string;   // generate: seed for chunk 1
+      sourceClipUrls?: string[];    // combine: all clips; continue: [original]
     };
 
 const KV_TTL = 60 * 60 * 24; // 24 h — long enough to cover any polling window
@@ -306,6 +330,115 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         Logger.log('VideoChainFailed', { assetId: p.assetId }, err);
+        await updateAsset(this.env.DB, p.assetId, { status: 'failed', error_message: msg });
+        await writeKv(this.env.KV, p.assetId, { status: 'failed' });
+      }
+    }
+
+    // ── Long video (chunk + ffmpeg stitch): generate / combine / continue ─────
+    if (p.type === 'video_stitch') {
+      const token = this.env.REPLICATE_API_TOKEN;
+
+      const failStitch = async (reason: string, ctx: Record<string, unknown> = {}) => {
+        Logger.log('VideoStitchFailed', { assetId: p.assetId, op: p.op, reason, ...ctx });
+        await updateAsset(this.env.DB, p.assetId, { status: 'failed', error_message: reason });
+        await writeKv(this.env.KV, p.assetId, { status: 'failed' });
+      };
+
+      try {
+        // Resolve the per-model Replicate input builder for generate/continue.
+        const config = p.modelSlug ? VIDEO_MODEL_CONFIGS[p.modelSlug as VideoModelId] : undefined;
+        const chunkCount = p.chunkCount ?? 1;
+        const chunkDuration = p.chunkDuration ?? 5;
+        const prompt = p.prompt ?? '';
+
+        // The ordered list of clip URLs to stitch at the end.
+        const clipUrls: string[] = [];
+
+        if (p.op === 'combine') {
+          // No generation — just stitch the caller-supplied clips in order.
+          clipUrls.push(...(p.sourceClipUrls ?? []));
+          if (clipUrls.length < 2) {
+            await failStitch('Combine needs at least 2 clips');
+            return;
+          }
+        } else if (p.op === 'generate') {
+          if (!p.modelSlug || !config) { await failStitch(`Unknown video model: ${p.modelSlug}`); return; }
+
+          if (p.mode === 'chain') {
+            // Sequential: each chunk's last frame seeds the next chunk (image-to-video).
+            let seedUrl = p.referenceImageUrl;
+            for (let i = 0; i < chunkCount; i++) {
+              const predId = await step.do(`stitch-gen-create-${i}`, async () =>
+                createReplicatePrediction(token, p.modelSlug!, config.buildInput(prompt, p.aspectRatio, chunkDuration, seedUrl)),
+              );
+              const r = await waitForPrediction(step, token, predId, `stitch-gen-wait-${i}`);
+              if (!r.ok) { await failStitch(r.reason, { chunk: i }); return; }
+              clipUrls.push(r.url);
+              if (i < chunkCount - 1) {
+                const frameUrl = r.url;
+                seedUrl = await step.do(`stitch-gen-frame-${i}`, async () =>
+                  (await extractLastFrame(this.env, { assetId: p.assetId, clipUrl: frameUrl, outKey: `${p.r2KeyPrefix}-frame-${i}.png` })).publicUrl,
+                );
+              }
+            }
+          } else {
+            // Concat: fire all predictions up front (they run in parallel on Replicate),
+            // then poll each to completion. Only chunk 0 may use the seed reference image.
+            const predIds: string[] = [];
+            for (let i = 0; i < chunkCount; i++) {
+              const seed = i === 0 ? p.referenceImageUrl : undefined;
+              const predId = await step.do(`stitch-gen-create-${i}`, async () =>
+                createReplicatePrediction(token, p.modelSlug!, config.buildInput(prompt, p.aspectRatio, chunkDuration, seed)),
+              );
+              predIds.push(predId);
+            }
+            for (let i = 0; i < predIds.length; i++) {
+              const r = await waitForPrediction(step, token, predIds[i], `stitch-gen-wait-${i}`);
+              if (!r.ok) { await failStitch(r.reason, { chunk: i }); return; }
+              clipUrls.push(r.url);
+            }
+          }
+        } else {
+          // op === 'continue': extend an existing clip into a longer one.
+          if (!p.modelSlug || !config) { await failStitch(`Unknown video model: ${p.modelSlug}`); return; }
+          const original = p.sourceClipUrls?.[0];
+          if (!original) { await failStitch('Continue needs a source clip'); return; }
+          clipUrls.push(original);
+
+          let seedUrl = await step.do('stitch-cont-frame-init', async () =>
+            (await extractLastFrame(this.env, { assetId: p.assetId, clipUrl: original, outKey: `${p.r2KeyPrefix}-frame-init.png` })).publicUrl,
+          );
+          for (let i = 0; i < chunkCount; i++) {
+            const predId = await step.do(`stitch-cont-create-${i}`, async () =>
+              createReplicatePrediction(token, p.modelSlug!, config.buildInput(prompt, p.aspectRatio, chunkDuration, seedUrl)),
+            );
+            const r = await waitForPrediction(step, token, predId, `stitch-cont-wait-${i}`);
+            if (!r.ok) { await failStitch(r.reason, { chunk: i }); return; }
+            clipUrls.push(r.url);
+            if (i < chunkCount - 1) {
+              const frameUrl = r.url;
+              seedUrl = await step.do(`stitch-cont-frame-${i}`, async () =>
+                (await extractLastFrame(this.env, { assetId: p.assetId, clipUrl: frameUrl, outKey: `${p.r2KeyPrefix}-frame-c${i}.png` })).publicUrl,
+              );
+            }
+          }
+        }
+
+        // Stitch every collected clip into the final video (ffmpeg in a container).
+        const r2Key = await step.do('stitch-clips', { retries: { limit: 1, delay: '5 seconds' } }, async () => {
+          const key = `${p.r2KeyPrefix}.mp4`;
+          await concatClips(this.env, { assetId: p.assetId, clipUrls, outKey: key, aspectRatio: p.aspectRatio });
+          return key;
+        });
+
+        await step.do('finalize-stitch-video', async () => {
+          await updateAsset(this.env.DB, p.assetId, { status: 'ready', r2_key: r2Key });
+          await writeKv(this.env.KV, p.assetId, { status: 'ready', r2_key: r2Key });
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        Logger.log('VideoStitchWorkflowFailed', { assetId: p.assetId, op: p.op }, err);
         await updateAsset(this.env.DB, p.assetId, { status: 'failed', error_message: msg });
         await writeKv(this.env.KV, p.assetId, { status: 'failed' });
       }

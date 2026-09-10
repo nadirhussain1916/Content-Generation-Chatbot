@@ -54,7 +54,19 @@
           "binding": "PUBLISH_WORKFLOW",
           "class_name": "PublishWorkflow"
         }
-      ]
+      ],
+      "containers": [
+        {
+          "class_name": "Sandbox",
+          "image": "./containers/sandbox/Dockerfile",
+          "instance_type": "standard",
+          "max_instances": 5
+        }
+      ],
+      "durable_objects": {
+        "bindings": [{ "class_name": "Sandbox", "name": "Sandbox" }]
+      },
+      "migrations": [{ "new_sqlite_classes": ["Sandbox"], "tag": "v1" }]
     }
   },
 
@@ -98,7 +110,22 @@
       "binding": "PUBLISH_WORKFLOW",
       "class_name": "PublishWorkflow"
     }
-  ]
+  ],
+
+  // ffmpeg-in-a-container for long-video stitching (Flows: generate/combine/continue).
+  // Requires the Workers Paid plan with Containers enabled; local dev needs Docker.
+  "containers": [
+    {
+      "class_name": "Sandbox",
+      "image": "./containers/sandbox/Dockerfile",
+      "instance_type": "standard",
+      "max_instances": 5
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "class_name": "Sandbox", "name": "Sandbox" }]
+  },
+  "migrations": [{ "new_sqlite_classes": ["Sandbox"], "tag": "v1" }]
 
   // Secrets (set via: wrangler secret put SECRET_NAME):
   // CLERK_SECRET_KEY

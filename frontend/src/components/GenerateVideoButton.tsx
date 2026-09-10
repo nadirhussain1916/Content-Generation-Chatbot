@@ -12,7 +12,10 @@ import {
   VIDEO_DURATIONS, DEFAULT_VIDEO_DURATIONS, VIDEO_DURATION_KEY,
   ASPECT_RATIO_MODEL_IDS, DURATION_MODEL_IDS,
   LTX_EXTEND_OPTIONS, LTX_EXTEND_KEY,
-  type VideoModelId, type LtxExtendOption,
+  STITCH_MODES, DEFAULT_STITCH_MODE, STITCH_MODE_KEY,
+  LONG_VIDEO_OPTIONS, DEFAULT_LONG_VIDEO, LONG_VIDEO_KEY,
+  I2V_CAPABLE_MODEL_IDS, snapLongVideoOption,
+  type VideoModelId, type LtxExtendOption, type StitchMode,
   readPref, writePref,
 } from '../lib/models';
 
@@ -67,6 +70,17 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
     return readPref(VIDEO_DURATION_KEY, DEFAULT_VIDEO_DURATIONS[modelId] ?? DEFAULT_VIDEO_DURATIONS[DEFAULT_VIDEO_MODEL]);
   });
   const [ltxExtendId, setLtxExtendId] = useState<string>(() => readPref(LTX_EXTEND_KEY, '0'));
+  // Long video (chunk + ffmpeg stitch) — the "any model" long-video path.
+  const [chunkCountId, setChunkCountId] = useState<string>(() => {
+    const fromPkg = pkg.chunkCount;
+    if (fromPkg && fromPkg >= 1) return snapLongVideoOption(fromPkg);
+    return readPref(LONG_VIDEO_KEY, DEFAULT_LONG_VIDEO);
+  });
+  const [stitchMode, setStitchMode] = useState<StitchMode>(() => {
+    const fromPkg = pkg.stitchMode;
+    if (fromPkg === 'concat' || fromPkg === 'chain') return fromPkg;
+    return readPref(STITCH_MODE_KEY, DEFAULT_STITCH_MODE) as StitchMode;
+  });
   // Include-character is now saved on the draft (toggled in the card); absent = on.
   const includeCharacter = pkg.includeCharacter ?? true;
 
@@ -76,6 +90,13 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
   const selectedExtend: LtxExtendOption =
     LTX_EXTEND_OPTIONS.find((o) => o.id === ltxExtendId) ?? LTX_EXTEND_OPTIONS[0];
   const chainCount = isLtxPro ? selectedExtend.chainCount : 0;
+  // Generic long-video controls apply to every model EXCEPT LTX Pro (which keeps its
+  // native extend picker above). chunkCount >= 2 turns on chunk generation + stitching.
+  const supportsLongVideo = !isLtxPro;
+  const chunkCount = Number(chunkCountId);
+  const isLongVideo = supportsLongVideo && chunkCount >= 2;
+  const isI2VCapable = I2V_CAPABLE_MODEL_IDS.includes(currentModelId);
+  const effectiveStitchMode: StitchMode = isI2VCapable ? stitchMode : 'concat';
   // Hide the duration picker for LTX Pro when extend is active (initial duration is fixed at 10s)
   const supportsDuration = DURATION_MODEL_IDS.includes(currentModelId) && !(isLtxPro && chainCount > 0);
   const durationOptions = VIDEO_DURATIONS[currentModelId] ?? VIDEO_DURATIONS['google/veo-2'];
@@ -116,10 +137,13 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
           messageId: message.id,
           videoModel,
           ...(supportsAspectRatio && { aspectRatio }),
-          // When LTX Pro extend is active, fix initial duration at 10s and use per-option extendDuration
-          ...(isLtxPro && chainCount > 0
-            ? { duration: 10, chainCount, extendDuration: selectedExtend.extendDuration }
-            : supportsDuration && { duration: Number(duration) }),
+          // Long video (stitch) takes precedence for non-LTX-Pro models; otherwise
+          // fall back to LTX Pro native extend, or a plain single-clip duration.
+          ...(isLongVideo
+            ? { chunkCount, stitchMode: effectiveStitchMode, ...(supportsDuration && { duration: Number(duration) }) }
+            : isLtxPro && chainCount > 0
+              ? { duration: 10, chainCount, extendDuration: selectedExtend.extendDuration }
+              : supportsDuration && { duration: Number(duration) }),
           ...(hasCharacter && { includeCharacter }),
           ...(primaryReferenceUploadId && { referenceUploadId: primaryReferenceUploadId }),
         },
@@ -197,6 +221,26 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
               />
             </div>
           )}
+          {supportsLongVideo && (
+            <div className='flex items-center gap-1.5'>
+              <span className='text-meta text-text-secondary'>Length</span>
+              <ModelPicker
+                options={LONG_VIDEO_OPTIONS}
+                value={chunkCountId}
+                onChange={(id) => { setChunkCountId(id); writePref(LONG_VIDEO_KEY, id); }}
+              />
+            </div>
+          )}
+          {isLongVideo && isI2VCapable && (
+            <div className='flex items-center gap-1.5'>
+              <span className='text-meta text-text-secondary'>Mode</span>
+              <ModelPicker
+                options={STITCH_MODES}
+                value={stitchMode}
+                onChange={(id) => { setStitchMode(id); writePref(STITCH_MODE_KEY, id); }}
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -250,9 +294,11 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
         </button>
         {loading && (
           <span className='text-meta text-text-secondary'>
-            {isLtxPro && chainCount > 0
-              ? `Generating ${chainCount + 1} clips (${selectedExtend.label} video) — this may take ${Math.round((chainCount + 1) * 2)}–${Math.round((chainCount + 1) * 3)} min`
-              : 'This may take a few minutes'}
+            {isLongVideo
+              ? `Generating ${chunkCount} chunks (${effectiveStitchMode === 'chain' ? 'seamless' : 'fast cuts'}) then stitching — this may take ${Math.round(chunkCount * 2)}–${Math.round(chunkCount * 3)} min`
+              : isLtxPro && chainCount > 0
+                ? `Generating ${chainCount + 1} clips (${selectedExtend.label} video) — this may take ${Math.round((chainCount + 1) * 2)}–${Math.round((chainCount + 1) * 3)} min`
+                : 'This may take a few minutes'}
           </span>
         )}
       </div>

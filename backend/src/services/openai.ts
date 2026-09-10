@@ -4,7 +4,7 @@ import { generateText, streamText, tool, stepCountIs } from 'ai';
 import { z } from 'zod';
 import { AGENT_SYSTEM_PROMPT, type WorkspaceBrand } from './prompts';
 import type { ImagePostPackage, VideoPostPackage } from '../types';
-import { IMAGE_MODELS, GENERATION_MODES, VIDEO_MODELS } from './generationConfig';
+import { IMAGE_MODELS, GENERATION_MODES, VIDEO_MODELS, STITCH_MODES, STITCH_MAX_CHUNKS } from './generationConfig';
 import { Logger } from '../utils/Logger';
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
@@ -83,6 +83,23 @@ const VideoPostPackageSchema = z.object({
     '(4K, up to 15s), "wan-video/wan-2.7-t2v" (text-only), "wan-video/wan-2.7-i2v" (image-to-video — REQUIRES a reference image), ' +
     '"google/veo-2" (fast, portrait & landscape, premium). Only pick "wan-video/wan-2.7-i2v" when a reference image is attached. ' +
     'Pick "wan-video/wan-2.7-t2v" only when there is no reference image to preserve.'
+  ),
+  // ── Long video (chunk + ffmpeg stitch) — see LONG VIDEO CAPABILITIES in the system prompt ──
+  longVideoTargetSeconds: z.number().int().optional().describe(
+    'Only when the user wants a video LONGER than one model clip. The total desired length in seconds. ' +
+    'Per-model max clip length: LTX Fast 20s, Seedance/Wan 15s, LTX Pro 10s, Veo 8s. For long targets prefer a ' +
+    'longer-clip model (LTX Fast / Seedance) to minimise chunks and cost. Omit for normal single-clip videos.'
+  ),
+  chunkCount: z.number().int().min(1).max(STITCH_MAX_CHUNKS).optional().describe(
+    'Number of chunks to generate and stitch. 1 (or omit) = a normal single clip. For a long video set this to ' +
+    'ceil(longVideoTargetSeconds / model max clip length), capped at ' + STITCH_MAX_CHUNKS + '. Also set ' +
+    'videoDurationSeconds to that model\'s max clip length so the chunks add up to the target.'
+  ),
+  stitchMode: z.enum(STITCH_MODES).optional().describe(
+    '"concat" = fast, chunks render in parallel, but there are hard cuts between them (works with EVERY model). ' +
+    '"chain" = seamless — each chunk\'s last frame seeds the next (image-to-video), only for i2v-capable models ' +
+    '(everything except "wan-video/wan-2.7-t2v") and slower. Default "concat"; use "chain" when the user wants smooth continuity. ' +
+    'Only meaningful when chunkCount >= 2.'
   ),
 });
 

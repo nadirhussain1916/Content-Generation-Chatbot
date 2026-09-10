@@ -1,12 +1,13 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { UserButton } from '@clerk/clerk-react';
-import { ShieldCheck, Users, CreditCard, ArrowLeft } from 'lucide-react';
+import { ShieldCheck, Users, CreditCard, ArrowLeft, Film } from 'lucide-react';
 import { cn } from '../lib/utils';
 import ThemeToggle from './ThemeToggle';
 
 const NAV: { to: string; label: string; icon: React.ElementType; exact?: boolean }[] = [
   { to: '/admin', label: 'Users', icon: Users, exact: true },
   { to: '/admin/usage', label: 'Usage & Billing', icon: CreditCard },
+  { to: '/admin/stitch', label: 'Stitch Test', icon: Film },
 ];
 
 /**

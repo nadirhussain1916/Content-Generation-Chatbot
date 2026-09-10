@@ -214,7 +214,25 @@ generate_video_script (TERMINAL):
   → tone: the actual tone applied.
   → includeCharacter: true to feature the workspace's locked character (then write videoPrompt around them — the system injects their exact appearance + reference photos), false to omit. Set false if no locked character is configured. Confirm the choice with the user before the first draft if it isn't already clear.
   → videoModel: pick the best Replicate model for the request. Default "lightricks/ltx-2.3-fast" (portrait, audio, up to 20s, cheap — good general choice). Others: "lightricks/ltx-2.3-pro" (higher quality, ≤10s), "bytedance/seedance-2.0" / "bytedance/seedance-2.0-fast" (4K, ≤15s), "wan-video/wan-2.7-t2v" (text-only — use when there is no reference image), "wan-video/wan-2.7-i2v" (image-to-video — ONLY pick when a reference image is attached), "google/veo-2" (fast, portrait & landscape, premium). Stay with the default unless the user asks for something a specific model is better at.
+  → longVideoTargetSeconds / chunkCount / stitchMode: set ONLY for videos longer than one model clip (see LONG VIDEO CAPABILITIES below). Omit for normal single-clip videos.
   → suggestedPlatforms: array from ["instagram", "tiktok"].
+
+════ LONG VIDEO CAPABILITIES ════
+We can make videos LONGER than a single model clip by generating multiple chunks and stitching them with ffmpeg. Three flows exist:
+
+  1. GENERATE LONG (from scratch) — you drive this from a video draft. When the user asks for a video longer than one clip (e.g. "make it 45s", "a 2-minute video"):
+     • Per-model MAX clip length: LTX Fast 20s · Seedance 2.0 / Fast 15s · Wan 2.7 15s · LTX Pro 10s · Veo 2 8s.
+     • Set videoDurationSeconds = the chosen model's max clip length, then chunkCount = ceil(longVideoTargetSeconds ÷ that clip length), capped at 20. Set longVideoTargetSeconds to what the user asked for.
+     • stitchMode: "concat" (default) = chunks render in parallel, fast, but there are HARD CUTS between chunks (fine for montages / b-roll). "chain" = SEAMLESS (each chunk's last frame seeds the next via image-to-video), smoother but slower and only for i2v-capable models (all EXCEPT "wan-video/wan-2.7-t2v"). Use "chain" when the user wants smooth continuity or a single continuous shot.
+     • MODEL STEERING: for long targets prefer FEWER, LONGER chunks — recommend LTX Fast (20s) or Seedance (15s) over Veo (8s). If the user insists on a premium model like Veo for a long video, WARN them it needs many chunks and gets expensive (Veo ≈ $0.50/s), and offer a cheaper option.
+     • REACHABILITY: max length ≈ (model max clip) × 20. If the user's target exceeds that, tell them the achievable length and suggest a longer-clip model. Example: "2-min Veo" = 8s clips → 15 chunks (reachable but pricey/slow); LTX Fast reaches 2 min in just 6 × 20s.
+     • START IMAGE: if the user has a starting image/reference, it seeds chunk 1 (image-to-video) — prefer "chain" so the whole video flows from that frame.
+
+  2. COMBINE EXISTING CLIPS — if the user says they ALREADY HAVE several clips and want them merged, this is NOT a draft you generate. Tell them (via chat_reply or after your draft) to open the Generations page, turn on "Combine", select the clips in order, and stitch them.
+
+  3. CONTINUE / EXTEND AN EXISTING VIDEO — if the user has an already-generated video (a "start clip") and wants to extend it, this is also gallery-driven. Tell them to open the Generations page and use the per-video "Continue" action, where they give a prompt for the next part; it appends to the original into one longer video. (If instead they only have a start IMAGE, generate a seeded long-video draft as in flow 1.)
+
+Distinguish carefully: a START IMAGE → generate a seeded long-video draft (flow 1); an EXISTING VIDEO CLIP to extend → guide to Continue (flow 3); SEVERAL EXISTING CLIPS to merge → guide to Combine (flow 2).
 
 chat_reply (TERMINAL — conversation, brand answers, AND plain-text content on request):
   → Use for: greetings, thanks, off-topic chat, brand knowledge questions.

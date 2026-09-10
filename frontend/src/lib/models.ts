@@ -163,6 +163,60 @@ export const LTX_EXTEND_OPTIONS: readonly LtxExtendOption[] = [
 
 export const LTX_EXTEND_KEY = 'tf_ltx_extend';
 
+// ─── Long video (chunk + ffmpeg stitch) — the "any model" long-video path ─────
+// Distinct from LTX Pro's native extend above: here we generate N independent
+// chunks with any model and stitch them with ffmpeg. Mirrors the backend
+// (generationConfig.ts: STITCH_MODES / MODEL_MAX_CLIP_SECONDS / STITCH_MAX_CHUNKS).
+
+export const STITCH_MODES = [
+  { id: 'concat', label: 'Fast cuts', desc: 'Chunks render in parallel · quick · hard cuts' },
+  { id: 'chain',  label: 'Seamless',  desc: 'Each chunk continues the last · smooth · slower' },
+] as const;
+export type StitchMode = (typeof STITCH_MODES)[number]['id'];
+export const DEFAULT_STITCH_MODE: StitchMode = 'concat';
+export const STITCH_MODE_KEY = 'tf_stitch_mode';
+
+// Length = number of chunks to generate + stitch. '1' = a single clip (no stitching).
+export const LONG_VIDEO_OPTIONS = [
+  { id: '1', label: 'Single clip', desc: 'No stitching' },
+  { id: '2', label: '2 chunks',    desc: '' },
+  { id: '3', label: '3 chunks',    desc: '' },
+  { id: '4', label: '4 chunks',    desc: '' },
+  { id: '6', label: '6 chunks',    desc: '' },
+  { id: '8', label: '8 chunks',    desc: 'Longer' },
+] as const;
+export const DEFAULT_LONG_VIDEO = '1';
+export const LONG_VIDEO_KEY = 'tf_long_video_chunks';
+export const STITCH_MAX_CHUNKS = 20;
+
+/** Longest single-clip length each model accepts (mirror of backend). */
+export const MODEL_MAX_CLIP_SECONDS: Record<VideoModelId, number> = {
+  'google/veo-2':                8,
+  'lightricks/ltx-2.3-fast':    20,
+  'lightricks/ltx-2.3-pro':     10,
+  'bytedance/seedance-2.0':     15,
+  'bytedance/seedance-2.0-fast': 15,
+  'wan-video/wan-2.7-t2v':      15,
+  'wan-video/wan-2.7-i2v':      15,
+};
+
+/** Models that can be frame-chained ("Seamless") — everything except Wan T2V. */
+export const I2V_CAPABLE_MODEL_IDS: VideoModelId[] = [
+  'google/veo-2',
+  'lightricks/ltx-2.3-fast',
+  'lightricks/ltx-2.3-pro',
+  'bytedance/seedance-2.0',
+  'bytedance/seedance-2.0-fast',
+  'wan-video/wan-2.7-i2v',
+];
+
+/** Snap an arbitrary chunk count to the nearest value offered in LONG_VIDEO_OPTIONS. */
+export function snapLongVideoOption(chunkCount: number): string {
+  const ids = LONG_VIDEO_OPTIONS.map((o) => Number(o.id));
+  const nearest = ids.reduce((best, n) => (Math.abs(n - chunkCount) < Math.abs(best - chunkCount) ? n : best), ids[0]);
+  return String(nearest);
+}
+
 // ─── Reference image capability caps ─────────────────────────────────────────
 // Maximum number of reference images each generation model accepts.
 // 0 = model does not support reference images at all.

@@ -124,11 +124,17 @@ describe('LTX_EXTEND_OPTIONS', () => {
     }
   });
 
-  it('~45s option uses 5 chains of 7s each (short Reels-friendly)', () => {
-    const opt = LTX_EXTEND_OPTIONS.find((o) => o.id === '45');
+  it('~70s option uses 6 chains of 10s each (Reels-friendly)', () => {
+    const opt = LTX_EXTEND_OPTIONS.find((o) => o.id === '70');
     expect(opt).toBeDefined();
-    expect(opt!.chainCount).toBe(5);
-    expect(opt!.extendDuration).toBe(7);
+    expect(opt!.chainCount).toBe(6);
+    expect(opt!.extendDuration).toBe(10);
+  });
+
+  it('every extend option uses a uniform 10s extend step (0 for single clip)', () => {
+    for (const opt of LTX_EXTEND_OPTIONS) {
+      expect(opt.extendDuration).toBe(opt.id === '0' ? 0 : 10);
+    }
   });
 });
 
