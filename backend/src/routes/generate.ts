@@ -623,7 +623,18 @@ generateRouter.post('/assets/:assetId/recover', async (c) => {
     const contentType = asset.type === 'video' ? 'video/mp4' : 'image/png';
     const key = `${asset.workspace_id}/${asset.thread_id}/${asset.id}.${ext}`;
 
-    await uploadFromUrl({ bucket: c.env.ASSETS, url: sourceUrl, key, contentType });
+    // The prediction record is permanent, but its output FILE expires ~1 hour after
+    // generation. If the fetch fails, surface that clearly instead of a generic 500.
+    try {
+      await uploadFromUrl({ bucket: c.env.ASSETS, url: sourceUrl, key, contentType });
+    } catch (fetchErr) {
+      Logger.log('AssetRecoverFetchFailed', { assetId, sourceUrl }, fetchErr);
+      return c.json<TfResponse<null>>({
+        success: false,
+        message: 'Source file is no longer available — Replicate deletes outputs ~1 hour after generation, so this clip can no longer be recovered',
+      }, 410);
+    }
+
     await updateAsset(c.env.DB, assetId, { status: 'ready', r2_key: key, error_message: null });
     await c.env.KV.put(
       `asset:status:${assetId}`,
