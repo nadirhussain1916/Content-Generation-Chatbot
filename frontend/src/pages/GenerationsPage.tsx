@@ -243,7 +243,11 @@ function AssetCard({
   const isFailed = asset.status === 'failed';
   const isReady = asset.status === 'ready';
 
-  useEffect(() => { onVisible(); }, []);
+  // Re-run when the asset flips to ready or gains a public_url (e.g. via the in-page
+  // refresh/poll). A mount-only effect misses the generating→ready transition because
+  // the card is reused (same key) rather than remounted, leaving blobUrl undefined.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { onVisible(); }, [asset.status, asset.public_url]);
 
   return (
     <div className={cn(

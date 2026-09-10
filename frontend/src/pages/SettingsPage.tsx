@@ -7,7 +7,7 @@ import AppShell from '../components/AppShell';
 import Sidebar from '../components/Sidebar';
 import PageTabs from '../components/PageTabs';
 import { useNavigate } from 'react-router-dom';
-import { CheckCircle, XCircle, Link2, Unlink, Loader2, Settings, Upload, X, Sparkles, Film, Palette, User } from 'lucide-react';
+import { CheckCircle, XCircle, Link2, Unlink, Loader2, Settings, Upload, X, Sparkles, Film, Palette, User, Images, Trash2, Star } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 const BACKEND = import.meta.env.VITE_API_BASE_URL ?? '';
@@ -21,13 +21,14 @@ import {
   derivedSizesFromSettings,
 } from '../lib/platform';
 
-type SettingsTab = 'ai' | 'media' | 'brand' | 'character' | 'connections';
+type SettingsTab = 'ai' | 'media' | 'brand' | 'character' | 'references' | 'connections';
 
 const SETTINGS_TABS = [
   { id: 'ai', label: 'AI Preferences', icon: Sparkles },
   { id: 'media', label: 'Media Defaults', icon: Film },
   { id: 'brand', label: 'Brand & Agent', icon: Palette },
   { id: 'character', label: 'Character', icon: User },
+  { id: 'references', label: 'References', icon: Images },
   { id: 'connections', label: 'Connections', icon: Link2 },
 ];
 
@@ -68,6 +69,13 @@ export default function SettingsPage() {
   });
   const [characterUploads, setCharacterUploads] = useState<WorkspaceUpload[]>([]);
   const [uploadingRef, setUploadingRef] = useState(false);
+
+  // ── All reference images (workspace uploads) — lazy-loaded on the References tab ──
+  const [allUploads, setAllUploads] = useState<WorkspaceUpload[]>([]);
+  const [uploadsLoaded, setUploadsLoaded] = useState(false);
+  const [loadingUploads, setLoadingUploads] = useState(false);
+  const [uploadingReference, setUploadingReference] = useState(false);
+  const [deletingUploadId, setDeletingUploadId] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -190,6 +198,70 @@ export default function SettingsPage() {
   function removeCharacterRef(uploadId: string) {
     setCharacterUploads((prev) => prev.filter((u) => u.id !== uploadId));
     setForm((f) => ({ ...f, character_reference_ids: f.character_reference_ids.filter((id) => id !== uploadId) }));
+  }
+
+  // ── References tab: list / upload / delete all workspace reference images ──
+  async function loadAllUploads() {
+    setLoadingUploads(true);
+    try {
+      const token = await getToken();
+      const res = await api.get<TfResponse<WorkspaceUpload[]>>(`/api/workspaces/${slug}/uploads`, token ?? undefined);
+      if (res.success && res.data) setAllUploads(res.data);
+    } finally {
+      setLoadingUploads(false);
+      setUploadsLoaded(true);
+    }
+  }
+
+  // Lazy-load the full uploads list the first time the References tab is opened.
+  useEffect(() => {
+    if (tab === 'references' && !uploadsLoaded && !loadingUploads) loadAllUploads();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
+
+  async function uploadReference(file: File) {
+    setUploadingReference(true);
+    try {
+      const token = await getToken();
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch(`${BACKEND}/api/workspaces/${slug}/uploads`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      const data: TfResponse<WorkspaceUpload> = await res.json();
+      if (data.success && data.data) {
+        setAllUploads((prev) => [data.data!, ...prev]);
+      } else {
+        setToast({ msg: data.message ?? 'Upload failed', ok: false });
+        setTimeout(() => setToast(null), 3000);
+      }
+    } finally {
+      setUploadingReference(false);
+    }
+  }
+
+  async function deleteReference(uploadId: string) {
+    setDeletingUploadId(uploadId);
+    try {
+      const token = await getToken();
+      const res = await api.delete<TfResponse<null>>(`/api/workspaces/${slug}/uploads/${uploadId}`, token ?? undefined);
+      if (res.success) {
+        setAllUploads((prev) => prev.filter((u) => u.id !== uploadId));
+        // Keep the locked-character selection consistent if this image was one of its refs.
+        setCharacterUploads((prev) => prev.filter((u) => u.id !== uploadId));
+        setForm((f) => f.character_reference_ids.includes(uploadId)
+          ? { ...f, character_reference_ids: f.character_reference_ids.filter((id) => id !== uploadId) }
+          : f);
+        setToast({ msg: 'Reference deleted', ok: true });
+      } else {
+        setToast({ msg: res.message ?? 'Delete failed', ok: false });
+      }
+      setTimeout(() => setToast(null), 3000);
+    } finally {
+      setDeletingUploadId(null);
+    }
   }
 
   const igAccount = accounts.find((a) => a.platform === 'instagram');
@@ -663,6 +735,88 @@ export default function SettingsPage() {
                 >
                   {saving ? 'Saving...' : 'Save'}
                 </button>
+              </section>
+              )}
+
+              {/* Reference images library */}
+              {tab === 'references' && (
+              <section className={sectionClass}>
+                <div className='flex items-start justify-between gap-3'>
+                  <div>
+                    <h2 className={sectionHeadingClass}>Reference Images</h2>
+                    <p className='text-meta text-text-secondary mt-1'>
+                      Every image uploaded to this workspace. These are available as references when generating images and videos.
+                    </p>
+                  </div>
+                  <label className={cn(
+                    'flex items-center gap-1.5 px-3 py-2 rounded-lg text-message font-medium bg-brand hover:bg-brand-hover text-on-brand cursor-pointer transition-colors flex-shrink-0',
+                    uploadingReference && 'opacity-50 pointer-events-none'
+                  )}>
+                    {uploadingReference ? <Loader2 size={14} className='animate-spin' /> : <Upload size={14} />}
+                    {uploadingReference ? 'Uploading' : 'Upload'}
+                    <input
+                      type='file'
+                      accept='image/*'
+                      className='sr-only'
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadReference(f); e.target.value = ''; }}
+                    />
+                  </label>
+                </div>
+
+                {loadingUploads ? (
+                  <div className='flex justify-center py-10'>
+                    <Loader2 size={18} className='animate-spin text-text-muted' />
+                  </div>
+                ) : allUploads.length === 0 ? (
+                  <div className='flex flex-col items-center justify-center gap-2 py-12 text-center'>
+                    <div className='w-11 h-11 rounded-full bg-surface-white flex items-center justify-center'>
+                      <Images size={20} className='text-text-muted' />
+                    </div>
+                    <p className='text-message text-text-secondary'>No reference images yet</p>
+                    <p className='text-meta text-text-muted max-w-xs'>
+                      Upload images here, or attach them in a thread — they'll all show up in this library.
+                    </p>
+                  </div>
+                ) : (
+                  <div className='grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3'>
+                    {allUploads.map((u) => {
+                      const isCharacterRef = form.character_reference_ids.includes(u.id);
+                      const isDeleting = deletingUploadId === u.id;
+                      return (
+                        <div key={u.id} className='group relative'>
+                          <div className='relative aspect-square w-full overflow-hidden rounded-xl border border-border-soft bg-surface-white'>
+                            <img
+                              src={u.public_url}
+                              alt={u.name}
+                              title={u.name}
+                              className='absolute inset-0 h-full w-full object-cover'
+                            />
+                            {isDeleting && (
+                              <div className='absolute inset-0 flex items-center justify-center bg-black/40'>
+                                <Loader2 size={16} className='animate-spin text-white' />
+                              </div>
+                            )}
+                            {isCharacterRef && (
+                              <span className='absolute left-1.5 top-1.5 flex items-center gap-1 rounded-full bg-purple-500/90 px-1.5 py-0.5 text-[9px] font-semibold text-white shadow-sm'>
+                                <Star size={8} />
+                                Character
+                              </span>
+                            )}
+                            <button
+                              onClick={() => deleteReference(u.id)}
+                              disabled={isDeleting}
+                              title='Delete reference'
+                              className='absolute right-1.5 top-1.5 rounded-full bg-black/50 p-1.5 text-white opacity-0 backdrop-blur-sm transition-all hover:bg-red-500 group-hover:opacity-100 disabled:opacity-50'
+                            >
+                              <Trash2 size={11} />
+                            </button>
+                          </div>
+                          <p className='mt-1 truncate text-[10px] text-text-muted' title={u.name}>{u.name}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </section>
               )}
 
