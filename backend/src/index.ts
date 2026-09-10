@@ -5,7 +5,6 @@ export { GenerationWorkflow } from './workflows/generation';
 export { PublishWorkflow } from './workflows/publish';
 // Required so the Sandbox container Durable Object is discoverable by the runtime.
 export { Sandbox } from '@cloudflare/sandbox';
-import { runAllMigrations } from './migrations';
 import { Logger } from './utils/Logger';
 
 import onboardingRouter from './routes/onboarding';
@@ -62,15 +61,8 @@ app.route('/api/workspaces/:slug/billing', billingRouter);
 app.route('/api/workspaces/:slug', uploadsRouter);
 app.route('/api/admin', adminRouter);
 
-// Run migrations — protected by MIGRATE_SECRET header
-app.get('/api/migrate', async (c) => {
-  const secret = c.req.header('X-Migrate-Secret');
-  if (!secret || secret !== c.env.MIGRATE_SECRET) {
-    return c.json({ success: false, message: 'Unauthorized' }, 401);
-  }
-  const messages = await runAllMigrations(c.env.DB);
-  return c.json({ success: true, data: { messages } });
-});
+// Migrations run via the super-admin panel: POST /api/admin/migrate
+// (Clerk-authenticated + super-admin allowlist). See routes/admin/index.ts.
 
 // ─── Cron: Refresh expiring social tokens every 6 hours ─────────────────────
 

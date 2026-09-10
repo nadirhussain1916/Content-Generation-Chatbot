@@ -19,8 +19,7 @@
       "vars": {
         "ENVIRONMENT": "development",
         "FRONTEND_URL": "http://localhost:5173",
-        "BACKEND_URL": "http://localhost:8787",
-        "MIGRATE_SECRET": "tf-migrate-dev-2026"
+        "BACKEND_URL": "http://localhost:8787"
       },
       "d1_databases": [
         {

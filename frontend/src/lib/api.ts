@@ -109,6 +109,13 @@ export const adminApi = {
       { method: 'POST', body: JSON.stringify(req) },
       token,
     ),
+
+  runMigrations: (token: string) =>
+    request<{ success: boolean; data?: { messages: string[] }; message?: string }>(
+      '/api/admin/migrate',
+      { method: 'POST', body: JSON.stringify({}) },
+      token,
+    ),
 };
 
 // ─── Billing / usage ──────────────────────────────────────────────────────────

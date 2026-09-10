@@ -28,7 +28,10 @@ adminRouter.post('/migrate', async (c) => {
     return c.json<TfResponse<{ messages: string[] }>>({ success: true, data: { messages } });
   } catch (error) {
     Logger.log('MigrationsError', undefined, error);
-    return c.json<TfResponse<null>>({ success: false, message: 'Migration failed' }, 500);
+    return c.json<TfResponse<null>>(
+      { success: false, message: error instanceof Error ? error.message : 'Migration failed' },
+      500,
+    );
   }
 });
 
