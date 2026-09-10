@@ -73,6 +73,71 @@ async function createReplicatePrediction(
   return data.id;
 }
 
+/**
+ * Poll a Replicate prediction to completion using HIBERNATING sleeps.
+ *
+ * Why not a tight `step.do` retry-loop? Cloudflare caps subrequests per Worker
+ * invocation (50 on the Free plan, 1000 on Paid). A retry-based poll keeps the
+ * Workflow in ONE warm invocation, so every create + poll + D1 write across a long
+ * extend-chain accumulates against that single budget. We observed a 6-extend / 70s
+ * chain die at the 4th extend's `create` with "Too many subrequests" — it had already
+ * burned ~50 subrequests on the initial + 3 extends' creates and ~15s polls.
+ *
+ * `step.sleep()` puts the Workflow to sleep and lets it be evicted from memory, then
+ * resumes it as a FRESH invocation — which resets the per-invocation subrequest counter.
+ * By sleeping between each single-fetch check, every poll runs in its own invocation, so
+ * subrequests never accumulate and the chain length is no longer bounded by the limit.
+ *
+ * Belt-and-suspenders: the wide first delay skips guaranteed no-op polls (LTX clips need
+ * ~75s+ to render) and the 45s spacing keeps the total check count low (~1–3 per clip),
+ * so we'd stay under 50 even in the unlikely event a sleep fails to reset the counter.
+ */
+async function waitForPrediction(
+  step: WorkflowStep,
+  token: string,
+  predictionId: string,
+  label: string,
+): Promise<{ ok: true; url: string; durationSec?: number } | { ok: false; reason: string }> {
+  const MAX_CHECKS = 26; // 75s + 25×45s ≈ 20 min total polling window
+  for (let i = 0; i < MAX_CHECKS; i++) {
+    await step.sleep(`${label}-sleep-${i}`, i === 0 ? '75 seconds' : '45 seconds');
+
+    const res = await step.do(`${label}-check-${i}`, async () => {
+      const r = await fetch(`https://api.replicate.com/v1/predictions/${predictionId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const prediction = await r.json() as {
+        status: string;
+        output?: string | string[];
+        error?: string;
+        metrics?: { video_output_duration_seconds?: number };
+      };
+
+      if (prediction.status === 'failed' || prediction.status === 'canceled') {
+        return {
+          state: 'failed' as const,
+          reason: `Replicate prediction ${prediction.status}: ${prediction.error ?? 'unknown'}`,
+        };
+      }
+
+      const outputUrl = Array.isArray(prediction.output) ? prediction.output[0] : prediction.output;
+      if (prediction.status === 'succeeded' && outputUrl) {
+        return {
+          state: 'done' as const,
+          url: outputUrl,
+          durationSec: prediction.metrics?.video_output_duration_seconds,
+        };
+      }
+      return { state: 'pending' as const };
+    });
+
+    if (res.state === 'done') return { ok: true, url: res.url, durationSec: res.durationSec };
+    if (res.state === 'failed') return { ok: false, reason: res.reason };
+  }
+
+  return { ok: false, reason: 'Replicate prediction timed out after ~20 minutes of polling' };
+}
+
 export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, GenerationParams> {
   async run(event: WorkflowEvent<GenerationParams>, step: WorkflowStep) {
     const p = event.payload;
@@ -113,43 +178,9 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
     // ── Video (Replicate) ─────────────────────────────────────────────────────
     if (p.type === 'video') {
       try {
-        // Poll Replicate until prediction completes — Workflow handles durable sleeping.
-        // Returns { ok: true; url: string } on success, { ok: false; reason: string } on
-        // permanent failure — returning (not throwing) avoids triggering further retries.
-        const pollResult = await step.do('wait-for-video', {
-          // 60 retries × 15 s = up to 15 minutes of polling (covers slow cold starts)
-          retries: { limit: 60, delay: '15 seconds', backoff: 'constant' },
-          timeout: '20 minutes',
-        }, async () => {
-          const res = await fetch(`https://api.replicate.com/v1/predictions/${p.predictionId}`, {
-            headers: { Authorization: `Bearer ${this.env.REPLICATE_API_TOKEN}` },
-          });
-          // minimax/video-01 returns output as a string URL; some models return string[]
-          const prediction = await res.json() as {
-            status: string;
-            output?: string | string[];
-            error?: string;
-          };
-
-          // Permanent terminal failures — RETURN (not throw) so no retries are triggered
-          if (prediction.status === 'failed' || prediction.status === 'canceled') {
-            return {
-              ok: false as const,
-              reason: `Replicate prediction ${prediction.status}: ${prediction.error ?? 'unknown'}`,
-            };
-          }
-
-          const outputUrl = Array.isArray(prediction.output)
-            ? prediction.output[0]
-            : prediction.output;
-
-          if (prediction.status !== 'succeeded' || !outputUrl) {
-            // Non-terminal (starting / processing) — throw to trigger retry with delay
-            throw new Error(`Prediction still ${prediction.status}`);
-          }
-
-          return { ok: true as const, url: outputUrl };
-        });
+        // Poll Replicate with hibernating sleeps (see waitForPrediction) so a single
+        // long generation can never exhaust the per-invocation subrequest budget.
+        const pollResult = await waitForPrediction(step, this.env.REPLICATE_API_TOKEN, p.predictionId, 'video');
 
         // Handle permanent failure from Replicate
         if (!pollResult.ok) {
@@ -183,33 +214,6 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
     if (p.type === 'video_chain') {
       const token = this.env.REPLICATE_API_TOKEN;
 
-      // Shared poll helper — throws on non-terminal status so step.do retries it.
-      // Returns the output URL + real output duration on success (durationSec drives
-      // the actual-cost accrual below), or { ok: false } on permanent failure.
-      const pollPrediction = async (
-        predictionId: string,
-      ): Promise<{ ok: true; url: string; durationSec?: number } | { ok: false; reason: string }> => {
-        const res = await fetch(`https://api.replicate.com/v1/predictions/${predictionId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const prediction = await res.json() as {
-          status: string;
-          output?: string | string[];
-          error?: string;
-          metrics?: { video_output_duration_seconds?: number };
-        };
-
-        if (prediction.status === 'failed' || prediction.status === 'canceled') {
-          return { ok: false, reason: `Prediction ${prediction.status}: ${prediction.error ?? 'unknown'}` };
-        }
-
-        const outputUrl = Array.isArray(prediction.output) ? prediction.output[0] : prediction.output;
-        if (prediction.status !== 'succeeded' || !outputUrl) {
-          throw new Error(`Prediction still ${prediction.status}`);
-        }
-        return { ok: true, url: outputUrl, durationSec: prediction.metrics?.video_output_duration_seconds };
-      };
-
       try {
         // Step 1 — create and wait for the initial clip (image_to_video if reference provided)
         const initialPredId = await step.do('create-initial-prediction', async () => {
@@ -227,10 +231,7 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
           return createReplicatePrediction(token, CHAIN_MODEL, input);
         });
 
-        const initialResult = await step.do('wait-for-initial', {
-          retries: { limit: 60, delay: '15 seconds', backoff: 'constant' },
-          timeout: '20 minutes',
-        }, () => pollPrediction(initialPredId));
+        const initialResult = await waitForPrediction(step, token, initialPredId, 'wait-initial');
 
         if (!initialResult.ok) {
           Logger.log('VideoChainInitialFailed', { assetId: p.assetId, reason: initialResult.reason });
@@ -269,10 +270,7 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
             });
           });
 
-          const extendResult = await step.do(`wait-for-extend-${i}`, {
-            retries: { limit: 60, delay: '15 seconds', backoff: 'constant' },
-            timeout: '20 minutes',
-          }, () => pollPrediction(extendPredId));
+          const extendResult = await waitForPrediction(step, token, extendPredId, `wait-extend-${i}`);
 
           if (!extendResult.ok) {
             Logger.log('VideoChainExtendFailed', { assetId: p.assetId, step: i, reason: extendResult.reason });
