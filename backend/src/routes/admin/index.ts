@@ -2,11 +2,12 @@ import { Hono } from 'hono';
 import { authMiddleware, signImpersonationToken } from '../../middleware/auth';
 import { superAdminMiddleware } from '../../middleware/superAdmin';
 import { runAllMigrations } from '../../migrations';
-import { getAllWorkspacesAssetUsage, getAllWorkspacesMessageUsage } from '../../db/queries';
+import { getAllWorkspacesAssetUsage, getAllWorkspacesMessageUsage, listAppSettings, setAppSetting, deleteAppSetting } from '../../db/queries';
 import { parseDateRange } from '../billing';
 import { concatClips, extractLastFrame } from '../../services/videoStitch';
 import { getPublicUrl } from '../../services/r2';
 import { STITCH_MIN_CHUNKS, STITCH_MAX_CHUNKS } from '../../services/generationConfig';
+import { parseMockReplicateConfig, type MockReplicateConfig } from '../../services/mockReplicate';
 import type { CloudflareBindings } from '../../env';
 import type { ContextVariables, TfResponse } from '../../types';
 import { Logger } from '../../utils/Logger';
@@ -383,6 +384,113 @@ adminRouter.post('/impersonate/:userId', async (c) => {
   } catch (error) {
     Logger.log('AdminImpersonateError', undefined, error);
     return c.json<TfResponse<null>>({ success: false, message: 'Failed to issue impersonation token' }, 500);
+  }
+});
+
+// ─── Mock Replicate — global default + per-workspace overrides ────────────────
+//
+// Setting key:   mock_replicate
+// Scope '*':     global default (applies when no workspace override exists)
+// Other scopes:  workspace-id specific override
+//
+// Config JSON: { enabled: boolean, videoUrls: string[] }
+//   videoUrls: one URL per line; empty = auto-pick from existing ready videos.
+//   Special sentinel: "FAIL" or "FAIL: <reason>" forces a failed prediction.
+
+interface MockWorkspaceOverride extends MockReplicateConfig {
+  workspaceId: string;
+  name: string;
+  slug: string;
+}
+
+interface MockReplicateResponse {
+  global: MockReplicateConfig;
+  overrides: MockWorkspaceOverride[];
+}
+
+// GET /api/admin/mock-replicate — current global config + all workspace overrides
+adminRouter.get('/mock-replicate', async (c) => {
+  try {
+    const rows = await listAppSettings(c.env.DB, 'mock_replicate');
+
+    const globalRow = rows.find((r) => r.workspace_id === '*');
+    const overrideRows = rows.filter((r) => r.workspace_id !== '*');
+
+    const globalConfig = parseMockReplicateConfig(globalRow?.value ?? null);
+
+    // Join overrides with workspaces table for human-readable name + slug.
+    let workspaceMeta: Record<string, { name: string; slug: string }> = {};
+    if (overrideRows.length > 0) {
+      const ids = overrideRows.map((r) => r.workspace_id);
+      const placeholders = ids.map(() => '?').join(', ');
+      const ws = await c.env.DB
+        .prepare(`SELECT id, name, slug FROM workspaces WHERE id IN (${placeholders})`)
+        .bind(...ids)
+        .all<{ id: string; name: string; slug: string }>();
+      workspaceMeta = Object.fromEntries(ws.results.map((w) => [w.id, { name: w.name, slug: w.slug }]));
+    }
+
+    const overrides: MockWorkspaceOverride[] = overrideRows.map((r) => ({
+      workspaceId: r.workspace_id,
+      name: workspaceMeta[r.workspace_id]?.name ?? r.workspace_id,
+      slug: workspaceMeta[r.workspace_id]?.slug ?? r.workspace_id,
+      ...parseMockReplicateConfig(r.value),
+    }));
+
+    return c.json<TfResponse<MockReplicateResponse>>({
+      success: true,
+      data: { global: globalConfig, overrides },
+    });
+  } catch (error) {
+    Logger.log('AdminMockReplicateGetError', undefined, error);
+    return c.json<TfResponse<null>>({ success: false, message: 'Failed to fetch mock Replicate config' }, 500);
+  }
+});
+
+// PUT /api/admin/mock-replicate — create or update a scope (global or workspace)
+adminRouter.put('/mock-replicate', async (c) => {
+  try {
+    const body = await c.req.json() as { scope?: string; enabled?: boolean; videoUrls?: unknown };
+
+    if (typeof body.scope !== 'string' || !body.scope.trim()) {
+      return c.json<TfResponse<null>>({ success: false, message: 'scope is required ("global" or a workspace id)' }, 400);
+    }
+    if (typeof body.enabled !== 'boolean') {
+      return c.json<TfResponse<null>>({ success: false, message: 'enabled (boolean) is required' }, 400);
+    }
+    const videoUrls = Array.isArray(body.videoUrls)
+      ? body.videoUrls.filter((u): u is string => typeof u === 'string')
+      : [];
+
+    const workspaceId = body.scope.trim() === 'global' ? '*' : body.scope.trim();
+    const value = JSON.stringify({ enabled: body.enabled, videoUrls } satisfies MockReplicateConfig);
+
+    await setAppSetting(c.env.DB, 'mock_replicate', workspaceId, value);
+    Logger.log('AdminMockReplicateUpdated', { scope: body.scope, enabled: body.enabled });
+    return c.json<TfResponse<null>>({ success: true });
+  } catch (error) {
+    Logger.log('AdminMockReplicatePutError', undefined, error);
+    return c.json<TfResponse<null>>({ success: false, message: 'Failed to update mock Replicate config' }, 500);
+  }
+});
+
+// DELETE /api/admin/mock-replicate/:workspaceId — remove a workspace override
+// (the workspace then inherits the global default)
+adminRouter.delete('/mock-replicate/:workspaceId', async (c) => {
+  try {
+    const workspaceId = c.req.param('workspaceId');
+    if (workspaceId === '*' || workspaceId === 'global') {
+      return c.json<TfResponse<null>>({
+        success: false,
+        message: 'Cannot delete the global default — use PUT to disable it instead',
+      }, 400);
+    }
+    await deleteAppSetting(c.env.DB, 'mock_replicate', workspaceId);
+    Logger.log('AdminMockReplicateDeleted', { workspaceId });
+    return c.json<TfResponse<null>>({ success: true });
+  } catch (error) {
+    Logger.log('AdminMockReplicateDeleteError', undefined, error);
+    return c.json<TfResponse<null>>({ success: false, message: 'Failed to delete mock Replicate override' }, 500);
   }
 });
 

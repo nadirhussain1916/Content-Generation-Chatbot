@@ -22,6 +22,8 @@ import {
   STITCH_MIN_CHUNKS, STITCH_MAX_CHUNKS, MODEL_MAX_CLIP_SECONDS,
   type StitchMode,
 } from '../services/generationConfig';
+import { createPrediction, getPrediction } from '../services/replicate';
+import { isMockReplicateEnabled } from '../services/mockReplicate';
 
 type Env = { Bindings: CloudflareBindings; Variables: ContextVariables };
 
@@ -243,7 +245,8 @@ generateRouter.post('/video', async (c) => {
       return c.json<TfResponse<null>>({ success: false, message: 'Thread not found' }, 404);
     }
 
-    if (!c.env.REPLICATE_API_TOKEN) {
+    const mockIsEnabled = await isMockReplicateEnabled(c.env, workspace.id);
+    if (!c.env.REPLICATE_API_TOKEN && !mockIsEnabled) {
       return c.json<TfResponse<null>>({ success: false, message: 'Video generation is not configured' }, 501);
     }
 
@@ -439,34 +442,20 @@ generateRouter.post('/video', async (c) => {
     }
 
     // ── Single-clip prediction (all other models + LTX Pro without chain) ─────
-    const replicateRes = await fetch(
-      `https://api.replicate.com/v1/models/${modelConfig.slug}/predictions`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${c.env.REPLICATE_API_TOKEN}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          input: modelConfig.buildInput(videoPrompt, videoAspectRatio, videoDuration, videoReferenceImageUrl),
-        }),
-      }
+    const predResult = await createPrediction(
+      c.env,
+      workspace.id,
+      modelConfig.slug,
+      modelConfig.buildInput(videoPrompt, videoAspectRatio, videoDuration, videoReferenceImageUrl),
     );
 
-    if (!replicateRes.ok) {
-      const errText = await replicateRes.text();
-      Logger.log('ReplicateCreateFailed', { workspaceId: workspace.id, status: replicateRes.status, body: errText });
-      return c.json<TfResponse<null>>({ success: false, message: `Replicate rejected prediction (${replicateRes.status}): ${errText}` }, 502);
+    if (!predResult.ok) {
+      Logger.log('ReplicateCreateFailed', { workspaceId: workspace.id, status: predResult.status, body: predResult.errorText });
+      return c.json<TfResponse<null>>({ success: false, message: `Replicate rejected prediction (${predResult.status}): ${predResult.errorText}` }, 502);
     }
 
-    const prediction = await replicateRes.json() as { id: string; status: string; error?: string };
-
-    if (!prediction.id) {
-      Logger.log('ReplicateCreateFailed', { workspaceId: workspace.id, error: prediction.error });
-      return c.json<TfResponse<null>>({ success: false, message: `Failed to create Replicate prediction: ${prediction.error ?? 'unknown'}` }, 502);
-    }
-
-    Logger.log('ReplicatePredictionCreated', { predictionId: prediction.id, prompt: body.prompt });
+    const predictionId = predResult.id;
+    Logger.log('ReplicatePredictionCreated', { predictionId, prompt: body.prompt });
 
     await createAsset(c.env.DB, {
       id: assetId,
@@ -475,7 +464,7 @@ generateRouter.post('/video', async (c) => {
       type: 'video',
       message_id: body.messageId,
       prompt: body.prompt,
-      prediction_id: prediction.id,
+      prediction_id: predictionId,
       model: modelId,
       cost_usd: calcVideoClipCost(modelId, videoDuration),
     });
@@ -494,7 +483,7 @@ generateRouter.post('/video', async (c) => {
         workspaceId: workspace.id,
         r2KeyPrefix,
         prompt: videoPrompt,
-        predictionId: prediction.id,
+        predictionId,
         aspectRatio: videoAspectRatio as '16:9' | '9:16',
         referenceImageUrl: videoReferenceImageUrl,
       },
@@ -613,7 +602,8 @@ generateRouter.post('/continue', async (c) => {
     if (!body.assetId || (!basePrompt && partPrompts.length === 0)) {
       return c.json<TfResponse<null>>({ success: false, message: 'assetId and a prompt are required' }, 400);
     }
-    if (!c.env.REPLICATE_API_TOKEN) {
+    const continueIsMocked = await isMockReplicateEnabled(c.env, workspace.id);
+    if (!c.env.REPLICATE_API_TOKEN && !continueIsMocked) {
       return c.json<TfResponse<null>>({ success: false, message: 'Video generation is not configured' }, 501);
     }
 
@@ -852,16 +842,11 @@ generateRouter.post('/assets/:assetId/recover', async (c) => {
       }, 422);
     }
 
-    // Resolve the source URL — prefer looking it up fresh from Replicate by id.
+    // Resolve the source URL — prefer looking it up fresh from Replicate (or mock) by id.
+    const recoverMocked = await isMockReplicateEnabled(c.env, workspace.id);
     let sourceUrl = body.sourceUrl;
     if (!sourceUrl && predictionId) {
-      const res = await fetch(`https://api.replicate.com/v1/predictions/${predictionId}`, {
-        headers: { Authorization: `Bearer ${c.env.REPLICATE_API_TOKEN}` },
-      });
-      if (!res.ok) {
-        return c.json<TfResponse<null>>({ success: false, message: `Replicate lookup failed (${res.status})` }, 502);
-      }
-      const pred = await res.json() as { status: string; output?: string | string[] };
+      const pred = await getPrediction(c.env, workspace.id, predictionId);
       if (pred.status !== 'succeeded') {
         return c.json<TfResponse<null>>({ success: false, message: `Prediction is "${pred.status}", not succeeded — nothing to recover` }, 409);
       }
@@ -871,11 +856,19 @@ generateRouter.post('/assets/:assetId/recover', async (c) => {
       return c.json<TfResponse<null>>({ success: false, message: 'Provide a predictionId or a sourceUrl' }, 400);
     }
 
-    // Only allow Replicate-hosted sources (avoids turning this into an open proxy).
+    // Only allow Replicate-hosted sources or — when the mock is enabled — our own R2 URLs.
+    // This avoids turning the endpoint into an open proxy.
     let host: string;
     try { host = new URL(sourceUrl).hostname; } catch { return c.json<TfResponse<null>>({ success: false, message: 'Invalid sourceUrl' }, 400); }
     const isReplicate = host === 'replicate.delivery' || host.endsWith('.replicate.delivery') || host === 'replicate.com' || host.endsWith('.replicate.com');
-    if (!isReplicate) {
+    let isMockR2Url = false;
+    if (recoverMocked && c.env.ASSETS_PUBLIC_URL) {
+      try {
+        const assetsHost = new URL(c.env.ASSETS_PUBLIC_URL).hostname;
+        isMockR2Url = host === assetsHost || host.endsWith(`.${assetsHost}`);
+      } catch { /* ignore malformed ASSETS_PUBLIC_URL */ }
+    }
+    if (!isReplicate && !isMockR2Url) {
       return c.json<TfResponse<null>>({ success: false, message: 'sourceUrl must be a replicate.delivery URL' }, 400);
     }
 

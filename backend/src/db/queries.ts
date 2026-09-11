@@ -452,6 +452,7 @@ export async function getAllWorkspacesAssetUsage(db: D1Database, range?: DateRan
 
 /** Text message usage grouped by workspace (with owner), across all users. */
 export async function getAllWorkspacesMessageUsage(db: D1Database, range?: DateRange) {
+
   const { sql, params } = dateClause('m.created_at', range);
   return db.prepare(
     `SELECT w.owner_id as userId, w.id as workspaceId, w.name as name, w.slug as slug,
@@ -465,4 +466,47 @@ export async function getAllWorkspacesMessageUsage(db: D1Database, range?: DateR
       WHERE m.cost_usd IS NOT NULL${sql}
       GROUP BY w.id`
   ).bind(...params).all<WorkspaceMessageUsageRow>();
+}
+
+// ─── App Settings ─────────────────────────────────────────────────────────────
+// Generic key/value store scoped by (key, workspace_id). Use workspace_id='*' for
+// global (platform-wide) settings, and a real workspace id for per-workspace overrides.
+
+export interface AppSettingRow {
+  key: string;
+  workspace_id: string;
+  value: string;
+  updated_at: number;
+}
+
+export async function getAppSetting(db: D1Database, key: string, workspaceId: string): Promise<string | null> {
+  const row = await db
+    .prepare('SELECT value FROM app_settings WHERE key = ? AND workspace_id = ?')
+    .bind(key, workspaceId)
+    .first<{ value: string }>();
+  return row?.value ?? null;
+}
+
+export async function setAppSetting(db: D1Database, key: string, workspaceId: string, value: string): Promise<void> {
+  await db.prepare(`
+    INSERT INTO app_settings (key, workspace_id, value, updated_at)
+    VALUES (?, ?, ?, unixepoch())
+    ON CONFLICT(key, workspace_id) DO UPDATE SET value = excluded.value, updated_at = unixepoch()
+  `).bind(key, workspaceId, value).run();
+}
+
+export async function deleteAppSetting(db: D1Database, key: string, workspaceId: string): Promise<void> {
+  await db
+    .prepare('DELETE FROM app_settings WHERE key = ? AND workspace_id = ?')
+    .bind(key, workspaceId)
+    .run();
+}
+
+/** All rows for a given key, ordered by workspace_id ('*' first, workspace overrides after). */
+export async function listAppSettings(db: D1Database, key: string): Promise<AppSettingRow[]> {
+  const result = await db
+    .prepare("SELECT * FROM app_settings WHERE key = ? ORDER BY CASE workspace_id WHEN '*' THEN 0 ELSE 1 END, workspace_id")
+    .bind(key)
+    .all<AppSettingRow>();
+  return result.results;
 }

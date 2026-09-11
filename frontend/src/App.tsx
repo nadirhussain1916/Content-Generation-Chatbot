@@ -11,6 +11,7 @@ import BillingPage from './pages/BillingPage';
 import AdminPage from './pages/AdminPage';
 import AdminUsagePage from './pages/AdminUsagePage';
 import AdminStitchTestPage from './pages/AdminStitchTestPage';
+import AdminMockPage from './pages/AdminMockPage';
 import AdminMigrationsPage from './pages/AdminMigrationsPage';
 import AuthGuard from './components/AuthGuard';
 import TermsPage from './pages/TermsPage';
@@ -155,6 +156,14 @@ export default function App() {
           element={
             <SuperAdminRoute>
               <AdminMigrationsPage />
+            </SuperAdminRoute>
+          }
+        />
+        <Route
+          path='/admin/mock'
+          element={
+            <SuperAdminRoute>
+              <AdminMockPage />
             </SuperAdminRoute>
           }
         />

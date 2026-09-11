@@ -8,6 +8,8 @@ import { VIDEO_MODEL_CONFIGS, resolveContinuePartPrompts } from '../services/gen
 import type { VideoModelId } from '../services/generationConfig';
 import { concatClips, extractLastFrame } from '../services/videoStitch';
 import { Logger } from '../utils/Logger';
+import { createPrediction, getPrediction } from '../services/replicate';
+import { isMockReplicateEnabled } from '../services/mockReplicate';
 
 // LTX extend chains always run on this model (see createReplicatePrediction calls below).
 const CHAIN_MODEL = 'lightricks/ltx-2.3-pro';
@@ -85,20 +87,22 @@ async function writeKv(kv: KVNamespace, assetId: string, value: object) {
   await kv.put(kvKey(assetId), JSON.stringify(value), { expirationTtl: KV_TTL });
 }
 
-// Create a Replicate prediction and return its ID.
+/**
+ * Create a Replicate prediction via the wrapper (mock-aware) and return its ID.
+ * Throws on failure so the workflow catch marks the asset as failed — same
+ * behaviour as the original direct-fetch implementation.
+ */
 async function createReplicatePrediction(
-  token: string,
+  env: CloudflareBindings,
+  workspaceId: string,
   modelSlug: string,
-  input: Record<string, unknown>
+  input: Record<string, unknown>,
 ): Promise<string> {
-  const res = await fetch(`https://api.replicate.com/v1/models/${modelSlug}/predictions`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ input }),
-  });
-  if (!res.ok) throw new Error(`Replicate create failed: ${res.status} ${await res.text()}`);
-  const data = await res.json() as { id: string };
-  return data.id;
+  const result = await createPrediction(env, workspaceId, modelSlug, input);
+  if (!result.ok) {
+    throw new Error(`Replicate create failed: ${result.status} ${result.errorText}`);
+  }
+  return result.id;
 }
 
 /**
@@ -120,26 +124,29 @@ async function createReplicatePrediction(
  * ~75s+ to render) and the 45s spacing keeps the total check count low (~1–3 per clip),
  * so we'd stay under 50 even in the unlikely event a sleep fails to reset the counter.
  */
+/**
+ * Mock fast-path: when the mock is enabled, sleep durations are shortened to ~2
+ * seconds so mocked generations complete in seconds rather than ~90 seconds.
+ */
 async function waitForPrediction(
   step: WorkflowStep,
-  token: string,
+  env: CloudflareBindings,
+  workspaceId: string,
   predictionId: string,
   label: string,
 ): Promise<{ ok: true; url: string; durationSec?: number } | { ok: false; reason: string }> {
+  // Read the mock flag once — used to shorten sleep durations for fast testing.
+  const isMock = await isMockReplicateEnabled(env, workspaceId);
+
   const MAX_CHECKS = 26; // 75s + 25×45s ≈ 20 min total polling window
   for (let i = 0; i < MAX_CHECKS; i++) {
-    await step.sleep(`${label}-sleep-${i}`, i === 0 ? '75 seconds' : '45 seconds');
+    // Mock: short 2-second sleep so tests complete quickly.
+    // Real: 75 seconds first (LTX needs ~75s+ to render), then 45-second spacing.
+    const sleepDuration = isMock ? '2 seconds' : (i === 0 ? '75 seconds' : '45 seconds');
+    await step.sleep(`${label}-sleep-${i}`, sleepDuration);
 
     const res = await step.do(`${label}-check-${i}`, async () => {
-      const r = await fetch(`https://api.replicate.com/v1/predictions/${predictionId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const prediction = await r.json() as {
-        status: string;
-        output?: string | string[];
-        error?: string;
-        metrics?: { video_output_duration_seconds?: number };
-      };
+      const prediction = await getPrediction(env, workspaceId, predictionId);
 
       if (prediction.status === 'failed' || prediction.status === 'canceled') {
         return {
@@ -208,7 +215,7 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
       try {
         // Poll Replicate with hibernating sleeps (see waitForPrediction) so a single
         // long generation can never exhaust the per-invocation subrequest budget.
-        const pollResult = await waitForPrediction(step, this.env.REPLICATE_API_TOKEN, p.predictionId, 'video');
+        const pollResult = await waitForPrediction(step, this.env, p.workspaceId, p.predictionId, 'video');
 
         // Handle permanent failure from Replicate
         if (!pollResult.ok) {
@@ -240,7 +247,8 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
 
     // ── LTX 2.3 Pro extend chaining ───────────────────────────────────────────
     if (p.type === 'video_chain') {
-      const token = this.env.REPLICATE_API_TOKEN;
+      const env = this.env;
+      const workspaceId = p.workspaceId;
 
       try {
         // Step 1 — create and wait for the initial clip (image_to_video if reference provided)
@@ -256,10 +264,10 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
           if (p.referenceImageUrl) {
             input['image'] = p.referenceImageUrl;
           }
-          return createReplicatePrediction(token, CHAIN_MODEL, input);
+          return createReplicatePrediction(env, workspaceId, CHAIN_MODEL, input);
         });
 
-        const initialResult = await waitForPrediction(step, token, initialPredId, 'wait-initial');
+        const initialResult = await waitForPrediction(step, env, workspaceId, initialPredId, 'wait-initial');
 
         if (!initialResult.ok) {
           Logger.log('VideoChainInitialFailed', { assetId: p.assetId, reason: initialResult.reason });
@@ -287,7 +295,7 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
 
         for (let i = 0; i < p.chainCount; i++) {
           const extendPredId = await step.do(`create-extend-${i}`, async () => {
-            return createReplicatePrediction(token, CHAIN_MODEL, {
+            return createReplicatePrediction(env, workspaceId, CHAIN_MODEL, {
               task: 'extend',
               video: currentVideoUrl,
               prompt: p.prompt,
@@ -298,7 +306,7 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
             });
           });
 
-          const extendResult = await waitForPrediction(step, token, extendPredId, `wait-extend-${i}`);
+          const extendResult = await waitForPrediction(step, env, workspaceId, extendPredId, `wait-extend-${i}`);
 
           if (!extendResult.ok) {
             Logger.log('VideoChainExtendFailed', { assetId: p.assetId, step: i, reason: extendResult.reason });
@@ -341,7 +349,8 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
 
     // ── Long video (chunk + ffmpeg stitch): generate / combine / continue ─────
     if (p.type === 'video_stitch') {
-      const token = this.env.REPLICATE_API_TOKEN;
+      const env = this.env;
+      const workspaceId = p.workspaceId;
 
       // Reconcile the asset's billed cost to the ACTUAL cost of the parts that
       // succeeded (calcVideoClipCost per chunk, using Replicate's reported output
@@ -391,7 +400,7 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
           const cached = await cachedOutput('chunk', idx);
           if (cached) return { cached };
           const predId = await step.do(`stitch-chunk-${idx}-create`, async () => {
-            const id = await createReplicatePrediction(token, p.modelSlug!, config!.buildInput(chunkPrompt, p.aspectRatio, chunkDuration, seedUrl));
+            const id = await createReplicatePrediction(env, workspaceId, p.modelSlug!, config!.buildInput(chunkPrompt, p.aspectRatio, chunkDuration, seedUrl));
             await upsertGenerationJob(this.env.DB, {
               id: jid('chunk', idx), asset_id: p.assetId, workspace_id: wsId, kind: 'chunk', idx,
               status: 'running', prediction_id: id, model: p.modelSlug, prompt: chunkPrompt,
@@ -407,7 +416,7 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
           idx: number, marker: { cached: string } | { predId: string },
         ): Promise<string> => {
           if ('cached' in marker) { done++; await writeProgress(`part ${idx + 1}/${total} (reused)`); return marker.cached; }
-          const r = await waitForPrediction(step, token, marker.predId, `stitch-chunk-${idx}-wait`);
+          const r = await waitForPrediction(step, env, workspaceId, marker.predId, `stitch-chunk-${idx}-wait`);
           if (!r.ok) {
             await step.do(`stitch-chunk-${idx}-fail`, async () => {
               await upsertGenerationJob(this.env.DB, {

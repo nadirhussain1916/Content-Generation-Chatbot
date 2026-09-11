@@ -21,6 +21,7 @@ import { migrateThreadContinueFromAsset } from './018_thread_continue_from_asset
 import { migrateGenerationJobsTable } from './019_generation_jobs';
 import { migrateAssetGenerationMethod } from './020_asset_generation_method';
 import { migrateAssetStitchParams } from './021_asset_stitch_params';
+import { migrateAppSettings } from './022_app_settings';
 
 export async function runAllMigrations(db: D1Database): Promise<string[]> {
   const all: string[] = ['[Migrations] Starting...'];
@@ -49,6 +50,7 @@ export async function runAllMigrations(db: D1Database): Promise<string[]> {
     migrateGenerationJobsTable,
     migrateAssetGenerationMethod,
     migrateAssetStitchParams,
+    migrateAppSettings,
   ];
 
   for (const migrate of migrations) {

@@ -82,6 +82,26 @@ export interface StitchTestRequest {
   aspectRatio?: '16:9' | '9:16';
 }
 
+// ─── Mock Replicate types ─────────────────────────────────────────────────────
+
+export interface MockReplicateConfig {
+  enabled: boolean;
+  videoUrls: string[];
+}
+
+export interface MockReplicateWorkspaceOverride extends MockReplicateConfig {
+  workspaceId: string;
+  name: string;
+  slug: string;
+}
+
+export interface MockReplicateResponse {
+  global: MockReplicateConfig;
+  overrides: MockReplicateWorkspaceOverride[];
+}
+
+// ─── Admin API ────────────────────────────────────────────────────────────────
+
 export const adminApi = {
   getStats: (token: string) =>
     request<{ success: boolean; data: AdminStats }>('/api/admin/stats', { method: 'GET' }, token),
@@ -114,6 +134,27 @@ export const adminApi = {
     request<{ success: boolean; data?: { messages: string[] }; message?: string }>(
       '/api/admin/migrate',
       { method: 'POST', body: JSON.stringify({}) },
+      token,
+    ),
+
+  getMockReplicate: (token: string) =>
+    request<{ success: boolean; data?: MockReplicateResponse; message?: string }>(
+      '/api/admin/mock-replicate',
+      { method: 'GET' },
+      token,
+    ),
+
+  updateMockReplicate: (token: string, req: { scope: string; enabled: boolean; videoUrls: string[] }) =>
+    request<{ success: boolean; message?: string }>(
+      '/api/admin/mock-replicate',
+      { method: 'PUT', body: JSON.stringify(req) },
+      token,
+    ),
+
+  deleteMockReplicateOverride: (token: string, workspaceId: string) =>
+    request<{ success: boolean; message?: string }>(
+      `/api/admin/mock-replicate/${workspaceId}`,
+      { method: 'DELETE' },
       token,
     ),
 };
