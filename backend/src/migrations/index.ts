@@ -17,6 +17,10 @@ import { migrateMessageModelCost } from './016_message_model_cost';
 import { migrateWorkspacePlatformSettings } from './017_workspace_platform_settings';
 import { migrateUserEmail } from './015_user_email';
 import { migrateUserName } from './016_user_name';
+import { migrateThreadContinueFromAsset } from './018_thread_continue_from_asset';
+import { migrateGenerationJobsTable } from './019_generation_jobs';
+import { migrateAssetGenerationMethod } from './020_asset_generation_method';
+import { migrateAssetStitchParams } from './021_asset_stitch_params';
 
 export async function runAllMigrations(db: D1Database): Promise<string[]> {
   const all: string[] = ['[Migrations] Starting...'];
@@ -41,6 +45,10 @@ export async function runAllMigrations(db: D1Database): Promise<string[]> {
     migrateAssetModelCost,
     migrateMessageModelCost,
     migrateWorkspacePlatformSettings,
+    migrateThreadContinueFromAsset,
+    migrateGenerationJobsTable,
+    migrateAssetGenerationMethod,
+    migrateAssetStitchParams,
   ];
 
   for (const migrate of migrations) {

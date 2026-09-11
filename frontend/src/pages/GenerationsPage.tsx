@@ -2,14 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthToken } from '../hooks/useAuthToken';
 import { api } from '../lib/api';
-import type { TfResponse, Asset, Message, ImagePostPackage, VideoPostPackage, WorkspaceUpload, Workspace } from '../types';
+import type { TfResponse, Asset, Message, ImagePostPackage, VideoPostPackage, WorkspaceUpload, Workspace, GenerationJob } from '../types';
 import { usePublishStatus } from '../hooks/usePublishStatus';
 import AppShell from '../components/AppShell';
 import Sidebar from '../components/Sidebar';
 import {
   ImageIcon, VideoIcon, Loader2, AlertCircle, X, Play,
   Copy, Check, Hash, Share2, CheckCircle, ExternalLink, RefreshCw, Download, Cpu, DollarSign, Star,
-  Combine, Wand2,
+  Combine, Wand2, Sparkles, ChevronRight,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import ModelPicker from '../components/ModelPicker';
@@ -232,6 +232,17 @@ export default function GenerationsPage() {
                     if (!res.success) throw new Error(res.message ?? 'Recovery failed');
                     await load(true);
                   }}
+                  onRetry={async () => {
+                    const token = await getToken();
+                    // Re-runs the stitch, reusing parts that already succeeded.
+                    const res = await api.post<TfResponse<{ assetId: string; status: string }>>(
+                      `/api/workspaces/${slug}/generate/assets/${asset.id}/retry`,
+                      {},
+                      token ?? undefined
+                    );
+                    if (!res.success) throw new Error(res.message ?? 'Retry failed');
+                    await load(true);
+                  }}
                 />
               ))}
             </div>
@@ -336,12 +347,12 @@ async function downloadAsset(asset: Asset, blobUrl?: string, aiLabel = false) {
 }
 
 function AssetCard({
-  asset, slug, blobUrl, isLoadingBlob, combineMode, selectionIndex, onToggleSelect, onContinue, onVisible, onDetails, onRecover,
+  asset, slug, blobUrl, isLoadingBlob, combineMode, selectionIndex, onToggleSelect, onContinue, onVisible, onDetails, onRecover, onRetry,
 }: {
   asset: Asset; slug: string; blobUrl?: string; isLoadingBlob: boolean;
   combineMode: boolean; selectionIndex: number;
   onToggleSelect: () => void; onContinue: () => void;
-  onVisible: () => void; onDetails: () => void; onRecover: () => Promise<void>;
+  onVisible: () => void; onDetails: () => void; onRecover: () => Promise<void>; onRetry: () => Promise<void>;
 }) {
   const navigate = useNavigate();
   const isImage = asset.type === 'image';
@@ -349,8 +360,23 @@ function AssetCard({
   const isGenerating = asset.status === 'generating' || asset.status === 'pending';
   const isFailed = asset.status === 'failed';
   const isReady = asset.status === 'ready';
-  // Recovery is only meaningful for videos (Replicate predictions we can re-import).
-  const canRecover = isFailed && asset.type === 'video';
+  // How the video was assembled (authoritative field; falls back to the ffmpeg-concat
+  // model slug for legacy rows created before generation_method existed).
+  const method = asset.generation_method;
+  const isMultiPart =
+    method === 'combine' || method === 'continue' || method === 'generate_stitch' || asset.model === 'ffmpeg-concat';
+  const methodLabel: string | null = !isVideo
+    ? null
+    : method === 'combine' || asset.model === 'ffmpeg-concat' ? 'combined'
+    : method === 'continue' ? 'continued'
+    : method === 'generate_stitch' ? 'stitched'
+    : null;
+  // Recovery re-imports ONE finished Replicate prediction — only meaningful for a
+  // single-clip video. Multi-part videos (combine/stitch/continue) have no single
+  // prediction; a failed one is fixed by "Retry" (regenerate only the failed parts).
+  const canRecover = isFailed && isVideo && !!asset.prediction_id && !isMultiPart;
+  const canRetry = isFailed && isVideo && isMultiPart;
+  const progress = asset.progress && asset.progress.total > 0 ? asset.progress : null;
   // Combine (Flow B) only works on ready videos; other cards are inert while selecting.
   const selectable = combineMode && isReady && isVideo;
   const isSelected = selectionIndex >= 0;
@@ -365,6 +391,18 @@ function AssetCard({
       await onRecover();
     } catch (e) {
       setRecoverError(e instanceof Error ? e.message : 'Recovery failed');
+    } finally {
+      setRecovering(false);
+    }
+  }
+
+  async function handleRetry() {
+    setRecovering(true);
+    setRecoverError(null);
+    try {
+      await onRetry();
+    } catch (e) {
+      setRecoverError(e instanceof Error ? e.message : 'Retry failed');
     } finally {
       setRecovering(false);
     }
@@ -410,7 +448,21 @@ function AssetCard({
         {isGenerating ? (
           <div className='absolute inset-0 flex flex-col items-center justify-center gap-2'>
             <Loader2 size={22} className='animate-spin text-amber-500' />
-            <span className='text-meta font-medium text-amber-600 dark:text-amber-400/80'>Generating…</span>
+            <span className='text-meta font-medium text-amber-600 dark:text-amber-400/80'>
+              {progress
+                ? progress.done >= progress.total
+                  ? 'Stitching…'
+                  : `Part ${progress.done + 1}/${progress.total}…`
+                : 'Generating…'}
+            </span>
+            {progress && (
+              <div className='mt-0.5 h-1 w-2/3 overflow-hidden rounded-full bg-amber-200/50 dark:bg-amber-900/30'>
+                <div
+                  className='h-full rounded-full bg-amber-500 transition-all duration-500'
+                  style={{ width: `${Math.round((progress.done / progress.total) * 100)}%` }}
+                />
+              </div>
+            )}
             <div className='absolute inset-0 bg-gradient-to-r from-transparent via-amber-100/25 dark:via-amber-900/10 to-transparent animate-pulse' />
           </div>
         ) : isFailed ? (
@@ -469,6 +521,17 @@ function AssetCard({
             {isImage ? <ImageIcon size={9} /> : <VideoIcon size={9} />}
             {asset.type}
           </span>
+          {methodLabel && (
+            <span
+              title={methodLabel === 'combined'
+                ? 'Assembled from multiple existing clips (ffmpeg concat)'
+                : 'Generated in parts and stitched together'}
+              className='flex items-center gap-1 rounded-full bg-teal-500/85 px-2 py-0.5 text-meta font-semibold text-white shadow-sm backdrop-blur-sm'
+            >
+              <Combine size={9} />
+              {methodLabel}
+            </span>
+          )}
           {isGenerating && (
             <span className='rounded-full bg-amber-500/85 px-2 py-0.5 text-meta font-semibold text-white shadow-sm backdrop-blur-sm'>
               in progress
@@ -567,6 +630,32 @@ function AssetCard({
               </span>
             )}
           </div>
+        ) : canRetry ? (
+          <div className='flex flex-col gap-1'>
+            <div className='flex items-center gap-1.5'>
+              <button
+                onClick={handleRetry}
+                disabled={recovering}
+                title='Regenerate only the parts that failed, then re-stitch the video'
+                className='flex flex-1 items-center justify-center gap-1 rounded-lg bg-brand py-1.5 text-meta font-semibold text-on-brand transition-colors hover:bg-brand-hover disabled:opacity-60 disabled:cursor-not-allowed'
+              >
+                {recovering ? <Loader2 size={10} className='animate-spin' /> : <RefreshCw size={10} />}
+                {recovering ? 'Retrying…' : 'Retry parts'}
+              </button>
+              <button
+                onClick={onDetails}
+                title='View parts breakdown'
+                className='flex items-center justify-center rounded-lg border border-border-soft bg-surface-white px-2 py-1.5 text-text-secondary transition-colors hover:bg-surface hover:text-text-primary'
+              >
+                <ExternalLink size={12} />
+              </button>
+            </div>
+            {recoverError && (
+              <span className='text-[10px] leading-snug text-red-600/90 dark:text-red-400/80 line-clamp-2'>
+                {recoverError}
+              </span>
+            )}
+          </div>
         ) : (
           <button
             onClick={() => navigate(`/workspaces/${slug}/threads/${asset.thread_id}`)}
@@ -594,6 +683,9 @@ function DetailsModal({
   const [loadingPkg, setLoadingPkg] = useState(true);
   const [copied, setCopied] = useState(false);
   const [aiLabel, setAiLabel] = useState(false);
+  const [jobs, setJobs] = useState<GenerationJob[]>([]);
+  const isMultiPart =
+    (asset.generation_method != null && asset.generation_method !== 'single') || asset.model === 'ffmpeg-concat';
   // Uploads + workspace character — needed to mirror the draft's reference images
   const [uploads, setUploads] = useState<WorkspaceUpload[]>([]);
   const [character, setCharacter] = useState<{ name: string | null; appearance: string | null; referenceIds: string[] }>(
@@ -628,6 +720,19 @@ function DetailsModal({
       setLoadingPkg(false);
     })();
   }, [asset.id]);
+
+  // Load the per-part breakdown for multi-part videos (chunks / frames / concat).
+  useEffect(() => {
+    if (!isMultiPart) return;
+    (async () => {
+      const token = await getToken();
+      const res = await api.get<TfResponse<GenerationJob[]>>(
+        `/api/workspaces/${slug}/generate/assets/${asset.id}/jobs`,
+        token ?? undefined,
+      );
+      if (res.success && res.data) setJobs(res.data);
+    })();
+  }, [asset.id, isMultiPart]);
 
   // Resolve a reference id (workspace upload or generated-image asset) to a URL.
   function resolveRefUrl(id: string): string | undefined {
@@ -715,8 +820,47 @@ function DetailsModal({
               {formatCost(asset.cost_usd) && (
                 <div className='flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-card border border-border-soft'>
                   <DollarSign size={12} className='text-text-muted' />
-                  <span className='text-meta text-text-secondary font-medium'>{formatCost(asset.cost_usd)} estimated cost</span>
+                  <span className='text-meta text-text-secondary font-medium'>
+                    {formatCost(asset.cost_usd)} {isMultiPart ? 'actual' : 'estimated'} cost
+                  </span>
                 </div>
+              )}
+            </div>
+          )}
+
+          {/* Parts breakdown — how a multi-part video was assembled */}
+          {isMultiPart && jobs.length > 0 && (
+            <div>
+              <p className='text-meta font-semibold text-text-muted uppercase tracking-wide mb-2'>
+                Parts{jobs.some((j) => j.kind === 'chunk') ? ` (${jobs.filter((j) => j.kind === 'chunk').length} generated)` : ''}
+              </p>
+              <div className='space-y-1'>
+                {jobs.map((j) => {
+                  const label = j.kind === 'chunk' ? `Part ${j.idx + 1}` : j.kind === 'frame' ? `Seed frame ${j.idx + 1}` : 'Stitch';
+                  const dot =
+                    j.status === 'succeeded' ? 'bg-emerald-500'
+                    : j.status === 'failed' ? 'bg-red-500'
+                    : j.status === 'running' ? 'bg-amber-500 animate-pulse'
+                    : 'bg-text-muted/50';
+                  return (
+                    <div key={j.id} className='flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-card border border-border-soft'>
+                      <span className={cn('h-2 w-2 rounded-full shrink-0', dot)} />
+                      <span className='text-meta font-medium text-text-primary w-20 shrink-0'>{label}</span>
+                      <span className='text-meta text-text-muted capitalize flex-1'>{j.status}</span>
+                      {j.duration_sec != null && j.kind === 'chunk' && (
+                        <span className='text-meta text-text-muted'>{j.duration_sec}s</span>
+                      )}
+                      {formatCost(j.cost_usd) && (
+                        <span className='text-meta text-text-secondary font-medium w-14 text-right'>{formatCost(j.cost_usd)}</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              {jobs.some((j) => j.status === 'failed') && (
+                <p className='mt-1.5 text-[10px] leading-snug text-text-muted'>
+                  Failed parts can be regenerated with “Retry parts” — successful parts are reused.
+                </p>
               )}
             </div>
           )}
@@ -860,6 +1004,32 @@ function ContinueModal({ asset, slug, blobUrl, onClose, onStarted }: {
   asset: Asset; slug: string; blobUrl?: string; onClose: () => void; onStarted: () => Promise<void>;
 }) {
   const { getAuthToken: getToken } = useAuthToken();
+  const navigate = useNavigate();
+  // 'choose' = pick With Agent vs Manual; 'manual' = the hands-on prompt/pickers form.
+  const [mode, setMode] = useState<'choose' | 'manual'>('choose');
+  const [startingAgent, setStartingAgent] = useState(false);
+  const [chooseError, setChooseError] = useState<string | null>(null);
+
+  // With Agent → create a dedicated continuation chat bound to this video and open it;
+  // the agent plans the full multi-part storyboard there.
+  async function startWithAgent() {
+    setStartingAgent(true);
+    setChooseError(null);
+    try {
+      const token = await getToken();
+      const res = await api.post<TfResponse<{ threadId: string }>>(
+        `/api/workspaces/${slug}/generate/continue/agent`,
+        { assetId: asset.id },
+        token ?? undefined,
+      );
+      if (!res.success || !res.data?.threadId) throw new Error(res.message ?? 'Could not start agent');
+      navigate(`/workspaces/${slug}/threads/${res.data.threadId}`);
+    } catch (e) {
+      setChooseError(e instanceof Error ? e.message : 'Could not start agent');
+      setStartingAgent(false);
+    }
+  }
+
   const i2vModels = VIDEO_MODELS.filter((m) => I2V_CAPABLE_MODEL_IDS.includes(m.id as VideoModelId));
   const [prompt, setPrompt] = useState('');
   const [model, setModel] = useState<VideoModelId>(
@@ -914,71 +1084,126 @@ function ContinueModal({ asset, slug, blobUrl, onClose, onStarted }: {
           </button>
         </div>
 
-        <div className='overflow-y-auto flex-1 p-5 space-y-4'>
-          {blobUrl && (
-            <div className='flex justify-center rounded-xl overflow-hidden bg-surface-card'>
-              <video src={blobUrl} muted playsInline className='w-auto max-h-[30vh] object-contain' />
-            </div>
-          )}
-          <p className='text-meta text-text-muted'>
-            We take the last frame of this video and generate the next part from it, then stitch them into one longer clip.
-          </p>
+        {/* Step 1: pick how to continue */}
+        {mode === 'choose' ? (
+          <div className='overflow-y-auto flex-1 p-5 space-y-3'>
+            {blobUrl && (
+              <div className='flex justify-center rounded-xl overflow-hidden bg-surface-card'>
+                <video src={blobUrl} muted playsInline className='w-auto max-h-[26vh] object-contain' />
+              </div>
+            )}
+            <p className='text-meta text-text-muted'>How do you want to extend this video?</p>
 
-          <div>
-            <p className='text-meta font-semibold text-text-muted uppercase tracking-wide mb-1.5'>Next part prompt</p>
-            <textarea
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder='Describe what happens next…'
-              rows={3}
-              className='w-full rounded-lg border border-border-soft bg-surface-white px-3 py-2 text-message text-text-primary resize-none focus:outline-none focus:ring-2 focus:ring-brand/40'
-            />
+            <button
+              onClick={startWithAgent}
+              disabled={startingAgent}
+              className='w-full flex items-start gap-3 rounded-xl border border-border-soft hover:border-brand/60 bg-surface-white hover:bg-surface-card px-4 py-3 text-left transition-colors disabled:opacity-60'
+            >
+              <div className='mt-0.5 flex-shrink-0 rounded-lg bg-brand/10 p-1.5'>
+                {startingAgent ? <Loader2 size={16} className='text-brand animate-spin' /> : <Sparkles size={16} className='text-brand' />}
+              </div>
+              <div className='flex-1 min-w-0'>
+                <p className='text-message font-semibold text-text-primary'>With Agent</p>
+                <p className='text-meta text-text-muted leading-snug'>
+                  {startingAgent ? 'Opening a continuation chat…' : 'Chat with the agent to plan the whole continuation — it storyboards the next parts for you.'}
+                </p>
+              </div>
+              {!startingAgent && <ChevronRight size={16} className='text-text-muted mt-1 flex-shrink-0' />}
+            </button>
+
+            <button
+              onClick={() => setMode('manual')}
+              disabled={startingAgent}
+              className='w-full flex items-start gap-3 rounded-xl border border-border-soft hover:border-brand/60 bg-surface-white hover:bg-surface-card px-4 py-3 text-left transition-colors disabled:opacity-60'
+            >
+              <div className='mt-0.5 flex-shrink-0 rounded-lg bg-surface-card p-1.5'>
+                <Wand2 size={16} className='text-ink' />
+              </div>
+              <div className='flex-1 min-w-0'>
+                <p className='text-message font-semibold text-text-primary'>Manual</p>
+                <p className='text-meta text-text-muted leading-snug'>
+                  Write the next-part prompt and pick the model, clip length, and parts yourself.
+                </p>
+              </div>
+              <ChevronRight size={16} className='text-text-muted mt-1 flex-shrink-0' />
+            </button>
+
+            {chooseError && (
+              <div className='flex items-start gap-1.5 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-700/40 rounded-lg px-3 py-2'>
+                <AlertCircle size={12} className='text-red-500 mt-0.5 flex-shrink-0' />
+                <p className='text-meta text-red-600 dark:text-red-300'>{chooseError}</p>
+              </div>
+            )}
           </div>
+        ) : (
+          <>
+            <div className='overflow-y-auto flex-1 p-5 space-y-4'>
+              {blobUrl && (
+                <div className='flex justify-center rounded-xl overflow-hidden bg-surface-card'>
+                  <video src={blobUrl} muted playsInline className='w-auto max-h-[30vh] object-contain' />
+                </div>
+              )}
+              <p className='text-meta text-text-muted'>
+                We take the last frame of this video and generate the next part from it, then stitch them into one longer clip.
+              </p>
 
-          <div className='flex items-center gap-4 flex-wrap'>
-            <div className='flex items-center gap-1.5'>
-              <span className='text-meta text-text-secondary'>Model</span>
-              <ModelPicker
-                options={i2vModels}
-                value={model}
-                onChange={(id) => {
-                  const m = id as VideoModelId;
-                  setModel(m);
-                  setDuration(String(MODEL_MAX_CLIP_SECONDS[m]));
-                }}
-              />
-            </div>
-            <div className='flex items-center gap-1.5'>
-              <span className='text-meta text-text-secondary'>Clip</span>
-              <ModelPicker options={durationOptions} value={duration} onChange={setDuration} />
-            </div>
-            <div className='flex items-center gap-1.5'>
-              <span className='text-meta text-text-secondary'>Parts</span>
-              <ModelPicker options={partsOptions} value={parts} onChange={setParts} />
-            </div>
-          </div>
+              <div>
+                <p className='text-meta font-semibold text-text-muted uppercase tracking-wide mb-1.5'>Next part prompt</p>
+                <textarea
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  placeholder='Describe what happens next…'
+                  rows={3}
+                  className='w-full rounded-lg border border-border-soft bg-surface-white px-3 py-2 text-message text-text-primary resize-none focus:outline-none focus:ring-2 focus:ring-brand/40'
+                />
+              </div>
 
-          {error && (
-            <div className='flex items-start gap-1.5 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-700/40 rounded-lg px-3 py-2'>
-              <AlertCircle size={12} className='text-red-500 mt-0.5 flex-shrink-0' />
-              <p className='text-meta text-red-600 dark:text-red-300'>{error}</p>
-            </div>
-          )}
-        </div>
+              <div className='flex items-center gap-4 flex-wrap'>
+                <div className='flex items-center gap-1.5'>
+                  <span className='text-meta text-text-secondary'>Model</span>
+                  <ModelPicker
+                    options={i2vModels}
+                    value={model}
+                    onChange={(id) => {
+                      const m = id as VideoModelId;
+                      setModel(m);
+                      setDuration(String(MODEL_MAX_CLIP_SECONDS[m]));
+                    }}
+                  />
+                </div>
+                <div className='flex items-center gap-1.5'>
+                  <span className='text-meta text-text-secondary'>Clip</span>
+                  <ModelPicker options={durationOptions} value={duration} onChange={setDuration} />
+                </div>
+                <div className='flex items-center gap-1.5'>
+                  <span className='text-meta text-text-secondary'>Parts</span>
+                  <ModelPicker options={partsOptions} value={parts} onChange={setParts} />
+                </div>
+              </div>
 
-        <div className='px-5 py-4 border-t border-border-soft flex items-center justify-end gap-2'>
-          <button onClick={onClose} className='px-3 py-2 rounded-lg text-meta font-medium text-text-secondary hover:text-text-primary transition-colors'>
-            Cancel
-          </button>
-          <button
-            onClick={submit}
-            disabled={submitting || !prompt.trim()}
-            className='flex items-center gap-1.5 rounded-lg bg-brand px-4 py-2 text-meta font-semibold text-on-brand transition-colors hover:bg-brand-hover disabled:opacity-50 disabled:cursor-not-allowed'
-          >
-            {submitting ? <Loader2 size={13} className='animate-spin' /> : <Wand2 size={13} />}
-            {submitting ? 'Starting…' : 'Generate next part'}
-          </button>
-        </div>
+              {error && (
+                <div className='flex items-start gap-1.5 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-700/40 rounded-lg px-3 py-2'>
+                  <AlertCircle size={12} className='text-red-500 mt-0.5 flex-shrink-0' />
+                  <p className='text-meta text-red-600 dark:text-red-300'>{error}</p>
+                </div>
+              )}
+            </div>
+
+            <div className='px-5 py-4 border-t border-border-soft flex items-center justify-between gap-2'>
+              <button onClick={() => setMode('choose')} className='px-3 py-2 rounded-lg text-meta font-medium text-text-secondary hover:text-text-primary transition-colors'>
+                Back
+              </button>
+              <button
+                onClick={submit}
+                disabled={submitting || !prompt.trim()}
+                className='flex items-center gap-1.5 rounded-lg bg-brand px-4 py-2 text-meta font-semibold text-on-brand transition-colors hover:bg-brand-hover disabled:opacity-50 disabled:cursor-not-allowed'
+              >
+                {submitting ? <Loader2 size={13} className='animate-spin' /> : <Wand2 size={13} />}
+                {submitting ? 'Starting…' : 'Generate next part'}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

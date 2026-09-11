@@ -1,11 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import {
   computeChunkPlan,
+  resolveContinuePartPrompts,
   MODEL_MAX_CLIP_SECONDS,
   MODEL_VALID_DURATIONS,
   I2V_CAPABLE,
+  I2V_MODELS,
   referenceParamFor,
   isStitchMode,
+  coerceStitchMode,
   STITCH_MODES,
   STITCH_MIN_CHUNKS,
   STITCH_MAX_CHUNKS,
@@ -82,6 +85,37 @@ describe('computeChunkPlan', () => {
       reachableSeconds: 20,
       capped: false,
     });
+  });
+});
+
+// ─── resolveContinuePartPrompts ───────────────────────────────────────────────
+// Shared by the /continue route and the stitch workflow so both agree on the exact
+// per-part segments an agent-planned (or manual) continuation will generate.
+
+describe('resolveContinuePartPrompts', () => {
+  it('uses the storyboard verbatim and its length drives the part count', () => {
+    const parts = ['she turns to the door', 'she walks out into the rain', 'cut to morning'];
+    expect(resolveContinuePartPrompts(parts, 'fallback', 1)).toEqual(parts);
+  });
+
+  it('trims blanks and whitespace from the storyboard', () => {
+    expect(resolveContinuePartPrompts(['  a  ', '', '   ', 'b'], 'fallback', 5)).toEqual(['a', 'b']);
+  });
+
+  it('caps the storyboard at STITCH_MAX_CHUNKS', () => {
+    const many = Array.from({ length: STITCH_MAX_CHUNKS + 5 }, (_, i) => `part ${i}`);
+    expect(resolveContinuePartPrompts(many, 'fallback', 1)).toHaveLength(STITCH_MAX_CHUNKS);
+  });
+
+  it('repeats the single prompt chunkCount times when there is no storyboard', () => {
+    expect(resolveContinuePartPrompts(undefined, 'next part', 3)).toEqual(['next part', 'next part', 'next part']);
+    expect(resolveContinuePartPrompts([], 'next part', 2)).toEqual(['next part', 'next part']);
+  });
+
+  it('clamps a missing/absurd chunkCount into [1, STITCH_MAX_CHUNKS]', () => {
+    expect(resolveContinuePartPrompts(undefined, 'p', 0)).toEqual(['p']);
+    expect(resolveContinuePartPrompts(undefined, 'p', -4)).toEqual(['p']);
+    expect(resolveContinuePartPrompts(undefined, 'p', 999)).toHaveLength(STITCH_MAX_CHUNKS);
   });
 });
 
@@ -206,5 +240,43 @@ describe('calcStitchCost', () => {
 
   it('returns 0 when there are no chunks', () => {
     expect(calcStitchCost('google/veo-2', 8, 0)).toBe(0);
+  });
+});
+
+// ─── coerceStitchMode ─────────────────────────────────────────────────────────
+// The capability guard that prevents dispatching an impossible model/mode combo
+// (the Wan 2.7 I2V "first_frame required" failure). Pure, deterministic.
+
+describe('coerceStitchMode', () => {
+  it('keeps chain for an ambidextrous model (LTX can seed each chunk)', () => {
+    expect(coerceStitchMode('lightricks/ltx-2.3-fast', 'chain')).toBe('chain');
+  });
+
+  it('keeps concat for an ambidextrous model', () => {
+    expect(coerceStitchMode('lightricks/ltx-2.3-fast', 'concat')).toBe('concat');
+  });
+
+  it('forces concat when a text-only model is asked to chain (can’t take a seed frame)', () => {
+    expect(coerceStitchMode('wan-video/wan-2.7-t2v', 'chain')).toBe('concat');
+  });
+
+  it('forces chain when an image-to-video-only model is asked to concat', () => {
+    // Wan 2.7 I2V can only seed chunk 0 in concat → chunks 1+ fail. Chain seeds all.
+    expect(coerceStitchMode('wan-video/wan-2.7-i2v', 'concat')).toBe('chain');
+  });
+
+  it('keeps chain for an image-to-video-only model (its only viable mode)', () => {
+    expect(coerceStitchMode('wan-video/wan-2.7-i2v', 'chain')).toBe('chain');
+  });
+
+  it('never yields a mode the model cannot run, for every model × mode', () => {
+    for (const id of VIDEO_MODELS) {
+      for (const requested of STITCH_MODES) {
+        const got = coerceStitchMode(id, requested);
+        // text-only ⇒ never chain; i2v-only ⇒ never concat
+        if (!I2V_CAPABLE.has(id)) expect(got).toBe('concat');
+        if (I2V_MODELS.has(id)) expect(got).toBe('chain');
+      }
+    }
   });
 });

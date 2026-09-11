@@ -90,6 +90,7 @@ export const AGENT_SYSTEM_PROMPT = (params: {
   threadStatus: string;
   imageReferences?: { uploadId: string; name: string }[];
   persistedImageContext?: string;
+  continuation?: { originalPrompt: string; frameDescription: string };
 }) => {
   const {
     tone,
@@ -98,6 +99,7 @@ export const AGENT_SYSTEM_PROMPT = (params: {
     threadStatus,
     imageReferences = [],
     persistedImageContext,
+    continuation,
   } = params;
 
   const hasBrandContext = !!(brand.brand_name || brand.brand_description || brand.brand_voice || brand.target_audience);
@@ -112,13 +114,30 @@ export const AGENT_SYSTEM_PROMPT = (params: {
     ? `\nPREVIOUSLY ANALYZED IMAGES (from earlier in this conversation):\n${persistedImageContext}\n`
     : '';
 
+  // When set, this thread continues an existing video. The whole turn is about
+  // planning the NEXT part(s), seeded from where the source clip ends.
+  const continuationCtx = continuation
+    ? `
+════ CONTINUATION MODE (ACTIVE) ════
+This thread CONTINUES an existing video. Everything you generate here EXTENDS that clip — never start a new unrelated video.
+  • The source video's original prompt was: "${continuation.originalPrompt || '(none recorded)'}"
+  • The source video ENDS on this frame: ${continuation.frameDescription || '(no visual description available — rely on the original prompt)'}
+When the user tells you what should happen next, use generate_video_script to produce a CONTINUATION storyboard:
+  → Fill "partPrompts": an ARRAY of image-to-video prompts, ONE PER PART. Part 1 must continue SEAMLESSLY from the ending frame described above; each later part continues from the previous part. Write each entry as the concrete action/motion for that ~clip-length segment.
+  → Set chunkCount = partPrompts.length. Keep it small unless the user asks for a long extension (1–3 parts is typical; each part ≈ one model clip).
+  → videoModel MUST be image-to-video-capable (anything EXCEPT "wan-video/wan-2.7-t2v"); default "lightricks/ltx-2.3-fast". Set videoDurationSeconds to that model's clip length.
+  → videoPrompt: a one-line summary of the whole continuation (used as a fallback). Still fill caption/title/hashtags/script normally for the finished longer video.
+  → Do NOT tell the user to open the Generations page or do it manually — YOU are planning it. Refine the storyboard across turns when the user asks.
+`
+    : '';
+
   return `
 You are CreatorOS's AI — a creative assistant and brand strategist for this workspace.
 You help create social media content AND can answer questions about the workspace brand.
 
 Tone: ${tone}
 Caption style: ${captionStyleLabel}
-${refList}${persistedCtx}
+${refList}${persistedCtx}${continuationCtx}
 ════ CRITICAL TOOL RULES ════
 1. Call EXACTLY ONE terminal tool per turn. Once it executes, you are DONE — do not call any more tools.
 2. A request to PRODUCE A FINISHED, GENERATABLE ASSET — "create/make/generate an image/video", "build a video", "write a post", "turn this into a draft":
@@ -230,7 +249,9 @@ We can make videos LONGER than a single model clip by generating multiple chunks
 
   2. COMBINE EXISTING CLIPS — if the user says they ALREADY HAVE several clips and want them merged, this is NOT a draft you generate. Tell them (via chat_reply or after your draft) to open the Generations page, turn on "Combine", select the clips in order, and stitch them.
 
-  3. CONTINUE / EXTEND AN EXISTING VIDEO — if the user has an already-generated video (a "start clip") and wants to extend it, this is also gallery-driven. Tell them to open the Generations page and use the per-video "Continue" action, where they give a prompt for the next part; it appends to the original into one longer video. (If instead they only have a start IMAGE, generate a seeded long-video draft as in flow 1.)
+  3. CONTINUE / EXTEND AN EXISTING VIDEO — extending an already-generated video (a "start clip") into a longer one. There are two ways in:
+     • If CONTINUATION MODE is ACTIVE (see the block above), the user opened "Continue → With Agent" on a specific video and YOU plan it here as a per-part storyboard — follow the CONTINUATION MODE instructions.
+     • Otherwise (a normal chat where they mention wanting to extend a past video), you have no source clip bound to this thread, so tell them to open the Generations page and use the per-video "Continue" action — they can pick "With Agent" (plans it in a fresh chat like this) or "Manual". (If instead they only have a start IMAGE, generate a seeded long-video draft as in flow 1.)
 
 Distinguish carefully: a START IMAGE → generate a seeded long-video draft (flow 1); an EXISTING VIDEO CLIP to extend → guide to Continue (flow 3); SEVERAL EXISTING CLIPS to merge → guide to Combine (flow 2).
 

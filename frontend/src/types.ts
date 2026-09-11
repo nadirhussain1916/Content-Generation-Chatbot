@@ -125,6 +125,11 @@ export interface VideoPostPackage {
   longVideoTargetSeconds?: number;
   chunkCount?: number;
   stitchMode?: 'concat' | 'chain';
+  // Continuation (agent-driven "Continue"): a per-part i2v storyboard and the source
+  // asset it extends. When continueFromAssetId is present, the Generate button runs
+  // the continue flow ([original, ...parts]) instead of a from-scratch generation.
+  partPrompts?: string[];
+  continueFromAssetId?: string;
   tone: string;
   suggestedPlatforms: ('instagram' | 'tiktok')[];
   // Reference images (injected by backend after AI generation)
@@ -156,10 +161,43 @@ export interface Asset {
   r2_key: string | null;
   public_url: string | null;
   prompt: string | null;
+  // Non-null only for single-clip Replicate generations. Combine/stitch/continue
+  // videos (made by ffmpeg, no single prediction) leave this null — the UI uses it
+  // to decide whether "Recover" (re-import from Replicate) is even possible.
+  prediction_id: string | null;
+  // How the video was produced. Drives the card badge + which recovery action to show.
+  generation_method: GenerationMethod | null;
   error_message: string | null;
   model: string | null;
   cost_usd: number | null;
   created_at: number;
+  // Live chunk progress while a multi-part video generates (from the status endpoint).
+  progress?: { done: number; total: number; stage?: string } | null;
+}
+
+export type GenerationMethod = 'single' | 'generate_stitch' | 'combine' | 'continue';
+
+export type GenerationJobKind = 'chunk' | 'frame' | 'concat';
+export type GenerationJobStatus = 'pending' | 'running' | 'succeeded' | 'failed';
+
+/** One sub-job (part) of a multi-part video generation. */
+export interface GenerationJob {
+  id: string;
+  asset_id: string;
+  workspace_id: string;
+  kind: GenerationJobKind;
+  idx: number;
+  status: GenerationJobStatus;
+  prediction_id: string | null;
+  model: string | null;
+  prompt: string | null;
+  duration_sec: number | null;
+  seed_url: string | null;
+  output_url: string | null;
+  cost_usd: number | null;
+  error_message: string | null;
+  created_at: number;
+  updated_at: number;
 }
 
 export interface SocialAccountSafe {

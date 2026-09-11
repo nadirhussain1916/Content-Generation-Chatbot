@@ -101,6 +101,14 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
   const supportsDuration = DURATION_MODEL_IDS.includes(currentModelId) && !(isLtxPro && chainCount > 0);
   const durationOptions = VIDEO_DURATIONS[currentModelId] ?? VIDEO_DURATIONS['google/veo-2'];
 
+  // Agent-planned continuation: extends an existing video via a per-part storyboard.
+  // The part count comes from the storyboard, so the generic long-video/extend pickers
+  // don't apply here.
+  const isContinuation = !!pkg.continueFromAssetId;
+  const continuationParts = Array.isArray(pkg.partPrompts)
+    ? (pkg.partPrompts as string[]).map((p) => String(p ?? '').trim()).filter(Boolean)
+    : [];
+
   async function pollUntilReady(assetId: string): Promise<Asset> {
     const deadline = Date.now() + POLL_TIMEOUT_MS;
     while (Date.now() < deadline) {
@@ -129,6 +137,38 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
       const primaryReferenceUploadId = pkg.primaryReferenceUploadId ?? null;
 
       const token = await getAuthToken();
+
+      // ── Continuation draft ────────────────────────────────────────────────
+      // When the agent planned a continuation (thread bound to a source video),
+      // route to /generate/continue — extend the original into one longer clip —
+      // instead of a from-scratch generation. A per-part storyboard drives the
+      // part count; otherwise fall back to a single prompt + chunkCount.
+      const continueFromAssetId = pkg.continueFromAssetId;
+      if (continueFromAssetId) {
+        const partPrompts = Array.isArray(pkg.partPrompts)
+          ? pkg.partPrompts.map((p) => String(p ?? '').trim()).filter(Boolean)
+          : [];
+        const contRes = await api.post<TfResponse<{ assetId: string; status: string }>>(
+          `/api/workspaces/${slug}/generate/continue`,
+          {
+            assetId: continueFromAssetId,
+            ...(partPrompts.length > 0 ? { partPrompts } : { prompt, chunkCount }),
+            videoModel,
+            ...(supportsAspectRatio && { aspectRatio }),
+            ...(supportsDuration && { duration: Number(duration) }),
+          },
+          token ?? undefined,
+        );
+        if (!contRes.success || !contRes.data?.assetId) {
+          setError(contRes.message ?? 'Continue failed');
+          return;
+        }
+        const contAsset = await pollUntilReady(contRes.data.assetId);
+        setDone(true);
+        onGenerated?.(contAsset);
+        return;
+      }
+
       const res = await api.post<TfResponse<{ assetId: string; predictionId: string; status: string }>>(
         `/api/workspaces/${slug}/generate/video`,
         {
@@ -211,7 +251,7 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
               />
             </div>
           )}
-          {isLtxPro && (
+          {isLtxPro && !isContinuation && (
             <div className='flex items-center gap-1.5'>
               <span className='text-meta text-text-secondary'>Length</span>
               <ModelPicker
@@ -221,7 +261,7 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
               />
             </div>
           )}
-          {supportsLongVideo && (
+          {supportsLongVideo && !isContinuation && (
             <div className='flex items-center gap-1.5'>
               <span className='text-meta text-text-secondary'>Length</span>
               <ModelPicker
@@ -231,7 +271,7 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
               />
             </div>
           )}
-          {isLongVideo && isI2VCapable && (
+          {isLongVideo && isI2VCapable && !isContinuation && (
             <div className='flex items-center gap-1.5'>
               <span className='text-meta text-text-secondary'>Mode</span>
               <ModelPicker
@@ -241,6 +281,30 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
               />
             </div>
           )}
+        </div>
+      )}
+
+      {/* Continuation storyboard — the agent-planned parts that extend the source video */}
+      {!done && isContinuation && (
+        <div className='rounded-lg border border-border-soft bg-surface-card px-3 py-2 space-y-1.5'>
+          <p className='text-meta font-semibold text-text-muted uppercase tracking-wide'>
+            Continues your video · {continuationParts.length > 0 ? `${continuationParts.length} part${continuationParts.length > 1 ? 's' : ''}` : 'next part'}
+          </p>
+          {continuationParts.length > 0 ? (
+            <ol className='space-y-1'>
+              {continuationParts.map((part, i) => (
+                <li key={i} className='flex gap-2 text-meta text-text-secondary leading-snug'>
+                  <span className='font-mono text-text-muted flex-shrink-0'>{i + 1}.</span>
+                  <span>{part}</span>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className='text-meta text-text-secondary leading-snug'>{pkg.videoPrompt}</p>
+          )}
+          <p className='text-meta text-text-muted leading-snug'>
+            We take the last frame of the original and generate each part from it, then stitch them into one longer clip.
+          </p>
         </div>
       )}
 
@@ -290,7 +354,7 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
           ) : (
             <Video size={12} />
           )}
-          {loading ? 'Generating video...' : done ? 'Video generated' : error ? 'Retry' : 'Generate video'}
+          {loading ? 'Generating video...' : done ? 'Video generated' : error ? 'Retry' : isContinuation ? 'Generate continuation' : 'Generate video'}
         </button>
         {loading && (
           <span className='text-meta text-text-secondary'>

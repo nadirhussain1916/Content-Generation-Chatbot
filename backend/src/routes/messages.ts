@@ -4,8 +4,11 @@ import { authMiddleware, workspaceMiddleware } from '../middleware/auth';
 import {
   getThread, getMessages, createMessage, updateThread,
   getWorkspaceUploads, getWorkspaceUploadsByIds, updateWorkspaceUploadVisionDescription, updateMessage,
+  getAsset,
 } from '../db/queries';
 import { runAgent, runAgentStreaming, type AgentResult, type RunAgentParams } from '../services/openai';
+import { getContinuationFrameDescription } from '../services/continuation';
+import { withPublicUrl } from '../services/r2';
 import { calcTextCost } from '../services/costs';
 import type { CloudflareBindings } from '../env';
 import type { ContextVariables, TfResponse, Thread, Message } from '../types';
@@ -104,6 +107,26 @@ async function prepareAgentRun(
       content: m.post_package ? `${m.content}\n\nPOST_PACKAGE:${m.post_package}` : m.content,
     }));
 
+    // ── Continuation context ──────────────────────────────────────────────────
+    // If this thread is an agent-driven "continue" of an existing video, ground the
+    // agent in the source's original prompt + a description of its final frame so it
+    // plans a per-part storyboard (see CONTINUATION MODE in the system prompt).
+    let continuation: RunAgentParams['continuation'];
+    if (thread.continue_from_asset_id) {
+      try {
+        const source = await getAsset(c.env.DB, thread.continue_from_asset_id);
+        if (source && source.workspace_id === workspace.id && source.status === 'ready') {
+          const sourceUrl = withPublicUrl(source, c.env.ASSETS_PUBLIC_URL).public_url;
+          const frameDescription = sourceUrl
+            ? await getContinuationFrameDescription(c.env, { assetId: source.id, clipUrl: sourceUrl })
+            : '';
+          continuation = { originalPrompt: source.prompt ?? '', frameDescription };
+        }
+      } catch (err) {
+        Logger.log('ContinuationContextError', { threadId, workspaceId: workspace.id }, err);
+      }
+    }
+
     const tone = workspace.ai_tone;
     const captionStyle = workspace.default_caption_style;
     const brand = {
@@ -131,6 +154,7 @@ async function prepareAgentRun(
       threadStatus: thread.status,
       imageReferences,
       persistedImageContext: persistedImageContext || undefined,
+      continuation,
       // Check in-memory map first; fall back to DB for IDs not in current imageReferences
       // (e.g. upload IDs the agent finds in POST_PACKAGE.referenceUploadIds)
       getVisionDescription: async (uploadId) => {
@@ -283,6 +307,18 @@ async function finalizeAssistantResponse(
       } catch (err) {
         Logger.log('AutoRefInjectError', { threadId }, err);
       }
+    }
+
+    // ── Continuation stamp ────────────────────────────────────────────────────
+    // In a "continue" thread, tag the video draft with its source asset so the
+    // Generate button routes to /generate/continue (extend the original) instead of
+    // a from-scratch /generate/video.
+    if (thread.continue_from_asset_id && postPackageJson && agentResult.action === 'video_script') {
+      try {
+        const pkg = JSON.parse(postPackageJson);
+        pkg.continueFromAssetId = thread.continue_from_asset_id;
+        postPackageJson = JSON.stringify(pkg);
+      } catch (err) { Logger.log('ContinuationStampError', { threadId }, err); }
     }
 
     // 5. Persist assistant message (with model name and cost)

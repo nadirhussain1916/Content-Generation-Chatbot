@@ -1,8 +1,14 @@
 import { Hono } from 'hono';
 import { authMiddleware, workspaceMiddleware } from '../middleware/auth';
-import { getThread, createAsset, updateAsset, getAsset, getAssetsByWorkspace, getWorkspaceUploadsByIds, updateWorkspaceUploadVisionDescription } from '../db/queries';
+import { getThread, createThread, createAsset, updateAsset, getAsset, getAssetsByWorkspace, getWorkspaceUploadsByIds, updateWorkspaceUploadVisionDescription, getGenerationJobsByAsset } from '../db/queries';
+import { getContinuationFrameDescription } from '../services/continuation';
 import type { CloudflareBindings } from '../env';
 import type { ContextVariables, TfResponse, Asset } from '../types';
+import type { GenerationParams } from '../workflows/generation';
+
+// The video_stitch variant of the workflow params — persisted on the asset so a
+// failed stitch can be retried with the exact same inputs (reusing succeeded parts).
+type StitchParams = Extract<GenerationParams, { type: 'video_stitch' }>;
 import { Logger } from '../utils/Logger';
 import { withPublicUrl, uploadFromUrl } from '../services/r2';
 import { kvRateLimiter } from '../middleware/rateLimiter';
@@ -12,7 +18,7 @@ import { characterBlock } from '../services/prompts';
 import {
   coerceImageModel, coerceImageSize, coerceGenerationMode,
   coerceVideoModel, snapDuration, I2V_MODELS,
-  VIDEO_MODEL_CONFIGS, I2V_CAPABLE, isStitchMode,
+  VIDEO_MODEL_CONFIGS, I2V_CAPABLE, isStitchMode, coerceStitchMode,
   STITCH_MIN_CHUNKS, STITCH_MAX_CHUNKS, MODEL_MAX_CLIP_SECONDS,
   type StitchMode,
 } from '../services/generationConfig';
@@ -31,7 +37,21 @@ generateRouter.get('/assets', async (c) => {
   const workspace = c.get('workspace');
   try {
     const result = await getAssetsByWorkspace(c.env.DB, workspace.id);
-    const enriched = result.results.map((a) => withPublicUrl(a, c.env.ASSETS_PUBLIC_URL));
+    // Enrich in-progress multi-part videos with live chunk progress from KV so the
+    // gallery poll can render "2/4". Only touches KV for generating rows (usually few).
+    const enriched = await Promise.all(result.results.map(async (a) => {
+      const base = withPublicUrl(a, c.env.ASSETS_PUBLIC_URL);
+      if (a.status !== 'generating' && a.status !== 'pending') return base;
+      const kvRaw = await c.env.KV.get(`asset:status:${a.id}`);
+      if (!kvRaw) return base;
+      try {
+        const kv = JSON.parse(kvRaw) as { total?: number; done?: number; stage?: string };
+        if (typeof kv.total === 'number' && kv.total > 0) {
+          return { ...base, progress: { done: kv.done ?? 0, total: kv.total, stage: kv.stage } };
+        }
+      } catch { /* ignore malformed KV */ }
+      return base;
+    }));
     return c.json<TfResponse<Asset[]>>({ success: true, data: enriched });
   } catch (error) {
     Logger.log('ListAssetsError', { workspaceId: workspace.id }, error);
@@ -361,17 +381,33 @@ generateRouter.post('/video', async (c) => {
     if (wantsStitch) {
       const stitchChunkCount = Math.min(Math.max(Math.round(body.chunkCount!), STITCH_MIN_CHUNKS), STITCH_MAX_CHUNKS);
 
-      // Mode: default concat; force concat when the model can't do image-to-video.
-      let stitchMode: StitchMode = isStitchMode(body.stitchMode) ? body.stitchMode : 'concat';
-      if (stitchMode === 'chain' && !I2V_CAPABLE.has(modelId)) {
-        stitchMode = 'concat';
-        Logger.log('VideoParamCoerced', { workspaceId: workspace.id, threadId: body.threadId, stitch: `chain not supported by ${modelId} — using concat` });
+      // Resolve the stitch mode to one the model can actually run: text-only models
+      // can't chain; image-to-video-only models can't concat (see coerceStitchMode).
+      const requestedMode: StitchMode = isStitchMode(body.stitchMode) ? body.stitchMode : 'concat';
+      const stitchMode = coerceStitchMode(modelId, requestedMode);
+      if (stitchMode !== requestedMode) {
+        Logger.log('VideoParamCoerced', { workspaceId: workspace.id, threadId: body.threadId, stitch: `${requestedMode}→${stitchMode} for ${modelId}` });
       }
 
       // Per-chunk length: honour the chosen duration, else the model's longest clip
       // (fewer chunks for a given target). Snap to a model-valid value either way.
       const requestedChunkDuration = body.duration ?? MODEL_MAX_CLIP_SECONDS[modelId] ?? videoDuration;
       const chunkDuration = snapDuration(modelId, requestedChunkDuration).value;
+
+      const stitchParams: StitchParams = {
+        type: 'video_stitch',
+        op: 'generate',
+        assetId,
+        workspaceId: workspace.id,
+        r2KeyPrefix,
+        prompt: videoPrompt,
+        modelSlug: modelId,
+        aspectRatio: videoAspectRatio as '16:9' | '9:16',
+        mode: stitchMode,
+        chunkCount: stitchChunkCount,
+        chunkDuration,
+        referenceImageUrl: videoReferenceImageUrl,
+      };
 
       await createAsset(c.env.DB, {
         id: assetId,
@@ -382,6 +418,8 @@ generateRouter.post('/video', async (c) => {
         prompt: body.prompt,
         model: modelId,
         cost_usd: calcStitchCost(modelId, chunkDuration, stitchChunkCount),
+        generation_method: 'generate_stitch',
+        stitch_params: JSON.stringify(stitchParams),
       });
 
       await c.env.KV.put(
@@ -390,23 +428,7 @@ generateRouter.post('/video', async (c) => {
         { expirationTtl: 60 * 60 * 24 }
       );
 
-      await c.env.GENERATION_WORKFLOW.create({
-        id: assetId,
-        params: {
-          type: 'video_stitch',
-          op: 'generate',
-          assetId,
-          workspaceId: workspace.id,
-          r2KeyPrefix,
-          prompt: videoPrompt,
-          modelSlug: modelId,
-          aspectRatio: videoAspectRatio as '16:9' | '9:16',
-          mode: stitchMode,
-          chunkCount: stitchChunkCount,
-          chunkDuration,
-          referenceImageUrl: videoReferenceImageUrl,
-        },
-      });
+      await c.env.GENERATION_WORKFLOW.create({ id: assetId, params: stitchParams });
 
       Logger.log('VideoStitchDispatched', { assetId, op: 'generate', mode: stitchMode, chunkCount: stitchChunkCount, chunkDuration, model: modelId });
 
@@ -525,6 +547,16 @@ generateRouter.post('/combine', async (c) => {
     const threadId = firstThreadId!;
     const r2KeyPrefix = `${workspace.id}/${threadId}/${assetId}`;
 
+    const stitchParams: StitchParams = {
+      type: 'video_stitch',
+      op: 'combine',
+      assetId,
+      workspaceId: workspace.id,
+      r2KeyPrefix,
+      aspectRatio,
+      sourceClipUrls: clipUrls,
+    };
+
     await createAsset(c.env.DB, {
       id: assetId,
       thread_id: threadId,
@@ -533,6 +565,8 @@ generateRouter.post('/combine', async (c) => {
       prompt: `Combined from ${clipUrls.length} clips`,
       model: 'ffmpeg-concat',
       cost_usd: 0,
+      generation_method: 'combine',
+      stitch_params: JSON.stringify(stitchParams),
     });
 
     await c.env.KV.put(
@@ -541,18 +575,7 @@ generateRouter.post('/combine', async (c) => {
       { expirationTtl: 60 * 60 * 24 }
     );
 
-    await c.env.GENERATION_WORKFLOW.create({
-      id: assetId,
-      params: {
-        type: 'video_stitch',
-        op: 'combine',
-        assetId,
-        workspaceId: workspace.id,
-        r2KeyPrefix,
-        aspectRatio,
-        sourceClipUrls: clipUrls,
-      },
-    });
+    await c.env.GENERATION_WORKFLOW.create({ id: assetId, params: stitchParams });
 
     Logger.log('VideoStitchDispatched', { assetId, op: 'combine', clips: clipUrls.length });
 
@@ -575,14 +598,20 @@ generateRouter.post('/continue', async (c) => {
   try {
     const body = await c.req.json() as {
       assetId: string;
-      prompt: string;
+      prompt?: string;
+      partPrompts?: string[];
       videoModel?: string;
       aspectRatio?: string;
       duration?: number;
       chunkCount?: number;
     };
-    if (!body.assetId || !body.prompt) {
-      return c.json<TfResponse<null>>({ success: false, message: 'assetId and prompt are required' }, 400);
+    // Accept either a single prompt (manual) or a per-part storyboard (agent-planned).
+    const partPrompts = Array.isArray(body.partPrompts)
+      ? body.partPrompts.map((p) => String(p ?? '').trim()).filter(Boolean)
+      : [];
+    const basePrompt = (body.prompt ?? partPrompts[0] ?? '').trim();
+    if (!body.assetId || (!basePrompt && partPrompts.length === 0)) {
+      return c.json<TfResponse<null>>({ success: false, message: 'assetId and a prompt are required' }, 400);
     }
     if (!c.env.REPLICATE_API_TOKEN) {
       return c.json<TfResponse<null>>({ success: false, message: 'Video generation is not configured' }, 501);
@@ -611,19 +640,40 @@ generateRouter.post('/continue', async (c) => {
     const aspectRatio: '16:9' | '9:16' = body.aspectRatio === '16:9' ? '16:9' : '9:16';
     const requestedChunkDuration = body.duration ?? MODEL_MAX_CLIP_SECONDS[modelId];
     const chunkDuration = snapDuration(modelId, requestedChunkDuration).value;
-    const chunkCount = Math.min(Math.max(Math.round(body.chunkCount ?? 1), 1), STITCH_MAX_CHUNKS);
+    // A storyboard's length drives the part count; otherwise use the requested count.
+    const rawChunkCount = partPrompts.length > 0 ? partPrompts.length : Math.round(body.chunkCount ?? 1);
+    const chunkCount = Math.min(Math.max(rawChunkCount, 1), STITCH_MAX_CHUNKS);
+    // Keep partPrompts in sync with the clamped count (trim overflow beyond the cap).
+    const dispatchPartPrompts = partPrompts.length > 0 ? partPrompts.slice(0, chunkCount) : undefined;
 
     const assetId = crypto.randomUUID();
     const r2KeyPrefix = `${workspace.id}/${source.thread_id}/${assetId}`;
+
+    const stitchParams: StitchParams = {
+      type: 'video_stitch',
+      op: 'continue',
+      assetId,
+      workspaceId: workspace.id,
+      r2KeyPrefix,
+      prompt: basePrompt,
+      partPrompts: dispatchPartPrompts,
+      modelSlug: modelId,
+      aspectRatio,
+      chunkCount,
+      chunkDuration,
+      sourceClipUrls: [sourceUrl],
+    };
 
     await createAsset(c.env.DB, {
       id: assetId,
       thread_id: source.thread_id,
       workspace_id: workspace.id,
       type: 'video',
-      prompt: body.prompt,
+      prompt: basePrompt || dispatchPartPrompts?.join(' → '),
       model: modelId,
       cost_usd: calcStitchCost(modelId, chunkDuration, chunkCount),
+      generation_method: 'continue',
+      stitch_params: JSON.stringify(stitchParams),
     });
 
     await c.env.KV.put(
@@ -632,22 +682,7 @@ generateRouter.post('/continue', async (c) => {
       { expirationTtl: 60 * 60 * 24 }
     );
 
-    await c.env.GENERATION_WORKFLOW.create({
-      id: assetId,
-      params: {
-        type: 'video_stitch',
-        op: 'continue',
-        assetId,
-        workspaceId: workspace.id,
-        r2KeyPrefix,
-        prompt: body.prompt,
-        modelSlug: modelId,
-        aspectRatio,
-        chunkCount,
-        chunkDuration,
-        sourceClipUrls: [sourceUrl],
-      },
-    });
+    await c.env.GENERATION_WORKFLOW.create({ id: assetId, params: stitchParams });
 
     Logger.log('VideoStitchDispatched', { assetId, op: 'continue', chunkCount, chunkDuration, model: modelId });
 
@@ -658,6 +693,60 @@ generateRouter.post('/continue', async (c) => {
   } catch (error) {
     Logger.log('VideoContinueError', { workspaceId: workspace.id }, error);
     return c.json<TfResponse<null>>({ success: false, message: 'Continue failed' }, 500);
+  }
+});
+
+// POST /api/workspaces/:slug/generate/continue/agent
+// "Continue with Agent" (Flow C, agent-driven). Instead of a manual prompt, this
+// creates a dedicated continuation thread bound to the source video, warms the
+// last-frame description cache, and returns the thread for the client to open in
+// chat — where the agent plans a per-part storyboard that runs the continue flow.
+generateRouter.post('/continue/agent', async (c) => {
+  const workspace = c.get('workspace');
+  const userId = c.get('userId');
+
+  try {
+    const body = await c.req.json() as { assetId: string };
+    if (!body.assetId) {
+      return c.json<TfResponse<null>>({ success: false, message: 'assetId is required' }, 400);
+    }
+
+    const source = await getAsset(c.env.DB, body.assetId);
+    if (!source || source.workspace_id !== workspace.id) {
+      return c.json<TfResponse<null>>({ success: false, message: 'Source video not found' }, 404);
+    }
+    if (source.type !== 'video' || source.status !== 'ready' || !source.r2_key) {
+      return c.json<TfResponse<null>>({ success: false, message: 'Source must be a ready video' }, 400);
+    }
+    const sourceUrl = withPublicUrl(source, c.env.ASSETS_PUBLIC_URL).public_url;
+    if (!sourceUrl) return c.json<TfResponse<null>>({ success: false, message: 'Source video has no public URL' }, 400);
+
+    const threadId = crypto.randomUUID();
+    const titleBase = (source.prompt ?? 'video').slice(0, 60).trim();
+    await createThread(c.env.DB, {
+      id: threadId,
+      workspace_id: workspace.id,
+      created_by: userId,
+      title: `Continue: ${titleBase || 'video'}`,
+      continue_from_asset_id: source.id,
+    });
+
+    // Warm the last-frame description cache in the background so the first agent
+    // turn is grounded without blocking on the ffmpeg container cold-start. Purely
+    // best-effort — never let it fail the (already committed) thread creation.
+    try {
+      c.executionCtx?.waitUntil(
+        getContinuationFrameDescription(c.env, { assetId: source.id, clipUrl: sourceUrl }).then(() => {}),
+      );
+    } catch (err) {
+      Logger.log('ContinueAgentWarmError', { threadId, sourceAssetId: source.id }, err);
+    }
+
+    Logger.log('ContinueAgentThreadCreated', { threadId, sourceAssetId: source.id });
+    return c.json<TfResponse<{ threadId: string }>>({ success: true, data: { threadId } }, 201);
+  } catch (error) {
+    Logger.log('ContinueAgentError', { workspaceId: workspace.id }, error);
+    return c.json<TfResponse<null>>({ success: false, message: 'Failed to start agent continuation' }, 500);
   }
 });
 
@@ -703,7 +792,7 @@ generateRouter.get('/assets/:assetId/status', async (c) => {
     // Fast path: KV has the latest status written by the Workflow
     const kvRaw = await c.env.KV.get(`asset:status:${assetId}`);
     if (kvRaw) {
-      const kvData = JSON.parse(kvRaw) as { status: string; r2_key?: string };
+      const kvData = JSON.parse(kvRaw) as { status: string; r2_key?: string; done?: number; total?: number; stage?: string };
       if (kvData.status === 'ready' || kvData.status === 'failed') {
         // Fetch full asset from D1 for a complete response
         const asset = await getAsset(c.env.DB, assetId);
@@ -711,12 +800,16 @@ generateRouter.get('/assets/:assetId/status', async (c) => {
           return c.json<TfResponse<Asset>>({ success: true, data: withPublicUrl(asset, c.env.ASSETS_PUBLIC_URL) });
         }
       }
-      // Still generating — return lightweight status without a D1 hit
+      // Still generating — return lightweight status plus chunk progress (done/total).
       const asset = await getAsset(c.env.DB, assetId);
       if (!asset || asset.workspace_id !== workspace.id) {
         return c.json<TfResponse<null>>({ success: false, message: 'Asset not found' }, 404);
       }
-      return c.json<TfResponse<Asset>>({ success: true, data: withPublicUrl({ ...asset, status: kvData.status as Asset['status'] }, c.env.ASSETS_PUBLIC_URL) });
+      const merged = withPublicUrl({ ...asset, status: kvData.status as Asset['status'] }, c.env.ASSETS_PUBLIC_URL);
+      const progress = typeof kvData.total === 'number' && kvData.total > 0
+        ? { done: kvData.done ?? 0, total: kvData.total, stage: kvData.stage }
+        : null;
+      return c.json<TfResponse<Asset>>({ success: true, data: { ...merged, progress } });
     }
 
     // Fallback: no KV entry yet (e.g. Workflow hasn't started) — read D1
@@ -819,6 +912,71 @@ generateRouter.post('/assets/:assetId/recover', async (c) => {
   } catch (error) {
     Logger.log('AssetRecoverError', { assetId }, error);
     return c.json<TfResponse<null>>({ success: false, message: 'Recovery failed' }, 500);
+  }
+});
+
+// GET /api/workspaces/:slug/generate/assets/:assetId/jobs — per-part breakdown of a
+// multi-part video (chunks, frame extractions, concat). Powers the Details modal.
+generateRouter.get('/assets/:assetId/jobs', async (c) => {
+  const workspace = c.get('workspace');
+  const assetId = c.req.param('assetId');
+  try {
+    const asset = await getAsset(c.env.DB, assetId);
+    if (!asset || asset.workspace_id !== workspace.id) {
+      return c.json<TfResponse<null>>({ success: false, message: 'Asset not found' }, 404);
+    }
+    const jobs = await getGenerationJobsByAsset(c.env.DB, assetId);
+    return c.json<TfResponse<typeof jobs.results>>({ success: true, data: jobs.results });
+  } catch (error) {
+    Logger.log('AssetJobsError', { assetId }, error);
+    return c.json<TfResponse<null>>({ success: false, message: 'Failed to load parts' }, 500);
+  }
+});
+
+// POST /api/workspaces/:slug/generate/assets/:assetId/retry — re-run a FAILED stitch,
+// reusing the parts whose jobs already succeeded and regenerating only the failed ones.
+// Uses the stitch_params captured at dispatch (same assetId → the workflow's job cache
+// hits). Only valid for multi-part videos (single-clip failures use /recover instead).
+generateRouter.post('/assets/:assetId/retry', async (c) => {
+  const workspace = c.get('workspace');
+  const assetId = c.req.param('assetId');
+  try {
+    const asset = await getAsset(c.env.DB, assetId);
+    if (!asset || asset.workspace_id !== workspace.id) {
+      return c.json<TfResponse<null>>({ success: false, message: 'Asset not found' }, 404);
+    }
+    if (asset.status !== 'failed') {
+      return c.json<TfResponse<null>>({ success: false, message: 'Only failed generations can be retried' }, 409);
+    }
+    if (!asset.stitch_params) {
+      return c.json<TfResponse<null>>({ success: false, message: 'This generation cannot be retried automatically (no stitch parameters recorded)' }, 422);
+    }
+    let params: StitchParams;
+    try {
+      params = JSON.parse(asset.stitch_params) as StitchParams;
+    } catch {
+      return c.json<TfResponse<null>>({ success: false, message: 'Stored stitch parameters are corrupt — cannot retry' }, 422);
+    }
+
+    await updateAsset(c.env.DB, assetId, { status: 'generating', error_message: null });
+    await c.env.KV.put(
+      `asset:status:${assetId}`,
+      JSON.stringify({ status: 'generating' }),
+      { expirationTtl: 60 * 60 * 24 }
+    );
+
+    // Fresh workflow instance id — the original assetId instance is spent. The params
+    // keep the SAME assetId, so the run reuses succeeded generation_jobs by id.
+    await c.env.GENERATION_WORKFLOW.create({ id: `${assetId}-retry-${Date.now()}`, params });
+
+    Logger.log('VideoStitchRetry', { assetId, op: params.op });
+    return c.json<TfResponse<{ assetId: string; status: string }>>({
+      success: true,
+      data: { assetId, status: 'generating' },
+    }, 202);
+  } catch (error) {
+    Logger.log('AssetRetryError', { assetId }, error);
+    return c.json<TfResponse<null>>({ success: false, message: 'Retry failed' }, 500);
   }
 });
 

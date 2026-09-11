@@ -1,4 +1,4 @@
-import type { User, Workspace, Thread, Message, Asset, SocialAccount, PublishRecord, WorkspaceUpload } from '../types';
+import type { User, Workspace, Thread, Message, Asset, SocialAccount, PublishRecord, WorkspaceUpload, GenerationJob } from '../types';
 
 // ─── Users ────────────────────────────────────────────────────────────────────
 
@@ -67,10 +67,14 @@ export async function getThread(db: D1Database, id: string) {
 
 export async function createThread(db: D1Database, data: {
   id: string; workspace_id: string; created_by: string; title?: string;
+  continue_from_asset_id?: string;
 }) {
   return db.prepare(
-    'INSERT INTO threads (id, workspace_id, created_by, title) VALUES (?, ?, ?, ?)'
-  ).bind(data.id, data.workspace_id, data.created_by, data.title ?? null).run();
+    'INSERT INTO threads (id, workspace_id, created_by, title, continue_from_asset_id) VALUES (?, ?, ?, ?, ?)'
+  ).bind(
+    data.id, data.workspace_id, data.created_by, data.title ?? null,
+    data.continue_from_asset_id ?? null,
+  ).run();
 }
 
 export async function updateThread(db: D1Database, id: string, data: Partial<Pick<Thread, 'status' | 'media_type' | 'active_draft_id' | 'title'>>) {
@@ -132,15 +136,69 @@ export async function getAssetsByThread(db: D1Database, threadId: string) {
 export async function createAsset(db: D1Database, data: {
   id: string; thread_id: string; workspace_id: string; type: 'image' | 'video';
   message_id?: string; prompt?: string; prediction_id?: string;
-  model?: string; cost_usd?: number;
+  model?: string; cost_usd?: number; generation_method?: string; stitch_params?: string;
 }) {
   return db.prepare(
-    'INSERT INTO assets (id, thread_id, workspace_id, message_id, type, status, prompt, prediction_id, model, cost_usd) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO assets (id, thread_id, workspace_id, message_id, type, status, prompt, prediction_id, model, cost_usd, generation_method, stitch_params) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).bind(
     data.id, data.thread_id, data.workspace_id, data.message_id ?? null,
     data.type, 'generating', data.prompt ?? null, data.prediction_id ?? null,
-    data.model ?? null, data.cost_usd ?? null,
+    data.model ?? null, data.cost_usd ?? null, data.generation_method ?? 'single',
+    data.stitch_params ?? null,
   ).run();
+}
+
+// ─── Generation jobs (parts of a multi-part video — see migration 019) ─────────
+
+/**
+ * Upsert a sub-job row. `id` is deterministic (`${assetId}-${kind}-${idx}`) so a
+ * Workflow step re-running on replay updates the same row instead of duplicating.
+ * Only the provided fields are written; omitted fields keep their prior value.
+ */
+export async function upsertGenerationJob(db: D1Database, data: {
+  id: string; asset_id: string; workspace_id: string;
+  kind: 'chunk' | 'frame' | 'concat'; idx: number;
+  status: 'pending' | 'running' | 'succeeded' | 'failed';
+  prediction_id?: string | null; model?: string | null; prompt?: string | null;
+  duration_sec?: number | null; seed_url?: string | null; output_url?: string | null;
+  cost_usd?: number | null; error_message?: string | null;
+}) {
+  return db.prepare(`
+    INSERT INTO generation_jobs
+      (id, asset_id, workspace_id, kind, idx, status, prediction_id, model, prompt,
+       duration_sec, seed_url, output_url, cost_usd, error_message, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())
+    ON CONFLICT(id) DO UPDATE SET
+      status        = excluded.status,
+      prediction_id = COALESCE(excluded.prediction_id, generation_jobs.prediction_id),
+      model         = COALESCE(excluded.model,         generation_jobs.model),
+      prompt        = COALESCE(excluded.prompt,        generation_jobs.prompt),
+      duration_sec  = COALESCE(excluded.duration_sec,  generation_jobs.duration_sec),
+      seed_url      = COALESCE(excluded.seed_url,      generation_jobs.seed_url),
+      output_url    = COALESCE(excluded.output_url,    generation_jobs.output_url),
+      cost_usd      = COALESCE(excluded.cost_usd,      generation_jobs.cost_usd),
+      error_message = excluded.error_message,
+      updated_at    = unixepoch()
+  `).bind(
+    data.id, data.asset_id, data.workspace_id, data.kind, data.idx, data.status,
+    data.prediction_id ?? null, data.model ?? null, data.prompt ?? null,
+    data.duration_sec ?? null, data.seed_url ?? null, data.output_url ?? null,
+    data.cost_usd ?? null, data.error_message ?? null,
+  ).run();
+}
+
+export async function getGenerationJobsByAsset(db: D1Database, assetId: string) {
+  return db.prepare(
+    'SELECT * FROM generation_jobs WHERE asset_id = ? ORDER BY kind, idx'
+  ).bind(assetId).all<GenerationJob>();
+}
+
+/** Sum of the actual cost of every SUCCEEDED job for an asset (billing reconciliation). */
+export async function sumSucceededJobCost(db: D1Database, assetId: string): Promise<number> {
+  const row = await db.prepare(
+    "SELECT COALESCE(SUM(cost_usd), 0) AS total FROM generation_jobs WHERE asset_id = ? AND status = 'succeeded'"
+  ).bind(assetId).first<{ total: number }>();
+  return row?.total ?? 0;
 }
 
 export async function updateAsset(db: D1Database, id: string, data: Partial<Pick<Asset, 'status' | 'r2_key' | 'public_url' | 'prediction_id' | 'error_message' | 'cost_usd'>>) {

@@ -64,6 +64,10 @@ export interface Thread {
   media_type: 'undecided' | 'image' | 'video';
   status: 'planning' | 'draft' | 'script_ready' | 'media_pending' | 'ready' | 'published';
   active_draft_id: string | null;
+  // When set, this thread is an agent-driven "continue" of an existing video asset.
+  // Video drafts generated here are stamped with continueFromAssetId and run the
+  // continue flow (extract last frame → i2v parts → stitch [original, ...parts]).
+  continue_from_asset_id: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -97,7 +101,39 @@ export interface Asset {
   error_message: string | null;
   model: string | null;
   cost_usd: number | null;
+  // How the asset was produced (see migration 020). Null on very old rows.
+  generation_method: GenerationMethod | null;
+  // JSON of the video_stitch workflow params, for retrying a failed stitch (migration 021).
+  // Internal only — not surfaced to the frontend Asset type.
+  stitch_params: string | null;
   created_at: number;
+  // Attached at runtime by the status endpoint while a multi-part video generates.
+  progress?: { done: number; total: number; stage?: string } | null;
+}
+
+export type GenerationMethod = 'single' | 'generate_stitch' | 'combine' | 'continue';
+
+export type GenerationJobKind = 'chunk' | 'frame' | 'concat';
+export type GenerationJobStatus = 'pending' | 'running' | 'succeeded' | 'failed';
+
+/** One sub-job of a multi-part video generation (see migration 019). */
+export interface GenerationJob {
+  id: string;
+  asset_id: string;
+  workspace_id: string;
+  kind: GenerationJobKind;
+  idx: number;
+  status: GenerationJobStatus;
+  prediction_id: string | null;
+  model: string | null;
+  prompt: string | null;
+  duration_sec: number | null;
+  seed_url: string | null;
+  output_url: string | null;
+  cost_usd: number | null;
+  error_message: string | null;
+  created_at: number;
+  updated_at: number;
 }
 
 export interface SocialAccount {
@@ -187,6 +223,11 @@ export interface VideoPostPackage {
   longVideoTargetSeconds?: number;
   chunkCount?: number;
   stitchMode?: 'concat' | 'chain';
+  // Continuation (agent-driven "Continue"): a per-part i2v storyboard and the source
+  // asset it extends. continueFromAssetId is injected by the backend in continuation
+  // threads → the Generate button runs the continue flow ([original, ...parts]).
+  partPrompts?: string[];
+  continueFromAssetId?: string;
   tone: string;
   suggestedPlatforms: ('instagram' | 'tiktok')[];
   // Reference images (injected by backend after AI generation)

@@ -270,6 +270,25 @@ export function isStitchMode(v: unknown): v is StitchMode {
 }
 
 /**
+ * Resolve the stitch mode a model can actually run, given the requested one.
+ *
+ * Two hard capability constraints:
+ *   • Text-only models (not i2v-capable) can't frame-chain → forced to 'concat'.
+ *   • Image-to-video-ONLY models (I2V_MODELS, e.g. Wan 2.7 I2V) can't 'concat':
+ *     concat only seeds chunk 0, so chunks 1+ have no starting frame and Replicate
+ *     rejects them ("At least one of 'first_frame' or 'first_clip' must be provided").
+ *     Chain seeds every chunk from the previous chunk's last frame → forced to 'chain'.
+ *
+ * Returns the mode to actually dispatch. Callers log when it differs from requested.
+ */
+export function coerceStitchMode(modelId: string, requested: StitchMode): StitchMode {
+  const id = modelId as VideoModelId;
+  if (requested === 'chain' && !I2V_CAPABLE.has(id)) return 'concat';
+  if (requested === 'concat' && I2V_MODELS.has(id)) return 'chain';
+  return requested;
+}
+
+/**
  * Plan how to reach `targetSeconds` with a given model: use the model's longest
  * valid clip length and split into as many chunks as needed (clamped to
  * STITCH_MAX_CHUNKS). `capped` is true when the target can't be fully reached.
@@ -288,4 +307,23 @@ export function computeChunkPlan(
     reachableSeconds: chunkCount * chunkDuration,
     capped: rawCount > STITCH_MAX_CHUNKS,
   };
+}
+
+/**
+ * Resolve the ordered per-part prompts for a "continue" job.
+ *
+ * A storyboard (partPrompts) is authoritative — its cleaned length drives the part
+ * count (capped at STITCH_MAX_CHUNKS). With no storyboard, the single fallback prompt
+ * is repeated `chunkCount` times (clamped to [1, STITCH_MAX_CHUNKS]). Shared by the
+ * continue route and the stitch workflow so both agree on the exact segments.
+ */
+export function resolveContinuePartPrompts(
+  partPrompts: string[] | undefined,
+  fallbackPrompt: string,
+  chunkCount: number,
+): string[] {
+  const cleaned = (partPrompts ?? []).map((p) => String(p ?? '').trim()).filter(Boolean);
+  if (cleaned.length > 0) return cleaned.slice(0, STITCH_MAX_CHUNKS);
+  const count = Math.min(Math.max(Math.round(chunkCount) || 1, 1), STITCH_MAX_CHUNKS);
+  return Array.from({ length: count }, () => fallbackPrompt);
 }

@@ -101,6 +101,13 @@ const VideoPostPackageSchema = z.object({
     '(everything except "wan-video/wan-2.7-t2v") and slower. Default "concat"; use "chain" when the user wants smooth continuity. ' +
     'Only meaningful when chunkCount >= 2.'
   ),
+  partPrompts: z.array(z.string()).max(STITCH_MAX_CHUNKS).optional().describe(
+    'CONTINUATION MODE ONLY (see CONTINUATION MODE in the system prompt). A storyboard of image-to-video ' +
+    'prompts, ONE PER PART, describing how the existing video is extended step by step (part 1 continues ' +
+    'directly from where the source ends, part 2 continues from part 1, etc.). Each part is generated as ' +
+    'i2v seeded by the previous part\'s last frame, so write each prompt as the ACTION for that segment. ' +
+    'The number of parts = partPrompts.length; also set chunkCount to that same number. Omit outside continuation mode.'
+  ),
 });
 
 // ─── Public types ─────────────────────────────────────────────────────────────
@@ -148,6 +155,9 @@ export type RunAgentParams = {
   threadStatus: string;
   imageReferences?: { uploadId: string; publicUrl: string; name: string }[];
   persistedImageContext?: string;
+  // Set when this thread is an agent-driven "continue" of an existing video. Grounds
+  // the agent in what the source looks like so it plans a per-part continuation storyboard.
+  continuation?: { originalPrompt: string; frameDescription: string };
   getVisionDescription: (uploadId: string) => Promise<string | null>;
   saveVisionDescription: (uploadId: string, description: string) => Promise<void>;
   /** Resolve any upload ID the agent finds in the conversation (e.g. POST_PACKAGE.referenceUploadIds) */
@@ -189,6 +199,7 @@ function buildAgentGenerationConfig(params: RunAgentParams) {
       threadStatus: params.threadStatus,
       imageReferences: imageReferences.map((r) => ({ uploadId: r.uploadId, name: r.name })),
       persistedImageContext: params.persistedImageContext,
+      continuation: params.continuation,
     }),
     messages: buildHistory(params.messages),
     tools: {

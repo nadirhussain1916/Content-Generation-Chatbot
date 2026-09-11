@@ -15,6 +15,8 @@ export const MODEL_LABELS: Record<string, string> = {
   'gpt-4o-mini':                'GPT-4o mini',
   'gpt-4.1':                    'GPT-4.1',
   'gpt-4.1-mini':               'GPT-4.1 mini',
+  // Not a Replicate model — the ffmpeg concat pipeline (Flow B: combine clips).
+  'ffmpeg-concat':              'Combined (ffmpeg)',
 };
 
 export function shortModelLabel(model: string | null): string {

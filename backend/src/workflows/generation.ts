@@ -1,10 +1,10 @@
 import { WorkflowEntrypoint, WorkflowStep, WorkflowEvent } from 'cloudflare:workers';
 import type { CloudflareBindings } from '../env';
-import { updateAsset } from '../db/queries';
+import { updateAsset, upsertGenerationJob, sumSucceededJobCost } from '../db/queries';
 import { generateDalleImage } from '../services/openai';
 import { uploadFromUrl } from '../services/r2';
 import { calcVideoClipCost } from '../services/costs';
-import { VIDEO_MODEL_CONFIGS } from '../services/generationConfig';
+import { VIDEO_MODEL_CONFIGS, resolveContinuePartPrompts } from '../services/generationConfig';
 import type { VideoModelId } from '../services/generationConfig';
 import { concatClips, extractLastFrame } from '../services/videoStitch';
 import { Logger } from '../utils/Logger';
@@ -69,6 +69,10 @@ export type GenerationParams =
       chunkDuration?: number;
       referenceImageUrl?: string;   // generate: seed for chunk 1
       sourceClipUrls?: string[];    // combine: all clips; continue: [original]
+      // continue (agent-planned storyboard): one i2v prompt per part. When set, its
+      // length drives the part count and each chunk uses its own prompt (falls back
+      // to `prompt` for any missing entry). Omit for the single-prompt continue.
+      partPrompts?: string[];
     };
 
 const KV_TTL = 60 * 60 * 24; // 24 h — long enough to cover any polling window
@@ -339,9 +343,16 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
     if (p.type === 'video_stitch') {
       const token = this.env.REPLICATE_API_TOKEN;
 
+      // Reconcile the asset's billed cost to the ACTUAL cost of the parts that
+      // succeeded (calcVideoClipCost per chunk, using Replicate's reported output
+      // duration). A run that dies partway bills only for delivered parts — never the
+      // full up-front estimate. This is the "charge whatever we're actually charged" rule.
+      const reconcileCost = () => sumSucceededJobCost(this.env.DB, p.assetId);
+
       const failStitch = async (reason: string, ctx: Record<string, unknown> = {}) => {
         Logger.log('VideoStitchFailed', { assetId: p.assetId, op: p.op, reason, ...ctx });
-        await updateAsset(this.env.DB, p.assetId, { status: 'failed', error_message: reason });
+        const cost_usd = await reconcileCost();
+        await updateAsset(this.env.DB, p.assetId, { status: 'failed', error_message: reason, cost_usd });
         await writeKv(this.env.KV, p.assetId, { status: 'failed' });
       };
 
@@ -351,6 +362,83 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
         const chunkCount = p.chunkCount ?? 1;
         const chunkDuration = p.chunkDuration ?? 5;
         const prompt = p.prompt ?? '';
+        const wsId = p.workspaceId;
+        const jid = (kind: 'chunk' | 'frame' | 'concat', idx: number) => `${p.assetId}-${kind}-${idx}`;
+
+        // Parts we intend to GENERATE (drives the progress fraction). Combine generates
+        // nothing; continue reuses the original and generates the new storyboard parts.
+        const resolvedParts =
+          p.op === 'continue' ? resolveContinuePartPrompts(p.partPrompts, prompt, chunkCount) : [];
+        const total = p.op === 'generate' ? chunkCount : p.op === 'continue' ? resolvedParts.length : 0;
+        let done = 0;
+        const writeProgress = (stage: string) =>
+          writeKv(this.env.KV, p.assetId, { status: 'generating', done, total, stage });
+
+        // Retry-remaining support: reuse a part whose job already succeeded so a
+        // re-dispatched run regenerates only the failed/missing parts.
+        const cachedOutput = (kind: 'chunk' | 'frame', idx: number) =>
+          step.do(`stitch-${kind}-${idx}-check`, async () => {
+            const row = await this.env.DB
+              .prepare("SELECT output_url FROM generation_jobs WHERE id = ? AND status = 'succeeded'")
+              .bind(jid(kind, idx)).first<{ output_url: string | null }>();
+            return row?.output_url ?? null;
+          });
+
+        // Dispatch a chunk prediction (or signal reuse). Records the running job + id.
+        const startChunk = async (
+          idx: number, chunkPrompt: string, seedUrl: string | undefined,
+        ): Promise<{ cached: string } | { predId: string }> => {
+          const cached = await cachedOutput('chunk', idx);
+          if (cached) return { cached };
+          const predId = await step.do(`stitch-chunk-${idx}-create`, async () => {
+            const id = await createReplicatePrediction(token, p.modelSlug!, config!.buildInput(chunkPrompt, p.aspectRatio, chunkDuration, seedUrl));
+            await upsertGenerationJob(this.env.DB, {
+              id: jid('chunk', idx), asset_id: p.assetId, workspace_id: wsId, kind: 'chunk', idx,
+              status: 'running', prediction_id: id, model: p.modelSlug, prompt: chunkPrompt,
+              duration_sec: chunkDuration, seed_url: seedUrl ?? null,
+            });
+            return id;
+          });
+          return { predId };
+        };
+
+        // Await a chunk to completion, record ACTUAL cost/duration, return its clip URL.
+        const finishChunk = async (
+          idx: number, marker: { cached: string } | { predId: string },
+        ): Promise<string> => {
+          if ('cached' in marker) { done++; await writeProgress(`part ${idx + 1}/${total} (reused)`); return marker.cached; }
+          const r = await waitForPrediction(step, token, marker.predId, `stitch-chunk-${idx}-wait`);
+          if (!r.ok) {
+            await step.do(`stitch-chunk-${idx}-fail`, async () => {
+              await upsertGenerationJob(this.env.DB, {
+                id: jid('chunk', idx), asset_id: p.assetId, workspace_id: wsId, kind: 'chunk', idx,
+                status: 'failed', error_message: r.reason,
+              });
+            });
+            throw new Error(`part ${idx + 1}: ${r.reason}`);
+          }
+          const cost = calcVideoClipCost(p.modelSlug!, r.durationSec ?? chunkDuration);
+          await step.do(`stitch-chunk-${idx}-done`, async () => {
+            await upsertGenerationJob(this.env.DB, {
+              id: jid('chunk', idx), asset_id: p.assetId, workspace_id: wsId, kind: 'chunk', idx,
+              status: 'succeeded', output_url: r.url, duration_sec: r.durationSec ?? chunkDuration, cost_usd: cost,
+            });
+          });
+          done++; await writeProgress(`part ${idx + 1}/${total}`);
+          return r.url;
+        };
+
+        // Extract (or reuse) a clip's last frame, tracked as a 'frame' job.
+        const ensureFrame = async (idx: number, clipUrl: string, outKey: string): Promise<string> => {
+          const cached = await cachedOutput('frame', idx);
+          if (cached) return cached;
+          return step.do(`stitch-frame-${idx}-run`, async () => {
+            await upsertGenerationJob(this.env.DB, { id: jid('frame', idx), asset_id: p.assetId, workspace_id: wsId, kind: 'frame', idx, status: 'running', seed_url: clipUrl });
+            const out = (await extractLastFrame(this.env, { assetId: p.assetId, clipUrl, outKey })).publicUrl;
+            await upsertGenerationJob(this.env.DB, { id: jid('frame', idx), asset_id: p.assetId, workspace_id: wsId, kind: 'frame', idx, status: 'succeeded', seed_url: clipUrl, output_url: out });
+            return out;
+          });
+        };
 
         // The ordered list of clip URLs to stitch at the end.
         const clipUrls: string[] = [];
@@ -358,46 +446,24 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
         if (p.op === 'combine') {
           // No generation — just stitch the caller-supplied clips in order.
           clipUrls.push(...(p.sourceClipUrls ?? []));
-          if (clipUrls.length < 2) {
-            await failStitch('Combine needs at least 2 clips');
-            return;
-          }
+          if (clipUrls.length < 2) { await failStitch('Combine needs at least 2 clips'); return; }
         } else if (p.op === 'generate') {
           if (!p.modelSlug || !config) { await failStitch(`Unknown video model: ${p.modelSlug}`); return; }
-
+          await writeProgress(`part 1/${total}`);
           if (p.mode === 'chain') {
             // Sequential: each chunk's last frame seeds the next chunk (image-to-video).
             let seedUrl = p.referenceImageUrl;
             for (let i = 0; i < chunkCount; i++) {
-              const predId = await step.do(`stitch-gen-create-${i}`, async () =>
-                createReplicatePrediction(token, p.modelSlug!, config.buildInput(prompt, p.aspectRatio, chunkDuration, seedUrl)),
-              );
-              const r = await waitForPrediction(step, token, predId, `stitch-gen-wait-${i}`);
-              if (!r.ok) { await failStitch(r.reason, { chunk: i }); return; }
-              clipUrls.push(r.url);
-              if (i < chunkCount - 1) {
-                const frameUrl = r.url;
-                seedUrl = await step.do(`stitch-gen-frame-${i}`, async () =>
-                  (await extractLastFrame(this.env, { assetId: p.assetId, clipUrl: frameUrl, outKey: `${p.r2KeyPrefix}-frame-${i}.png` })).publicUrl,
-                );
-              }
+              const url = await finishChunk(i, await startChunk(i, prompt, seedUrl));
+              clipUrls.push(url);
+              if (i < chunkCount - 1) seedUrl = await ensureFrame(i, url, `${p.r2KeyPrefix}-frame-${i}.png`);
             }
           } else {
-            // Concat: fire all predictions up front (they run in parallel on Replicate),
-            // then poll each to completion. Only chunk 0 may use the seed reference image.
-            const predIds: string[] = [];
-            for (let i = 0; i < chunkCount; i++) {
-              const seed = i === 0 ? p.referenceImageUrl : undefined;
-              const predId = await step.do(`stitch-gen-create-${i}`, async () =>
-                createReplicatePrediction(token, p.modelSlug!, config.buildInput(prompt, p.aspectRatio, chunkDuration, seed)),
-              );
-              predIds.push(predId);
-            }
-            for (let i = 0; i < predIds.length; i++) {
-              const r = await waitForPrediction(step, token, predIds[i], `stitch-gen-wait-${i}`);
-              if (!r.ok) { await failStitch(r.reason, { chunk: i }); return; }
-              clipUrls.push(r.url);
-            }
+            // Concat: fire all predictions up front (parallel on Replicate), then await.
+            // Only chunk 0 may use the seed reference image.
+            const markers: ({ cached: string } | { predId: string })[] = [];
+            for (let i = 0; i < chunkCount; i++) markers.push(await startChunk(i, prompt, i === 0 ? p.referenceImageUrl : undefined));
+            for (let i = 0; i < chunkCount; i++) clipUrls.push(await finishChunk(i, markers[i]));
           }
         } else {
           // op === 'continue': extend an existing clip into a longer one.
@@ -405,41 +471,37 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
           const original = p.sourceClipUrls?.[0];
           if (!original) { await failStitch('Continue needs a source clip'); return; }
           clipUrls.push(original);
-
-          let seedUrl = await step.do('stitch-cont-frame-init', async () =>
-            (await extractLastFrame(this.env, { assetId: p.assetId, clipUrl: original, outKey: `${p.r2KeyPrefix}-frame-init.png` })).publicUrl,
-          );
-          for (let i = 0; i < chunkCount; i++) {
-            const predId = await step.do(`stitch-cont-create-${i}`, async () =>
-              createReplicatePrediction(token, p.modelSlug!, config.buildInput(prompt, p.aspectRatio, chunkDuration, seedUrl)),
-            );
-            const r = await waitForPrediction(step, token, predId, `stitch-cont-wait-${i}`);
-            if (!r.ok) { await failStitch(r.reason, { chunk: i }); return; }
-            clipUrls.push(r.url);
-            if (i < chunkCount - 1) {
-              const frameUrl = r.url;
-              seedUrl = await step.do(`stitch-cont-frame-${i}`, async () =>
-                (await extractLastFrame(this.env, { assetId: p.assetId, clipUrl: frameUrl, outKey: `${p.r2KeyPrefix}-frame-c${i}.png` })).publicUrl,
-              );
-            }
+          await writeProgress(`part 1/${total}`);
+          // Frame k seeds part k: init frame (from the original) seeds part 0; the frame
+          // after part i seeds part i+1.
+          let seedUrl = await ensureFrame(0, original, `${p.r2KeyPrefix}-frame-init.png`);
+          for (let i = 0; i < resolvedParts.length; i++) {
+            const url = await finishChunk(i, await startChunk(i, resolvedParts[i], seedUrl));
+            clipUrls.push(url);
+            if (i < resolvedParts.length - 1) seedUrl = await ensureFrame(i + 1, url, `${p.r2KeyPrefix}-frame-c${i}.png`);
           }
         }
 
-        // Stitch every collected clip into the final video (ffmpeg in a container).
+        // Stitch every collected clip into the final video (ffmpeg in a container),
+        // tracked as a 'concat' job for observability.
         const r2Key = await step.do('stitch-clips', { retries: { limit: 1, delay: '5 seconds' } }, async () => {
           const key = `${p.r2KeyPrefix}.mp4`;
+          await upsertGenerationJob(this.env.DB, { id: jid('concat', 0), asset_id: p.assetId, workspace_id: wsId, kind: 'concat', idx: 0, status: 'running', prompt: `concat ${clipUrls.length} clips` });
           await concatClips(this.env, { assetId: p.assetId, clipUrls, outKey: key, aspectRatio: p.aspectRatio });
+          await upsertGenerationJob(this.env.DB, { id: jid('concat', 0), asset_id: p.assetId, workspace_id: wsId, kind: 'concat', idx: 0, status: 'succeeded', output_url: key });
           return key;
         });
 
+        const finalCost = await reconcileCost();
         await step.do('finalize-stitch-video', async () => {
-          await updateAsset(this.env.DB, p.assetId, { status: 'ready', r2_key: r2Key });
+          await updateAsset(this.env.DB, p.assetId, { status: 'ready', r2_key: r2Key, cost_usd: finalCost });
           await writeKv(this.env.KV, p.assetId, { status: 'ready', r2_key: r2Key });
         });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         Logger.log('VideoStitchWorkflowFailed', { assetId: p.assetId, op: p.op }, err);
-        await updateAsset(this.env.DB, p.assetId, { status: 'failed', error_message: msg });
+        const cost_usd = await reconcileCost();
+        await updateAsset(this.env.DB, p.assetId, { status: 'failed', error_message: msg, cost_usd });
         await writeKv(this.env.KV, p.assetId, { status: 'failed' });
       }
     }
