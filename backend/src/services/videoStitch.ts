@@ -31,15 +31,6 @@ function dimsFor(aspectRatio: '16:9' | '9:16'): Dimensions {
   return aspectRatio === '16:9' ? { w: 1920, h: 1080 } : { w: 1080, h: 1920 };
 }
 
-/** Decode a base64 string (as returned by sandbox.readFile) into bytes. Only used
- *  on the fallback path when the R2 mount is unavailable. */
-function base64ToBytes(b64: string): Uint8Array {
-  const binary = atob(b64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-}
-
 /**
  * Bash script that downloads each clip, normalizes it to a uniform
  * resolution / fps / SAR / pixel-format (padding to preserve aspect ratio) and a
@@ -117,7 +108,10 @@ async function runJob(
     label: string;
   },
 ): Promise<StitchResult> {
-  const sandbox = getSandbox(env.Sandbox, opts.sandboxId);
+  // Pin the RPC transport: the fallback read-back uses `encoding: 'none'` streaming,
+  // which is only supported on the rpc transport (HTTP/WS throw). RPC is also the
+  // right choice for large binary I/O generally.
+  const sandbox = getSandbox(env.Sandbox, opts.sandboxId, { transport: 'rpc' });
   // Split the key into its parent prefix + filename so we can mount the prefix and
   // write the bare filename at the mount root (avoids creating dir-marker objects).
   const slash = opts.outKey.lastIndexOf('/');
@@ -162,12 +156,15 @@ async function runJob(
       }
       return { mounted: true, sizeBytes: head.size };
     } else {
-      // Fallback: read the artifact back and PUT it (buffers the file in memory).
-      const file = await sandbox.readFile(outPath, { encoding: 'base64' });
+      // Fallback: STREAM the artifact back to R2. We must not use base64 here — a
+      // base64 string is returned as a single RPC value capped at 32 MiB, which
+      // blows up for real videos (a ~39 MB mp4 → ~52 MB base64). `encoding: 'none'`
+      // returns a ReadableStream delivered directly over the capnp channel with no
+      // 32 MiB cap and no full-file buffering; we pipe it straight into R2.
+      const file = await sandbox.readFile(outPath, { encoding: 'none' });
       if (!file.success || !file.content) throw new Error(`ffmpeg ${opts.label}: output ${outPath} missing`);
-      const bytes = base64ToBytes(file.content);
-      await env.ASSETS.put(opts.outKey, bytes, { httpMetadata: { contentType: opts.contentType } });
-      return { mounted: false, sizeBytes: bytes.length };
+      await env.ASSETS.put(opts.outKey, file.content, { httpMetadata: { contentType: opts.contentType } });
+      return { mounted: false, sizeBytes: file.size };
     }
   } finally {
     // Free the container promptly — each stitch job gets its own short-lived sandbox.

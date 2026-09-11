@@ -47,6 +47,16 @@ function execCommand(): string {
   return sandboxMock.exec.mock.calls[0]?.[0] as string;
 }
 
+/** A one-chunk ReadableStream, mimicking sandbox.readFile({ encoding: 'none' }).content. */
+function streamOf(bytes: Uint8Array): ReadableStream<Uint8Array> {
+  return new ReadableStream({
+    start(controller) {
+      controller.enqueue(bytes);
+      controller.close();
+    },
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   // Sensible happy-path defaults; individual tests override as needed.
@@ -55,7 +65,8 @@ beforeEach(() => {
   sandboxMock.mountBucket.mockResolvedValue(undefined);
   sandboxMock.unmountBucket.mockResolvedValue(undefined);
   sandboxMock.exec.mockResolvedValue({ success: true, exitCode: 0, stderr: '' });
-  sandboxMock.readFile.mockResolvedValue({ success: true, content: btoa('hello') });
+  // encoding:'none' → a ReadableStream + size (streamed over RPC, no 32 MiB cap).
+  sandboxMock.readFile.mockResolvedValue({ success: true, content: streamOf(new Uint8Array([1, 2, 3, 4, 5])), size: 5 });
   sandboxMock.destroy.mockResolvedValue(undefined);
   headMock.mockResolvedValue({ size: 12_345 });
   putMock.mockResolvedValue(undefined);
@@ -136,7 +147,7 @@ describe('concatClips — mounted (direct-to-R2)', () => {
 // ─── concatClips: fallback path (mount unavailable) ───────────────────────────
 
 describe('concatClips — fallback (mount unavailable)', () => {
-  it('reads the artifact back and PUTs it with the right content-type', async () => {
+  it('streams the artifact back to R2 with the right content-type (no base64, no 32 MiB cap)', async () => {
     sandboxMock.mountBucket.mockRejectedValue(new Error('mount not supported'));
 
     const res = await concatClips(makeEnv(), {
@@ -146,20 +157,19 @@ describe('concatClips — fallback (mount unavailable)', () => {
       aspectRatio: '9:16',
     });
 
-    // Reports the fallback path + the byte length that was PUT (base64 of 'hello' = 5 bytes).
+    // Reports the fallback path + the size the sandbox reported for the artifact.
     expect(res).toEqual({ mounted: false, sizeBytes: 5 });
 
-    // Writes to a local path (not the mount) and reads it back.
+    // Writes to a local path (not the mount) and streams it back via encoding:'none'.
     expect(execCommand()).toContain('"/work/out.bin"');
-    expect(sandboxMock.readFile).toHaveBeenCalledWith('/work/out.bin', { encoding: 'base64' });
+    expect(sandboxMock.readFile).toHaveBeenCalledWith('/work/out.bin', { encoding: 'none' });
     expect(sandboxMock.unmountBucket).not.toHaveBeenCalled();
 
-    // PUTs the decoded bytes under the full key with the correct content type.
+    // PUTs the raw stream (not a buffered value) under the full key with the correct content type.
     expect(putMock).toHaveBeenCalledTimes(1);
-    const [key, bytes, opts] = putMock.mock.calls[0];
+    const [key, body, opts] = putMock.mock.calls[0];
     expect(key).toBe('ws1/th1/a1.mp4');
-    expect(bytes).toBeInstanceOf(Uint8Array);
-    expect(Array.from(bytes as Uint8Array)).toEqual([...'hello'].map((c) => c.charCodeAt(0)));
+    expect(body).toBeInstanceOf(ReadableStream);
     expect(opts).toEqual({ httpMetadata: { contentType: 'video/mp4' } });
   });
 });
@@ -208,7 +218,7 @@ describe('extractLastFrame', () => {
 
   it('PUTs a PNG content-type on the fallback path', async () => {
     sandboxMock.mountBucket.mockRejectedValue(new Error('no mount'));
-    sandboxMock.readFile.mockResolvedValue({ success: true, content: btoa('png-bytes') });
+    sandboxMock.readFile.mockResolvedValue({ success: true, content: streamOf(new Uint8Array([9, 9, 9])), size: 3 });
 
     await extractLastFrame(makeEnv(), {
       assetId: 'a1',
