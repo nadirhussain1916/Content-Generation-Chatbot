@@ -346,6 +346,14 @@ async function downloadAsset(asset: Asset, blobUrl?: string, aiLabel = false) {
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
 }
 
+// Format a playback length (seconds) as m:ss — e.g. 9 → "0:09", 75 → "1:15".
+function formatDuration(seconds: number): string {
+  const total = Math.round(seconds);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
 function AssetCard({
   asset, slug, blobUrl, isLoadingBlob, combineMode, selectionIndex, onToggleSelect, onContinue, onVisible, onDetails, onRecover, onRetry,
 }: {
@@ -383,6 +391,8 @@ function AssetCard({
 
   const [recovering, setRecovering] = useState(false);
   const [recoverError, setRecoverError] = useState<string | null>(null);
+  // Actual playback duration, read from the video's own metadata once it loads.
+  const [duration, setDuration] = useState<number | null>(null);
 
   async function handleRecover() {
     setRecovering(true);
@@ -493,12 +503,21 @@ function AssetCard({
                 muted
                 playsInline
                 preload='metadata'
+                onLoadedMetadata={(e) => {
+                  const d = e.currentTarget.duration;
+                  if (Number.isFinite(d) && d > 0) setDuration(d);
+                }}
               />
               <div className='pointer-events-none absolute inset-0 flex items-center justify-center opacity-90 transition-opacity group-hover:opacity-100'>
                 <div className='flex h-11 w-11 items-center justify-center rounded-full bg-black/45 backdrop-blur-sm ring-1 ring-white/20'>
                   <Play size={18} className='translate-x-0.5 text-white' fill='currentColor' />
                 </div>
               </div>
+              {duration != null && (
+                <span className='pointer-events-none absolute bottom-2 right-2 rounded-md bg-black/60 px-1.5 py-0.5 text-meta font-medium text-white tabular-nums shadow-sm backdrop-blur-sm'>
+                  {formatDuration(duration)}
+                </span>
+              )}
             </>
           )
         ) : (
