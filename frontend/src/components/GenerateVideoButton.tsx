@@ -305,6 +305,9 @@ export default function GenerateVideoButton({ slug, threadId, message, existingA
           <p className='text-meta text-text-muted leading-snug'>
             We take the last frame of the original and generate each part from it, then stitch them into one longer clip.
           </p>
+          <p className='text-meta text-text-muted leading-snug'>
+            The number of parts is set by the agent — ask in chat to add, remove, or reword parts.
+          </p>
         </div>
       )}
 
