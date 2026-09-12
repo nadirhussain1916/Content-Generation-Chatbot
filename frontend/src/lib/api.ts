@@ -137,6 +137,13 @@ export const adminApi = {
       token,
     ),
 
+  validateReplicateInput: (token: string, req: { modelSlug: string; input: Record<string, unknown> }) =>
+    request<{ success: boolean; data?: { valid: boolean; error?: unknown }; message?: string }>(
+      '/api/admin/mock-replicate/validate',
+      { method: 'POST', body: JSON.stringify(req) },
+      token,
+    ),
+
   getMockReplicate: (token: string) =>
     request<{ success: boolean; data?: MockReplicateResponse; message?: string }>(
       '/api/admin/mock-replicate',

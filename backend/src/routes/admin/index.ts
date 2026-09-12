@@ -7,7 +7,7 @@ import { parseDateRange } from '../billing';
 import { concatClips, extractLastFrame } from '../../services/videoStitch';
 import { getPublicUrl } from '../../services/r2';
 import { STITCH_MIN_CHUNKS, STITCH_MAX_CHUNKS } from '../../services/generationConfig';
-import { parseMockReplicateConfig, type MockReplicateConfig } from '../../services/mockReplicate';
+import { parseMockReplicateConfig, validateReplicateInput, type MockReplicateConfig } from '../../services/mockReplicate';
 import type { CloudflareBindings } from '../../env';
 import type { ContextVariables, TfResponse } from '../../types';
 import { Logger } from '../../utils/Logger';
@@ -407,6 +407,31 @@ interface MockReplicateResponse {
   global: MockReplicateConfig;
   overrides: MockWorkspaceOverride[];
 }
+
+// POST /api/admin/mock-replicate/validate
+// Dry-run input validation against our local schema — returns a 422-shaped error
+// body if the input would be rejected, or { valid: true } if it looks correct.
+// No Replicate API call is made; this costs nothing and works with no token.
+adminRouter.post('/mock-replicate/validate', async (c) => {
+  try {
+    const body = await c.req.json() as { modelSlug?: string; input?: Record<string, unknown> };
+    if (!body.modelSlug || typeof body.modelSlug !== 'string') {
+      return c.json<TfResponse<null>>({ success: false, message: 'modelSlug is required' }, 400);
+    }
+    const input = (typeof body.input === 'object' && body.input !== null) ? body.input : {};
+    const error = validateReplicateInput(body.modelSlug, input);
+    if (error) {
+      return c.json<TfResponse<{ valid: false; error: typeof error }>>({
+        success: true,
+        data: { valid: false, error },
+      });
+    }
+    return c.json<TfResponse<{ valid: true }>>({ success: true, data: { valid: true } });
+  } catch (error) {
+    Logger.log('AdminMockReplicateValidateError', undefined, error);
+    return c.json<TfResponse<null>>({ success: false, message: 'Validation check failed' }, 500);
+  }
+});
 
 // GET /api/admin/mock-replicate — current global config + all workspace overrides
 adminRouter.get('/mock-replicate', async (c) => {

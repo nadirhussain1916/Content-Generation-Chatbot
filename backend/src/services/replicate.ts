@@ -9,6 +9,7 @@ import {
   isMockReplicateEnabled,
   mockCreatePrediction,
   mockGetPrediction,
+  validateReplicateInput,
   type ReplicateValidationError,
 } from './mockReplicate';
 
@@ -35,13 +36,15 @@ export type CreatePredictionResult =
 /**
  * Create a Replicate prediction for the given model + input.
  *
- * When the mock is enabled for `workspaceId`, validates input (returning an exact
- * 422 body on failure) and stores state in KV instead of hitting Replicate.
- * When the mock is off, calls the real `POST /v1/models/{slug}/predictions`.
+ * **Pre-flight validation runs on EVERY call** (mock and real) so malformed inputs
+ * are caught locally before a credit is spent.  The validation mirrors the exact 422
+ * body shape Replicate returns, so downstream error handling is unchanged.
+ *
+ * When the mock is enabled for `workspaceId`, validated inputs are stored in KV
+ * instead of hitting Replicate.  When the mock is off, the real API is called.
  *
  * Returns `{ ok: true, id }` on success, or `{ ok: false, status, errorText }`
- * on any failure — preserving the same semantics callers already use so they need
- * no behaviour change.
+ * on any failure — preserving the same semantics callers already use.
  */
 export async function createPrediction(
   env: Pick<CloudflareBindings, 'DB' | 'KV' | 'ASSETS_PUBLIC_URL' | 'REPLICATE_API_TOKEN'>,
@@ -49,19 +52,24 @@ export async function createPrediction(
   modelSlug: string,
   input: Record<string, unknown>,
 ): Promise<CreatePredictionResult> {
+  // ── Pre-flight: validate locally before spending a Replicate credit ───────────
+  // Catches bad field names, missing required fields, out-of-range durations, etc.
+  // Returns the exact 422 body Replicate would return, so callers need no changes.
+  const validationError = validateReplicateInput(modelSlug, input);
+  if (validationError) {
+    return {
+      ok: false,
+      status: 422,
+      errorText: JSON.stringify(validationError satisfies ReplicateValidationError),
+    };
+  }
+
   const mockEnabled = await isMockReplicateEnabled(env, workspaceId);
 
   if (mockEnabled) {
+    // Input is already validated above — mockCreatePrediction only produces ok:true
     const result = await mockCreatePrediction(env, workspaceId, modelSlug, input);
-    if (!result.ok) {
-      return {
-        ok: false,
-        status: result.status,
-        errorText: JSON.stringify(result.errorBody satisfies ReplicateValidationError),
-      };
-    }
-    const id = result.prediction['id'] as string;
-    return { ok: true, id };
+    return { ok: true, id: result.prediction['id'] as string };
   }
 
   // Real Replicate call

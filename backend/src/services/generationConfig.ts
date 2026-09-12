@@ -171,11 +171,13 @@ export type VideoModelConfig = {
 export const VIDEO_MODEL_CONFIGS: Record<VideoModelId, VideoModelConfig> = {
   'google/veo-2': {
     slug: 'google/veo-2',
+    // Veo 2 API field for the reference/starting image is `image`, not `image_url`.
+    // Verified against live docs: replicate.com/google/veo-2/versions/…/api
     buildInput: (prompt, aspectRatio, duration, referenceImageUrl) => ({
       prompt,
       aspect_ratio: aspectRatio,
       duration,
-      ...(referenceImageUrl && { image_url: referenceImageUrl }),
+      ...(referenceImageUrl && { image: referenceImageUrl }),
     }),
   },
   'lightricks/ltx-2.3-fast': {
@@ -244,12 +246,19 @@ export const I2V_CAPABLE = new Set<VideoModelId>(
   (VIDEO_MODELS as readonly VideoModelId[]).filter((m) => !TEXT_ONLY_VIDEO_MODELS.has(m)),
 );
 
-/** The Replicate input field used for the starting frame, per model (null = text-only). */
-export function referenceParamFor(modelId: string): 'image' | 'image_url' | 'first_frame' | null {
-  if (modelId === 'google/veo-2') return 'image_url';
+/**
+ * The Replicate input field used for the starting frame, per model (null = text-only).
+ *
+ * Verified against live model docs (Sep 2026):
+ *   google/veo-2       → `image`       (NOT image_url — confirmed via versioned API schema)
+ *   wan-video/wan-2.7-i2v → `first_frame`
+ *   wan-video/wan-2.7-t2v → null (text-only)
+ *   all others         → `image`
+ */
+export function referenceParamFor(modelId: string): 'image' | 'first_frame' | null {
   if (modelId === 'wan-video/wan-2.7-i2v') return 'first_frame';
   if (modelId === 'wan-video/wan-2.7-t2v') return null;
-  return 'image';
+  return 'image'; // covers ltx-2.3-fast, ltx-2.3-pro, seedance-2.0, seedance-2.0-fast, google/veo-2
 }
 
 /** Longest single-clip length each model accepts (derived from MODEL_VALID_DURATIONS). */

@@ -15,6 +15,7 @@ import {
   Building2,
   ChevronDown,
   ChevronUp,
+  ShieldCheck,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -195,6 +196,172 @@ function ScopeCard({ label, sublabel, scope, initial, onSave, onDelete, defaultO
   );
 }
 
+// ─── Validation tester ────────────────────────────────────────────────────────
+// Tests a payload against our local validation schema without calling Replicate.
+// Use this to verify a request is correct BEFORE it costs a credit.
+
+const SUPPORTED_MODELS = [
+  'lightricks/ltx-2.3-fast',
+  'lightricks/ltx-2.3-pro',
+  'bytedance/seedance-2.0',
+  'bytedance/seedance-2.0-fast',
+  'wan-video/wan-2.7-t2v',
+  'wan-video/wan-2.7-i2v',
+  'google/veo-2',
+] as const;
+
+const EXAMPLE_INPUTS: Record<string, string> = {
+  'lightricks/ltx-2.3-fast': JSON.stringify({ prompt: 'A cat walking on a rooftop at sunset', aspect_ratio: '9:16', duration: 6 }, null, 2),
+  'lightricks/ltx-2.3-pro': JSON.stringify({ task: 'text_to_video', prompt: 'Timelapse of clouds over a mountain', aspect_ratio: '16:9', duration: 6 }, null, 2),
+  'bytedance/seedance-2.0': JSON.stringify({ prompt: 'A surfer riding a wave', aspect_ratio: '16:9', duration: 5 }, null, 2),
+  'bytedance/seedance-2.0-fast': JSON.stringify({ prompt: 'A surfer riding a wave', aspect_ratio: '16:9', duration: 5 }, null, 2),
+  'wan-video/wan-2.7-t2v': JSON.stringify({ prompt: 'Cherry blossoms falling in a park', aspect_ratio: '9:16', duration: 5 }, null, 2),
+  'wan-video/wan-2.7-i2v': JSON.stringify({ prompt: 'The character waves hello', first_frame: 'https://example.com/frame.jpg', aspect_ratio: '9:16', duration: 5 }, null, 2),
+  'google/veo-2': JSON.stringify({ prompt: 'A dog chasing a frisbee in slow motion', aspect_ratio: '16:9', duration: 5 }, null, 2),
+};
+
+interface ValidationResult {
+  valid: boolean;
+  error?: {
+    detail: string;
+    status: number;
+    title: string;
+    invalid_fields: Array<{ type: string; field: string; description: string }>;
+  };
+}
+
+function ValidationTester() {
+  const { getToken } = useAuth();
+  const [modelSlug, setModelSlug] = useState<string>(SUPPORTED_MODELS[0]);
+  const [inputText, setInputText] = useState<string>(EXAMPLE_INPUTS[SUPPORTED_MODELS[0]]);
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<ValidationResult | null>(null);
+  const [parseError, setParseError] = useState<string | null>(null);
+
+  const handleModelChange = (slug: string) => {
+    setModelSlug(slug);
+    setInputText(EXAMPLE_INPUTS[slug] ?? '{}');
+    setResult(null);
+    setParseError(null);
+  };
+
+  const validate = async () => {
+    setParseError(null);
+    setResult(null);
+
+    let input: Record<string, unknown>;
+    try {
+      input = JSON.parse(inputText) as Record<string, unknown>;
+    } catch {
+      setParseError('Invalid JSON — fix the input and try again.');
+      return;
+    }
+
+    setRunning(true);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error('Not authenticated');
+      const res = await adminApi.validateReplicateInput(token, { modelSlug, input });
+      if (!res.success) throw new Error(res.message ?? 'Validation endpoint failed');
+      setResult(res.data as ValidationResult);
+    } catch (err) {
+      setParseError(err instanceof Error ? err.message : 'Request failed.');
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div className='rounded-2xl border border-border-soft bg-surface-card p-4 space-y-4'>
+      {/* Model selector */}
+      <div>
+        <label className='text-meta text-text-muted block mb-1'>Model</label>
+        <select
+          value={modelSlug}
+          onChange={(e) => handleModelChange(e.target.value)}
+          className='w-full font-mono text-message text-text-primary bg-surface border border-border-soft rounded-xl px-3 py-2 focus:outline-none focus:border-brand/50 transition-colors'
+        >
+          {SUPPORTED_MODELS.map((m) => (
+            <option key={m} value={m}>{m}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Input JSON */}
+      <div>
+        <label className='text-meta text-text-muted block mb-1'>
+          Input <span className='text-text-muted/60'>(JSON — the object you'd send as Replicate's <code className='font-mono text-brand'>input</code> field)</span>
+        </label>
+        <textarea
+          value={inputText}
+          onChange={(e) => { setInputText(e.target.value); setResult(null); setParseError(null); }}
+          rows={10}
+          spellCheck={false}
+          className='w-full font-mono text-meta text-text-primary bg-surface border border-border-soft rounded-xl px-3 py-2 placeholder:text-text-muted focus:outline-none focus:border-brand/50 transition-colors resize-y'
+        />
+      </div>
+
+      {/* Run */}
+      <div className='flex items-center gap-3 flex-wrap'>
+        <button
+          onClick={validate}
+          disabled={running}
+          className='flex items-center gap-2 px-4 py-2 rounded-xl bg-ink text-on-ink text-message font-semibold disabled:opacity-60 transition-opacity'
+        >
+          {running ? <Loader2 size={16} className='animate-spin' /> : <ShieldCheck size={16} />}
+          {running ? 'Validating…' : 'Validate (no API call)'}
+        </button>
+        <p className='text-meta text-text-muted'>No request is sent to Replicate. Zero cost.</p>
+      </div>
+
+      {/* Parse error */}
+      {parseError && (
+        <div className='flex items-start gap-2 text-red-500 text-message'>
+          <AlertTriangle size={15} className='mt-0.5 flex-shrink-0' /> {parseError}
+        </div>
+      )}
+
+      {/* Result */}
+      {result && (
+        <div className={cn(
+          'rounded-xl border p-4 space-y-3',
+          result.valid
+            ? 'border-green-500/30 bg-green-500/5'
+            : 'border-red-500/30 bg-red-500/5',
+        )}>
+          <div className={cn('flex items-center gap-2 font-semibold text-message', result.valid ? 'text-green-500' : 'text-red-500')}>
+            {result.valid
+              ? <><CheckCircle2 size={16} /> Valid — this input would be accepted by Replicate</>
+              : <><AlertTriangle size={16} /> Invalid — Replicate would return 422</>}
+          </div>
+
+          {!result.valid && result.error && (
+            <div className='space-y-2'>
+              <p className='text-meta text-text-muted font-mono'>{result.error.title}</p>
+              <ul className='space-y-1'>
+                {result.error.invalid_fields.map((f, i) => (
+                  <li key={i} className='text-meta text-red-400 font-mono flex gap-2'>
+                    <span className='text-red-500/60'>[{f.type}]</span>
+                    <span className='text-brand'>{f.field}</span>
+                    <span>—</span>
+                    <span>{f.description}</span>
+                  </li>
+                ))}
+              </ul>
+              <details className='text-meta'>
+                <summary className='cursor-pointer text-text-muted hover:text-text-primary'>Raw 422 body</summary>
+                <pre className='mt-2 p-3 rounded-lg bg-surface font-mono text-text-secondary text-xs whitespace-pre-wrap break-all'>
+                  {JSON.stringify(result.error, null, 2)}
+                </pre>
+              </details>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Add override form ────────────────────────────────────────────────────────
 
 interface AddOverrideFormProps {
@@ -315,6 +482,19 @@ export default function AdminMockPage() {
               <p className='mt-1 text-meta text-text-secondary'>{error}</p>
             </div>
           )}
+
+          {/* Validation tester — always visible (no mock toggle required) */}
+          <section className='space-y-2'>
+            <div className='flex items-center gap-2 text-message font-semibold text-text-primary'>
+              <ShieldCheck size={16} className='text-text-muted' /> Pre-flight validation
+            </div>
+            <p className='text-meta text-text-muted -mt-1'>
+              Test whether a Replicate input payload is valid without making an API call.
+              The same check runs automatically before every real generation — catching mistakes
+              before they cost a credit.
+            </p>
+            <ValidationTester />
+          </section>
 
           {!loading && !error && (
             <>
