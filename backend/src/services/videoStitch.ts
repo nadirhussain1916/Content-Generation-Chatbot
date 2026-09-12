@@ -71,7 +71,16 @@ while IFS= read -r url; do
   echo "file '\${norm}'" >> concat.txt
   i=$((i+1))
 done < urls.txt
-ffmpeg -y -f concat -safe 0 -i concat.txt -c copy -movflags +faststart _out.mp4
+# RE-ENCODE the join — never stream-copy it. Concatenating separately-encoded
+# segments with stream copy leaves per-segment edit lists / non-monotonic timestamps,
+# so the output moov reports only the FIRST segment's duration and players stop there
+# (confirmed in prod: a 4-clip stitch produced a full-size file that only played the
+# original's length). The clips are already normalized to identical params, so a single
+# re-encode rebuilds one clean, continuous CFR timeline with the correct total duration.
+ffmpeg -y -fflags +genpts -f concat -safe 0 -i concat.txt \
+  -c:v libx264 -preset veryfast -crf 18 -pix_fmt yuv420p \
+  -c:a aac -ar 48000 -ac 2 \
+  -movflags +faststart _out.mp4
 cp _out.mp4 "$OUT"
 `;
 }

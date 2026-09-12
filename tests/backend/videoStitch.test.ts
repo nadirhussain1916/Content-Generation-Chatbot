@@ -118,6 +118,12 @@ describe('concatClips — mounted (direct-to-R2)', () => {
     expect(script).toContain('anullsrc');             // silent-audio injection for clips w/o audio
     expect(script).toContain('cp _out.mp4 "$OUT"');   // sequential copy onto the mount
     expect(script).toContain('scale=1920:1080');      // 16:9 target resolution
+
+    // Regression: the final join must RE-ENCODE, never `-c copy`. Stream-copying
+    // separately-encoded segments produces a file whose duration reflects only the
+    // first clip (players stop early), even though all clips' bytes are present.
+    expect(script).not.toContain('-c copy');
+    expect(script).toContain('-c:v libx264');
   });
 
   it('uses portrait dimensions for 9:16', async () => {
