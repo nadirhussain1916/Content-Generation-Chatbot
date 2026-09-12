@@ -103,10 +103,12 @@ export async function createPrediction(
 /**
  * Fetch the current state of a Replicate prediction.
  *
- * When mock is enabled and the id starts with "mock_", reads from KV and returns
- * "succeeded" immediately (or "failed" for FAIL-sentinel pool entries). Falls
- * through to the real Replicate API if the KV entry is missing (edge case: id
- * from a real generation while mock was off).
+ * When mock is enabled, reads state from KV and returns the correct lifecycle
+ * status: 'starting' (on create), 'processing' (first polls), then 'succeeded'
+ * or 'failed' once readyAt has passed — mirroring real Replicate's poll sequence.
+ *
+ * Falls through to the real Replicate API if the KV entry is missing (e.g. a
+ * pre-existing real prediction while mock was off).
  */
 export async function getPrediction(
   env: Pick<CloudflareBindings, 'DB' | 'KV' | 'REPLICATE_API_TOKEN'>,

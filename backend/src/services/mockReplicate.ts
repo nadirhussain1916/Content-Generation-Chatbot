@@ -31,15 +31,35 @@ export interface MockReplicateConfig {
 
 // ─── Internal KV state ───────────────────────────────────────────────────────
 
+/**
+ * Prediction lifecycle stored in KV between the POST (create) and subsequent GETs (poll).
+ *
+ * readyAt — ISO timestamp after which polls return 'succeeded' (or 'failed').
+ *   Set to createdAt + MOCK_PROCESSING_MS so the first poll (2 s sleep) sees
+ *   'processing' and the second poll (4 s sleep) sees the final state.
+ *   This exercises the entire poll loop, not just a single iteration.
+ *
+ * fail / failReason — FAIL sentinel from the URL pool.
+ */
 interface MockPredictionEntry {
   id: string;
   modelSlug: string;
   url: string;
   durationSec: number;
   createdAt: string;
+  readyAt: string;  // ISO — polls before this timestamp get status:'processing'
   fail?: boolean;
   failReason?: string;
 }
+
+/**
+ * How long (ms) a mock prediction stays in 'processing' state after creation.
+ * With 2-second mock sleeps, setting this to 3 s means:
+ *   poll-0 (t≈2 s)  → processing
+ *   poll-1 (t≈4 s)  → succeeded / failed
+ * Adjust freely — it only affects how many poll iterations the workflow does.
+ */
+const MOCK_PROCESSING_MS = 3_000;
 
 // ─── 422 validation error shape (verified against replicate.com/docs/reference/http) ─
 
@@ -609,7 +629,7 @@ function buildPredictionObject(
   id: string,
   modelSlug: string,
   input: Record<string, unknown>,
-  status: 'starting' | 'succeeded' | 'failed',
+  status: 'starting' | 'processing' | 'succeeded' | 'failed',
   output: string | null,
   error: string | null,
   durationSec: number,
@@ -617,17 +637,18 @@ function buildPredictionObject(
 ): Record<string, unknown> {
   const now = new Date().toISOString();
   const isTerminal = status === 'succeeded' || status === 'failed';
+  const hasStarted = status !== 'starting';
   return {
     id,
     model: modelSlug,
     version: null,
     input,
-    logs: '',
-    output,
-    error,
+    logs: hasStarted ? 'Running prediction...\n' : '',
+    output: isTerminal ? output : null,
+    error: isTerminal ? error : null,
     status,
     created_at: createdAt,
-    started_at: status !== 'starting' ? createdAt : null,
+    started_at: hasStarted ? createdAt : null,
     completed_at: isTerminal ? now : null,
     metrics: status === 'succeeded'
       ? { predict_time: durationSec, total_time: durationSec, video_output_duration_seconds: durationSec }
@@ -681,9 +702,12 @@ export async function mockCreatePrediction(
   const id = `mock_${crypto.randomUUID()}`;
   const durationSec = typeof input['duration'] === 'number' ? input['duration'] : 5;
   const createdAt = new Date().toISOString();
+  // readyAt is MOCK_PROCESSING_MS in the future so the first poll (after the 2 s mock
+  // sleep) sees 'processing' and a subsequent poll sees the terminal state.
+  const readyAt = new Date(Date.now() + MOCK_PROCESSING_MS).toISOString();
 
   const entry: MockPredictionEntry = {
-    id, modelSlug, url: isFail ? '' : url, durationSec, createdAt,
+    id, modelSlug, url: isFail ? '' : url, durationSec, createdAt, readyAt,
     ...(isFail ? { fail: true, failReason } : {}),
   };
   await env.KV.put(`mock:pred:${id}`, JSON.stringify(entry), { expirationTtl: KV_TTL });
@@ -693,10 +717,15 @@ export async function mockCreatePrediction(
 
 /**
  * Retrieve a mock prediction by its id from KV.
- * Returns null if the id is not a mock prediction (real ids have no KV entry).
+ * Returns null when the id has no KV entry (i.e. it is a real Replicate id).
  *
- * Always returns "succeeded" immediately (so the workflow only waits one 2-second
- * sleep), unless the pool entry was a FAIL sentinel.
+ * Lifecycle mirrors real Replicate:
+ *   POST (create)  → starting
+ *   GET poll-0     → processing   (readyAt has not passed yet)
+ *   GET poll-1+    → succeeded / failed  (readyAt has passed)
+ *
+ * This ensures the workflow's poll loop runs at least two iterations, exercising
+ * the full starting → processing → terminal path rather than short-circuiting.
  */
 export async function mockGetPrediction(
   kv: KVNamespace,
@@ -707,6 +736,16 @@ export async function mockGetPrediction(
 
   const entry = JSON.parse(raw) as MockPredictionEntry;
 
+  // Still processing — readyAt hasn't been reached yet.
+  const isReady = Date.now() >= new Date(entry.readyAt).getTime();
+  if (!isReady) {
+    return buildPredictionObject(
+      entry.id, entry.modelSlug, {}, 'processing',
+      null, null, entry.durationSec, entry.createdAt,
+    );
+  }
+
+  // Terminal: FAIL sentinel → failed; otherwise → succeeded.
   if (entry.fail) {
     return buildPredictionObject(
       entry.id, entry.modelSlug, {}, 'failed',
