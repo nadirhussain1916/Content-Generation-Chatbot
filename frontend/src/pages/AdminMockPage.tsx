@@ -16,6 +16,7 @@ import {
   ChevronDown,
   ChevronUp,
   ShieldCheck,
+  HardDrive,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -40,17 +41,19 @@ interface ScopeCardProps {
   sublabel?: string;
   scope: string; // 'global' or workspace id
   initial: MockReplicateConfig;
+  getToken: () => Promise<string | null>;
   onSave: (cfg: { scope: string; enabled: boolean; videoUrls: string[] }) => Promise<void>;
   onDelete?: () => Promise<void>;
   defaultOpen?: boolean;
 }
 
-function ScopeCard({ label, sublabel, scope, initial, onSave, onDelete, defaultOpen = false }: ScopeCardProps) {
+function ScopeCard({ label, sublabel, scope, initial, getToken, onSave, onDelete, defaultOpen = false }: ScopeCardProps) {
   const [open, setOpen] = useState(defaultOpen);
   const [enabled, setEnabled] = useState(initial.enabled);
   const [urlsText, setUrlsText] = useState<string>(serializeUrls(initial.videoUrls));
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [loadingR2, setLoadingR2] = useState(false);
   const [feedback, setFeedback] = useState<{ ok: boolean; msg: string } | null>(null);
 
   const handleSave = async () => {
@@ -76,6 +79,30 @@ function ScopeCard({ label, sublabel, scope, initial, onSave, onDelete, defaultO
     } catch (err) {
       setFeedback({ ok: false, msg: err instanceof Error ? err.message : 'Delete failed.' });
       setDeleting(false);
+    }
+  };
+
+  const handleLoadFromR2 = async () => {
+    setLoadingR2(true);
+    setFeedback(null);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error('Not authenticated');
+      const res = await adminApi.getMockReplicateR2Videos(token, scope);
+      if (!res.success || !res.data) throw new Error(res.message ?? 'Failed to load R2 videos');
+      const { urls } = res.data;
+      if (urls.length === 0) {
+        setFeedback({ ok: false, msg: 'No ready videos found in R2 for this scope.' });
+        return;
+      }
+      // Replace the textarea with the fetched URLs (keeps any FAIL sentinels the user typed)
+      const existing = parseUrls(urlsText).filter((u) => /^FAIL/i.test(u));
+      setUrlsText(serializeUrls([...urls, ...existing]));
+      setFeedback({ ok: true, msg: `Loaded ${urls.length} video${urls.length !== 1 ? 's' : ''} from R2.` });
+    } catch (err) {
+      setFeedback({ ok: false, msg: err instanceof Error ? err.message : 'Load failed.' });
+    } finally {
+      setLoadingR2(false);
     }
   };
 
@@ -150,9 +177,22 @@ function ScopeCard({ label, sublabel, scope, initial, onSave, onDelete, defaultO
 
           {/* Video URL pool */}
           <div>
-            <label className='text-meta text-text-muted block mb-1'>
-              Video URL pool <span className='text-text-muted/60'>(one per line)</span>
-            </label>
+            <div className='flex items-center justify-between mb-1'>
+              <label className='text-meta text-text-muted'>
+                Video URL pool <span className='text-text-muted/60'>(one per line)</span>
+              </label>
+              <button
+                onClick={handleLoadFromR2}
+                disabled={loadingR2}
+                className='flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-surface border border-border-soft text-meta text-text-secondary hover:text-text-primary hover:bg-surface/60 transition-colors disabled:opacity-50'
+                title='Fetch ready R2 videos for this scope and fill the pool'
+              >
+                {loadingR2
+                  ? <Loader2 size={13} className='animate-spin' />
+                  : <HardDrive size={13} />}
+                {loadingR2 ? 'Loading…' : 'Load from R2'}
+              </button>
+            </div>
             <textarea
               value={urlsText}
               onChange={(e) => setUrlsText(e.target.value)}
@@ -508,6 +548,7 @@ export default function AdminMockPage() {
                   sublabel='applies when no workspace override exists'
                   scope='global'
                   initial={globalCfg}
+                  getToken={getToken}
                   onSave={async (cfg) => {
                     await save(cfg);
                     setGlobalCfg({ enabled: cfg.enabled, videoUrls: cfg.videoUrls });
@@ -538,6 +579,7 @@ export default function AdminMockPage() {
                     sublabel={o.name !== o.workspaceId ? o.slug : undefined}
                     scope={o.workspaceId}
                     initial={o}
+                    getToken={getToken}
                     onSave={save}
                     onDelete={() => deleteOverride(o.workspaceId)}
                   />
@@ -549,6 +591,7 @@ export default function AdminMockPage() {
                     label={id}
                     scope={id}
                     initial={{ enabled: false, videoUrls: [] }}
+                    getToken={getToken}
                     onSave={save}
                     onDelete={() => deleteOverride(id)}
                     defaultOpen

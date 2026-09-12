@@ -164,6 +164,14 @@ export const adminApi = {
       { method: 'DELETE' },
       token,
     ),
+
+  /** List ready R2 video public URLs for a scope. scope = workspaceId | 'global' */
+  getMockReplicateR2Videos: (token: string, scope: string) =>
+    request<{ success: boolean; data?: { urls: string[]; scope: string }; message?: string }>(
+      `/api/admin/mock-replicate/r2-videos?scope=${encodeURIComponent(scope)}`,
+      { method: 'GET' },
+      token,
+    ),
 };
 
 // ─── Billing / usage ──────────────────────────────────────────────────────────

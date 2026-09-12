@@ -433,6 +433,44 @@ adminRouter.post('/mock-replicate/validate', async (c) => {
   }
 });
 
+// GET /api/admin/mock-replicate/r2-videos — list ready R2 video public URLs available for the mock pool
+//   ?scope=<workspaceId>  → videos owned by that workspace
+//   ?scope=global (or omit) → up to 20 ready videos from any workspace on the platform
+adminRouter.get('/mock-replicate/r2-videos', async (c) => {
+  try {
+    const scope = c.req.query('scope') ?? 'global';
+
+    let rows: { r2_key: string }[];
+    if (scope && scope !== 'global') {
+      // Workspace-scoped: videos owned by this workspace
+      const result = await c.env.DB
+        .prepare(
+          "SELECT r2_key FROM assets WHERE workspace_id = ? AND type = 'video' AND status = 'ready' AND r2_key IS NOT NULL ORDER BY created_at DESC LIMIT 30",
+        )
+        .bind(scope)
+        .all<{ r2_key: string }>();
+      rows = result.results;
+    } else {
+      // Global: sample across all workspaces (useful for seeding the global default)
+      const result = await c.env.DB
+        .prepare(
+          "SELECT r2_key FROM assets WHERE type = 'video' AND status = 'ready' AND r2_key IS NOT NULL ORDER BY created_at DESC LIMIT 20",
+        )
+        .all<{ r2_key: string }>();
+      rows = result.results;
+    }
+
+    const urls = rows.map((r) => getPublicUrl(c.env.ASSETS_PUBLIC_URL, r.r2_key));
+    return c.json<TfResponse<{ urls: string[]; scope: string }>>({
+      success: true,
+      data: { urls, scope },
+    });
+  } catch (error) {
+    Logger.log('AdminMockReplicateR2VideosError', undefined, error);
+    return c.json<TfResponse<null>>({ success: false, message: 'Failed to list R2 videos' }, 500);
+  }
+});
+
 // GET /api/admin/mock-replicate — current global config + all workspace overrides
 adminRouter.get('/mock-replicate', async (c) => {
   try {
