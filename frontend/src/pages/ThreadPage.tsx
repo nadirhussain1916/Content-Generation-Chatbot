@@ -103,6 +103,10 @@ export default function ThreadPage() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // A suggested prompt passed from the Generations "Continue → With Agent" flow —
+  // pre-fills the composer (the user can edit before sending) rather than auto-sending.
+  const initialDraftPrompt = (location.state as { draftPrompt?: string } | null)?.draftPrompt;
+
   const [thread, setThread] = useState<Thread | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   // Locked-character info for the include/exclude toggle on draft cards
@@ -545,6 +549,8 @@ export default function ThreadPage() {
               uploads={uploads}
               uploading={uploading}
               uploadFile={uploadFile}
+              initialValue={initialDraftPrompt}
+              autoFocus={!!initialDraftPrompt}
               placeholder={
                 thread?.status === 'planning'
                   ? 'Describe what you want to create... (type / to pick a reference)'

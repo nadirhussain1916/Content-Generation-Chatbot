@@ -17,6 +17,8 @@ export default defineConfig({
           name: 'backend',
           environment: 'node',
           include: ['backend/**/*.test.ts'],
+          // Polyfill the Workers-only FixedLengthStream global (videoStitch fallback).
+          setupFiles: ['./stubs/fixed-length-stream.ts'],
         },
       },
       {

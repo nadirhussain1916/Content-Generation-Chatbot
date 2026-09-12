@@ -195,6 +195,67 @@ function extendDuration(input: Record<string, unknown>, fields: InvalidField[]):
   }
 }
 
+/** Validate that a field, when present, is a boolean. */
+function validateBoolean(field: string, input: Record<string, unknown>, fields: InvalidField[]): void {
+  const val = input[field];
+  if (val !== undefined && typeof val !== 'boolean') {
+    fields.push({ type: 'invalid', field, description: `${field} must be a boolean (true or false); got ${JSON.stringify(val)}` });
+  }
+}
+
+/** Validate that a field, when present, is an integer and optionally within [min, max]. */
+function validateInteger(
+  field: string,
+  input: Record<string, unknown>,
+  fields: InvalidField[],
+  opts?: { min?: number; max?: number },
+): void {
+  const val = input[field];
+  if (val === undefined) return;
+  if (typeof val !== 'number' || !Number.isInteger(val)) {
+    fields.push({ type: 'invalid', field, description: `${field} must be an integer` });
+    return;
+  }
+  if (opts?.min !== undefined && val < opts.min) {
+    fields.push({ type: 'invalid', field, description: `${field} must be >= ${opts.min}` });
+  }
+  if (opts?.max !== undefined && val > opts.max) {
+    fields.push({ type: 'invalid', field, description: `${field} must be <= ${opts.max}` });
+  }
+}
+
+/** Validate that a field, when present, is a non-empty string. */
+function validateString(field: string, input: Record<string, unknown>, fields: InvalidField[]): void {
+  const val = input[field];
+  if (val !== undefined && (typeof val !== 'string' || val.trim() === '')) {
+    fields.push({ type: 'invalid', field, description: `${field} must be a non-empty string` });
+  }
+}
+
+/** Validate that a field, when present, is an array where every item satisfies itemCheck. */
+function validateArray(
+  field: string,
+  input: Record<string, unknown>,
+  fields: InvalidField[],
+  opts: { maxLength?: number; itemType?: 'string' },
+): void {
+  const val = input[field];
+  if (val === undefined) return;
+  if (!Array.isArray(val)) {
+    fields.push({ type: 'invalid', field, description: `${field} must be an array` });
+    return;
+  }
+  if (opts.maxLength !== undefined && val.length > opts.maxLength) {
+    fields.push({ type: 'invalid', field, description: `${field} accepts at most ${opts.maxLength} items; got ${val.length}` });
+  }
+  if (opts.itemType === 'string') {
+    const badIdx = (val as unknown[]).findIndex((item) => typeof item !== 'string');
+    if (badIdx !== -1) {
+      fields.push({ type: 'invalid', field, description: `${field}[${badIdx}] must be a string (URL)` });
+    }
+  }
+}
+
 // ─── LTX camera/motion shared helpers ────────────────────────────────────────
 
 const LTX_VALID_FPS = [24, 25, 48, 50] as const;
@@ -268,6 +329,14 @@ function validateLtxFast(input: Record<string, unknown>, fields: InvalidField[])
 
   validateEnum('resolution', input, [...LTX_VALID_RESOLUTIONS], false, fields);
   ltxCommonOptionals(input, fields);
+
+  // Optional typed fields
+  validateBoolean('generate_audio', input, fields);
+  validateString('negative_prompt', input, fields);
+  validateInteger('seed', input, fields);
+  // image / last_frame_image are URL strings
+  validateString('image', input, fields);
+  validateString('last_frame_image', input, fields);
 
   // last_frame_image requires image (first frame) to be set
   if (input['last_frame_image'] && !input['image']) {
@@ -355,18 +424,17 @@ function validateLtxPro(input: Record<string, unknown>, fields: InvalidField[]):
   }
 
   if (task === 'retake') {
+    validateString('video', input, fields);
     if (!input['video']) {
       fields.push({ type: 'required', field: 'video', description: 'video is required for task: retake' });
     }
     validateEnum('retake_mode', input, ['replace_audio', 'replace_video', 'replace_audio_and_video'], false, fields);
-    // retake_duration must be >= 2 when provided
-    const retakeDuration = input['retake_duration'];
-    if (retakeDuration !== undefined && (typeof retakeDuration !== 'number' || retakeDuration < 2)) {
-      fields.push({ type: 'invalid', field: 'retake_duration', description: 'retake_duration must be at least 2 seconds' });
-    }
+    validateInteger('retake_duration', input, fields, { min: 2 });
+    validateInteger('retake_start_time', input, fields, { min: 0 });
   }
 
   if (task === 'extend') {
+    validateString('video', input, fields);
     if (!input['video']) {
       fields.push({ type: 'required', field: 'video', description: 'video is required for task: extend' });
     }
@@ -374,6 +442,14 @@ function validateLtxPro(input: Record<string, unknown>, fields: InvalidField[]):
     // extend duration = seconds to add (1–20), NOT a clip duration
     extendDuration(input, fields);
   }
+
+  // Optional typed fields present across all tasks
+  validateBoolean('generate_audio', input, fields);
+  validateString('negative_prompt', input, fields);
+  validateInteger('seed', input, fields);
+  validateString('image', input, fields);
+  validateString('last_frame_image', input, fields);
+  validateString('audio', input, fields);
 }
 
 /**
@@ -390,10 +466,15 @@ function validateLtxPro(input: Record<string, unknown>, fields: InvalidField[]):
  */
 function validateVeo2(input: Record<string, unknown>, fields: InvalidField[]): void {
   requireField('prompt', input, fields);
+  validateString('prompt', input, fields);
 
   rangeDuration(input, 5, 8, fields);
 
   validateEnum('aspect_ratio', input, ['16:9', '9:16'], false, fields);
+
+  validateString('image', input, fields);
+  validateBoolean('enhance_prompt', input, fields);
+  validateInteger('seed', input, fields);
 
   // Catch the old wrong field name (our own past bug) before it hits the API
   if (input['image_url'] !== undefined && input['image'] === undefined) {
@@ -439,17 +520,17 @@ function validateSeedance(input: Record<string, unknown>, fields: InvalidField[]
   validateEnum('aspect_ratio', input, [...SEEDANCE_VALID_RATIOS], false, fields);
   validateEnum('resolution', input, ['480p', '720p'], false, fields);
 
-  // reference_images: max 9
-  const refImgs = input['reference_images'];
-  if (Array.isArray(refImgs) && refImgs.length > 9) {
-    fields.push({ type: 'invalid', field: 'reference_images', description: 'reference_images accepts at most 9 items' });
-  }
+  // reference_images: array of URL strings, max 9
+  validateArray('reference_images', input, fields, { maxLength: 9, itemType: 'string' });
+  // reference_videos: array of URL strings, max 3
+  validateArray('reference_videos', input, fields, { maxLength: 3, itemType: 'string' });
 
-  // reference_videos: max 3, total duration ≤ 15s (cannot validate duration here)
-  const refVids = input['reference_videos'];
-  if (Array.isArray(refVids) && refVids.length > 3) {
-    fields.push({ type: 'invalid', field: 'reference_videos', description: 'reference_videos accepts at most 3 items' });
-  }
+  // Optional typed fields
+  validateString('image', input, fields);
+  validateString('last_frame', input, fields);
+  validateString('audio', input, fields);
+  validateBoolean('generate_audio', input, fields);
+  validateInteger('seed', input, fields);
 }
 
 /**
@@ -471,12 +552,18 @@ const WAN_T2V_VALID_RATIOS = ['16:9', '9:16', '1:1', '4:3', '3:4'] as const;
 
 function validateWanT2V(input: Record<string, unknown>, fields: InvalidField[]): void {
   requireField('prompt', input, fields);
+  validateString('prompt', input, fields);
 
   rangeDuration(input, 2, 15, fields);
 
   validateEnum('aspect_ratio', input, [...WAN_T2V_VALID_RATIOS], false, fields);
-
   validateEnum('resolution', input, ['720p', '1080p'], false, fields);
+
+  // Optional typed fields
+  validateString('negative_prompt', input, fields);
+  validateString('audio', input, fields);
+  validateBoolean('enable_prompt_expansion', input, fields);
+  validateInteger('seed', input, fields);
 
   // Text-only model — reject image-style inputs early so the error is clear
   for (const badField of ['image', 'image_url', 'first_frame', 'first_clip']) {
@@ -505,16 +592,31 @@ function validateWanT2V(input: Record<string, unknown>, fields: InvalidField[]):
  *   enable_prompt_expansion (optional): boolean
  *   seed (optional): integer
  */
+// Wan I2V supports the same aspect ratios as T2V
+const WAN_I2V_VALID_RATIOS = ['16:9', '9:16', '1:1', '4:3', '3:4'] as const;
+
 function validateWanI2V(input: Record<string, unknown>, fields: InvalidField[]): void {
   requireField('prompt', input, fields);
+  validateString('prompt', input, fields);
 
   rangeDuration(input, 2, 15, fields);
 
+  validateEnum('aspect_ratio', input, [...WAN_I2V_VALID_RATIOS], false, fields);
   validateEnum('resolution', input, ['720p', '1080p'], false, fields);
 
-  // first_frame and first_clip are mutually exclusive
+  // Optional typed fields
+  validateString('negative_prompt', input, fields);
+  validateString('audio', input, fields);
+  validateBoolean('enable_prompt_expansion', input, fields);
+  validateInteger('seed', input, fields);
+
+  // first_frame and first_clip are mutually exclusive; one is required
   const hasFirstFrame = !!input['first_frame'];
   const hasFirstClip = !!input['first_clip'];
+
+  validateString('first_frame', input, fields);
+  validateString('first_clip', input, fields);
+  validateString('last_frame', input, fields);
 
   if (hasFirstFrame && hasFirstClip) {
     fields.push({

@@ -191,11 +191,17 @@ export const VIDEO_MODEL_CONFIGS: Record<VideoModelId, VideoModelConfig> = {
   },
   'lightricks/ltx-2.3-pro': {
     slug: 'lightricks/ltx-2.3-pro',
+    // Unlike LTX-Fast (which infers mode from the image), LTX-Pro has an explicit
+    // `task` that defaults to `text_to_video`. Passing only `image` WITHOUT
+    // task=image_to_video keeps it in text_to_video and the seed frame is ignored —
+    // silently breaking chained continuations. So set the task whenever a reference
+    // frame is present. Verified: replicate.com/lightricks/ltx-2.3-pro (task defaults
+    // to text_to_video; `image` is required for the image_to_video task).
     buildInput: (prompt, aspectRatio, duration, referenceImageUrl) => ({
       prompt,
       aspect_ratio: aspectRatio,
       duration,
-      ...(referenceImageUrl && { image: referenceImageUrl }),
+      ...(referenceImageUrl && { task: 'image_to_video', image: referenceImageUrl }),
     }),
   },
   'bytedance/seedance-2.0': {

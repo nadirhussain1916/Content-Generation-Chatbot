@@ -163,7 +163,15 @@ async function runJob(
       // 32 MiB cap and no full-file buffering; we pipe it straight into R2.
       const file = await sandbox.readFile(outPath, { encoding: 'none' });
       if (!file.success || !file.content) throw new Error(`ffmpeg ${opts.label}: output ${outPath} missing`);
-      await env.ASSETS.put(opts.outKey, file.content, { httpMetadata: { contentType: opts.contentType } });
+      // R2 rejects a raw ReadableStream of unknown length ("Provided readable stream
+      // must have a known length"). We know the byte count, so pump the stream through
+      // a FixedLengthStream to give R2 the length without buffering the whole file.
+      const fixed = new FixedLengthStream(file.size);
+      // Pipe in the background; put() consumes the readable half as it fills.
+      file.content.pipeTo(fixed.writable).catch((err) => {
+        Logger.log('VideoStitchReadbackPipeError', { label: opts.label, sandboxId: opts.sandboxId, error: String(err) });
+      });
+      await env.ASSETS.put(opts.outKey, fixed.readable, { httpMetadata: { contentType: opts.contentType } });
       return { mounted: false, sizeBytes: file.size };
     }
   } finally {

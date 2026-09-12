@@ -3,8 +3,11 @@ import type { CloudflareBindings } from './env';
 import type { ContextVariables } from './types';
 export { GenerationWorkflow } from './workflows/generation';
 export { PublishWorkflow } from './workflows/publish';
-// Required so the Sandbox container Durable Object is discoverable by the runtime.
-export { Sandbox } from '@cloudflare/sandbox';
+// Sandbox: the ffmpeg container Durable Object (must be discoverable by the runtime).
+// ContainerProxy: required for credential-less R2 egress mounts — the SDK reaches it
+// via ctx.exports to intercept the container's outbound writes, so ffmpeg output is
+// streamed straight to R2. Without this export, mountBucket throws InvalidMountConfigError.
+export { Sandbox, ContainerProxy } from '@cloudflare/sandbox';
 import { Logger } from './utils/Logger';
 
 import onboardingRouter from './routes/onboarding';

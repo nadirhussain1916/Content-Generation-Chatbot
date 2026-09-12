@@ -139,7 +139,9 @@ describe('I2V_CAPABLE', () => {
 
 describe('referenceParamFor', () => {
   it('maps each model to its starting-frame input field', () => {
-    expect(referenceParamFor('google/veo-2')).toBe('image_url');
+    // veo-2's Replicate schema uses `image` (there is no `image_url` field) — verified
+    // against https://replicate.com/google/veo-2/api/schema.
+    expect(referenceParamFor('google/veo-2')).toBe('image');
     expect(referenceParamFor('wan-video/wan-2.7-i2v')).toBe('first_frame');
     expect(referenceParamFor('lightricks/ltx-2.3-fast')).toBe('image');
     expect(referenceParamFor('lightricks/ltx-2.3-pro')).toBe('image');
@@ -192,6 +194,22 @@ describe('VIDEO_MODEL_CONFIGS.buildInput', () => {
   it('Wan models pin resolution to 720p', () => {
     expect(VIDEO_MODEL_CONFIGS['wan-video/wan-2.7-t2v'].buildInput('p', '9:16', 5).resolution).toBe('720p');
     expect(VIDEO_MODEL_CONFIGS['wan-video/wan-2.7-i2v'].buildInput('p', '9:16', 5, REF).resolution).toBe('720p');
+  });
+
+  it('LTX-Pro switches to image_to_video only when a reference frame is present', () => {
+    // With a seed frame → must set task=image_to_video, else LTX-Pro stays in its
+    // default text_to_video mode and silently ignores the frame (breaks chaining).
+    const i2v = VIDEO_MODEL_CONFIGS['lightricks/ltx-2.3-pro'].buildInput('p', '16:9', 8, REF);
+    expect(i2v.task).toBe('image_to_video');
+    expect(i2v.image).toBe(REF);
+
+    // Without a seed frame → no task (defaults to text_to_video); don't force i2v.
+    const t2v = VIDEO_MODEL_CONFIGS['lightricks/ltx-2.3-pro'].buildInput('p', '16:9', 8);
+    expect(t2v.task).toBeUndefined();
+
+    // LTX-Fast has NO task field at all — the mock rejects it — so never set one.
+    const fast = VIDEO_MODEL_CONFIGS['lightricks/ltx-2.3-fast'].buildInput('p', '16:9', 8, REF);
+    expect(fast.task).toBeUndefined();
   });
 });
 

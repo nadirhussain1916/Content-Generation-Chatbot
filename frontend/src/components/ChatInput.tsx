@@ -23,6 +23,8 @@ interface ChatInputProps {
   imageAssets?: Asset[];
   /** Placeholder text; overrides the smart contextual default when provided */
   placeholder?: string;
+  /** Pre-fills the composer once on mount (e.g. a suggested prompt the user can edit). */
+  initialValue?: string;
   /** Style variant: 'rounded-xl' (thread) or 'rounded-2xl' (workspace). Default 'rounded-xl'. */
   rounded?: 'xl' | '2xl';
   /** Show ArrowUp icon instead of Send. Default: Send. */
@@ -45,6 +47,7 @@ export default function ChatInput({
   disabled = false,
   imageAssets = [],
   placeholder,
+  initialValue,
   rounded = 'xl',
   arrowSend = false,
   autoFocus = false,
@@ -54,7 +57,7 @@ export default function ChatInput({
   uploading = false,
   uploadFile,
 }: ChatInputProps) {
-  const [value, setValue] = useState('');
+  const [value, setValue] = useState(initialValue ?? '');
   const [attachedRefs, setAttachedRefs] = useState<ImageReference[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
 
