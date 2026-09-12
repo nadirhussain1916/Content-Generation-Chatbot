@@ -437,10 +437,10 @@ function AssetCard({
       {/* Media — fixed square. Content is absolutely positioned so a portrait
           video can never override the aspect ratio and stretch the grid row. */}
       <div
-        onClick={selectable ? onToggleSelect : undefined}
+        onClick={combineMode ? (selectable ? onToggleSelect : undefined) : isReady ? onDetails : undefined}
         className={cn(
           'relative aspect-square w-full overflow-hidden bg-gradient-to-br from-surface-white to-surface-card',
-          selectable && 'cursor-pointer',
+          (selectable || (!combineMode && isReady)) && 'cursor-pointer',
         )}
       >
         {/* Selection indicator (Combine mode) */}
@@ -566,7 +566,7 @@ function AssetCard({
         {/* Hover-reveal download for ready assets */}
         {isReady && blobUrl && !combineMode && (
           <button
-            onClick={() => downloadAsset(asset, blobUrl, false)}
+            onClick={(e) => { e.stopPropagation(); downloadAsset(asset, blobUrl, false); }}
             title='Download'
             className='absolute right-2 top-2 rounded-full bg-black/45 p-1.5 text-white opacity-0 shadow-sm backdrop-blur-sm transition-all hover:bg-black/70 group-hover:opacity-100'
           >
@@ -1042,7 +1042,11 @@ function ContinueModal({ asset, slug, blobUrl, onClose, onStarted }: {
         token ?? undefined,
       );
       if (!res.success || !res.data?.threadId) throw new Error(res.message ?? 'Could not start agent');
-      navigate(`/workspaces/${slug}/threads/${res.data.threadId}`);
+      navigate(`/workspaces/${slug}/threads/${res.data.threadId}`, {
+        state: {
+          draftPrompt: 'Continue this video into a longer clip — keep the same subject, style, and motion, and carry on naturally from where it ends. Add 1–2 new parts.',
+        },
+      });
     } catch (e) {
       setChooseError(e instanceof Error ? e.message : 'Could not start agent');
       setStartingAgent(false);
