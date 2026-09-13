@@ -53,17 +53,16 @@ function buildConcatScript(w: number, h: number): string {
   // Normalize each clip to an intermediate MPEG-TS segment (identical codec params),
   // then join by stream-COPYING those .ts segments into the final MP4.
   //
-  // Why TS + copy (and NOT an MP4 `-c copy` join, nor a second full re-encode):
-  //   • MP4 `-c copy` join → the demuxer carries each segment's edit list / priming,
-  //     so the output moov reports only the FIRST clip's duration and players stop
-  //     there even though every clip's bytes are present (seen in prod: a 4-clip
-  //     stitch produced a full-size file that only played the original's length).
-  //   • Re-encoding the whole join fixes the timeline but encodes everything TWICE
-  //     (normalize + join). On the slow container that ~doubled runtime and blew past
-  //     the 10-min step timeout on longer stitches.
-  //   • TS carries clean continuous per-frame timestamps and no edit lists, so the
-  //     concat demuxer offsets each segment correctly and a stream copy yields one
-  //     continuous MP4 with the correct total duration — with only ONE encode per clip.
+  //   • CRITICAL: every ffmpeg runs with `-nostdin`. This loop reads the clip list via
+  //     `while read < urls.txt`, and ffmpeg reads STDIN by default — so without
+  //     -nostdin the FIRST ffmpeg drains the rest of urls.txt, the loop exits after one
+  //     iteration, and only clip 0 ends up in the output (root cause of "the stitch is
+  //     just the source clip, parts not joined" — confirmed via ffprobe nb_frames).
+  //   • TS + copy join (not an MP4 \`-c copy\`, not a full re-encode): TS carries clean
+  //     continuous per-frame timestamps and no edit lists, so the concat demuxer offsets
+  //     each segment correctly and a stream copy yields one continuous MP4 with the
+  //     correct total duration — with only ONE encode per clip (a full-join re-encode
+  //     doubled runtime and hit the step timeout on longer stitches).
   //   `-bsf:a aac_adtstoasc` converts the AAC bitstream from ADTS (TS) to ASC (MP4).
   return `#!/usr/bin/env bash
 set -euo pipefail
@@ -77,12 +76,12 @@ while IFS= read -r url; do
   norm="norm_\${i}.ts"
   curl -fsSL "$url" -o "$raw"
   if ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 "$raw" | grep -q .; then
-    ffmpeg -y -i "$raw" \
+    ffmpeg -nostdin -y -i "$raw" \
       -vf "${vf}" \
       -c:v libx264 -preset veryfast -crf 18 -c:a aac -ar 48000 -ac 2 \
       -f mpegts "$norm"
   else
-    ffmpeg -y -i "$raw" -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=48000 \
+    ffmpeg -nostdin -y -i "$raw" -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=48000 \
       -vf "${vf}" \
       -map 0:v:0 -map 1:a:0 -shortest \
       -c:v libx264 -preset veryfast -crf 18 -c:a aac -ar 48000 -ac 2 \
@@ -91,7 +90,7 @@ while IFS= read -r url; do
   echo "file '\${norm}'" >> concat.txt
   i=$((i+1))
 done < urls.txt
-ffmpeg -y -f concat -safe 0 -i concat.txt \
+ffmpeg -nostdin -y -f concat -safe 0 -i concat.txt \
   -c copy -bsf:a aac_adtstoasc -movflags +faststart _out.mp4
 cp _out.mp4 "$OUT"
 `;
@@ -103,7 +102,7 @@ set -euo pipefail
 cd /work
 OUT="$1"
 curl -fsSL "$(cat src_url.txt)" -o src.mp4
-ffmpeg -y -sseof -1 -i src.mp4 -update 1 -frames:v 1 -q:v 2 _last.png
+ffmpeg -nostdin -y -sseof -1 -i src.mp4 -update 1 -frames:v 1 -q:v 2 _last.png
 cp _last.png "$OUT"
 `;
 

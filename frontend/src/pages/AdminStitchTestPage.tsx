@@ -11,8 +11,8 @@ import { cn } from '../lib/utils';
 // Two reliable public sample clips (landscape → default 16:9) so the harness is
 // one-click. Replace with your own R2/generated clip URLs to test real inputs.
 const SAMPLE_CLIPS = [
-  'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-  'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
+  'https://creator-os-assetes.winwcag.com/5304730a-4f5f-4800-a493-0b59c8bca819/8f28cbac-ca8e-4746-a271-563f05b722c5/3e6f71d5-b8d7-4ab2-889e-cf170764090f.mp4',
+  'https://creator-os-assetes.winwcag.com/5304730a-4f5f-4800-a493-0b59c8bca819/c62186bf-5805-40a7-b065-dff7c1b5179f/fc2b170b-f510-4214-b651-920649846f42.mp4',
 ].join('\n');
 
 type Op = 'concat' | 'frame';

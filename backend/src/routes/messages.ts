@@ -7,6 +7,7 @@ import {
   getAsset,
 } from '../db/queries';
 import { runAgent, runAgentStreaming, type AgentResult, type RunAgentParams } from '../services/openai';
+import { listGenerationsForAgent, getGenerationStatusForAgent } from '../services/agentQueries';
 import { getContinuationFrameDescription } from '../services/continuation';
 import { withPublicUrl } from '../services/r2';
 import { calcTextCost } from '../services/costs';
@@ -184,6 +185,18 @@ async function prepareAgentRun(
           if (!u?.public_url) return null;
           return { publicUrl: u.public_url, name: u.name };
         } catch (err) { Logger.log('ResolveUploadError', { uploadId, workspaceId: workspace.id }, err); return null; }
+      },
+      // Read-only generation status for the agent's DB tools. Workspace/thread are bound
+      // HERE from server state — the model only supplies filters, never the scope ids.
+      listGenerations: async (opts) => {
+        try {
+          return await listGenerationsForAgent(c.env.DB, { workspaceId: workspace.id, threadId }, opts);
+        } catch (err) { Logger.log('ListGenerationsError', { workspaceId: workspace.id, threadId }, err); return []; }
+      },
+      getGenerationStatus: async (assetId) => {
+        try {
+          return await getGenerationStatusForAgent(c.env.DB, { workspaceId: workspace.id }, assetId);
+        } catch (err) { Logger.log('GetGenerationStatusError', { workspaceId: workspace.id, assetId }, err); return null; }
       },
     };
 

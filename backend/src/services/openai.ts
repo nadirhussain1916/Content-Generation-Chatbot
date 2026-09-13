@@ -5,6 +5,8 @@ import { z } from 'zod';
 import { AGENT_SYSTEM_PROMPT, type WorkspaceBrand } from './prompts';
 import type { ImagePostPackage, VideoPostPackage } from '../types';
 import { IMAGE_MODELS, GENERATION_MODES, VIDEO_MODELS, STITCH_MODES, STITCH_MAX_CHUNKS } from './generationConfig';
+import type { AgentGenerationSummary, AgentGenerationDetail, ListGenerationsOptions } from './agentQueries';
+import { lookupHelp, HELP_TOPIC_IDS } from './systemKnowledge';
 import { Logger } from '../utils/Logger';
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
@@ -162,6 +164,10 @@ export type RunAgentParams = {
   saveVisionDescription: (uploadId: string, description: string) => Promise<void>;
   /** Resolve any upload ID the agent finds in the conversation (e.g. POST_PACKAGE.referenceUploadIds) */
   resolveUpload: (uploadId: string) => Promise<{ publicUrl: string; name: string } | null>;
+  /** Read-only DB views for the agent's status tools. Scoped to the current workspace/thread
+   *  by the implementation in messages.ts — the model never supplies the workspace/thread id. */
+  listGenerations: (opts: ListGenerationsOptions) => Promise<AgentGenerationSummary[]>;
+  getGenerationStatus: (assetId: string) => Promise<AgentGenerationDetail | null>;
 };
 
 /** A single live progress event describing what the agent is currently doing. */
@@ -249,6 +255,69 @@ function buildAgentGenerationConfig(params: RunAgentParams) {
             Logger.log('AnalyzeImageFailed', { uploadId }, err);
             return `Failed to analyze image ${uploadId} — vision API error.`;
           }
+        },
+      }),
+
+      get_system_help: tool({
+        description:
+          'Look up authoritative details about how CreatorOS works — features, limits, and best practices ' +
+          '(image/video generation, models & durations, long videos, continue/combine, characters, brand ' +
+          'context, publishing, the Generations gallery). Use when the user asks "how do I…", "can it…", ' +
+          '"what models/lengths are supported", or you need exact product facts. Read-only, no API cost. ' +
+          'NON-TERMINAL: call before a terminal tool, then answer with chat_reply in your own words. ' +
+          'Only covers end-user capabilities.',
+        inputSchema: z.object({
+          topic: z.enum(HELP_TOPIC_IDS).optional().describe(
+            'The specific help topic to open. Pick the closest one to the user\'s question; omit and use `query` if none ' +
+            'clearly fits. Topics: overview (what CreatorOS does), drafts (creating/refining posts), text-mode (get ' +
+            'scripts/ideas as text), chat-models (GPT-4o etc. writing model), image-generation, references (edit vs ' +
+            'inspire, start frames), video-generation (models, durations, costs), long-video (beyond one clip / ' +
+            'stitching), ltx-extend (LTX Pro native ~70s extend), continue-video (extend an existing clip), combine-clips ' +
+            '(merge existing clips), characters (locked character), brand-context (voice/audience/defaults), costs ' +
+            '(pricing & saving money), publishing (Instagram/TikTok), generations (gallery & status), troubleshooting ' +
+            '(failed generations & retry).'
+          ),
+          query: z.string().optional().describe('Free-text question to search the knowledge base when no `topic` clearly fits.'),
+        }),
+        execute: async ({ topic, query }) => {
+          Logger.log('ToolCall:get_system_help', { topic, query });
+          return lookupHelp(topic, query);
+        },
+      }),
+
+      list_generations: tool({
+        description:
+          "List the user's recent image/video generations in this workspace with their status " +
+          '(ready, generating, failed). Use to answer "is my video ready?", "what have I made ' +
+          'recently?", "did anything fail?". Read-only. NON-TERMINAL: call before a terminal tool, ' +
+          'then answer the user with chat_reply. Never call after a terminal tool.',
+        inputSchema: z.object({
+          status: z.enum(['ready', 'generating', 'failed', 'all']).optional().describe('Filter by status. Default all.'),
+          type: z.enum(['image', 'video']).optional().describe('Filter by media type.'),
+          scope: z.enum(['thread', 'workspace']).optional().describe(
+            '"thread" = only this chat\'s generations (default when in a thread); "workspace" = all generations in the workspace.'
+          ),
+          limit: z.number().int().min(1).max(25).optional().describe('Max items to return (default 10, cap 25).'),
+        }),
+        execute: async (input) => {
+          Logger.log('ToolCall:list_generations', input);
+          return params.listGenerations(input);
+        },
+      }),
+
+      get_generation_status: tool({
+        description:
+          'Get the detailed status of ONE generation by its id, including per-part progress for long / ' +
+          'continued videos (each Part, Seed frame, and Stitch step) and any error message. Use for ' +
+          '"why did it fail?", "how many parts are done?", "what stage is it at?". Read-only. NON-TERMINAL: ' +
+          'call before a terminal tool, then answer with chat_reply.',
+        inputSchema: z.object({
+          assetId: z.string().describe('The generation/asset id to inspect (from list_generations or the conversation).'),
+        }),
+        execute: async ({ assetId }) => {
+          Logger.log('ToolCall:get_generation_status', { assetId });
+          const detail = await params.getGenerationStatus(assetId);
+          return detail ?? `No generation found with id "${assetId}" in this workspace.`;
         },
       }),
 

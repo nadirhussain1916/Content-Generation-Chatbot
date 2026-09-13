@@ -120,12 +120,19 @@ describe('concatClips — mounted (direct-to-R2)', () => {
     expect(script).toContain('scale=1920:1080');      // 16:9 target resolution
 
     // Regression: normalize to MPEG-TS and stream-copy the join. This yields the correct
-    // total duration (an MP4 `-c copy` join truncated playback to the first clip) with
-    // only ONE encode per clip (a full re-encode of the join doubled runtime and hit the
-    // step timeout on longer stitches).
+    // total duration with only ONE encode per clip (a full re-encode of the join doubled
+    // runtime and hit the step timeout on longer stitches).
     expect(script).toContain('-f mpegts');            // segments normalized to TS
     expect(script).toContain('norm_${i}.ts');         // .ts segments, not .mp4
     expect(script).toContain('aac_adtstoasc');        // AAC ADTS→ASC bitstream fix on copy
+
+    // Regression (THE real bug): the loop reads the clip list from stdin (`< urls.txt`),
+    // and ffmpeg reads stdin by default — so without `-nostdin` the first ffmpeg drains
+    // urls.txt, the loop runs once, and only the first clip lands in the output. Every
+    // ffmpeg in the script MUST pass -nostdin.
+    for (const call of script.split('\n').filter((l) => /(^|\s)ffmpeg\s/.test(l))) {
+      expect(call, `ffmpeg call missing -nostdin: ${call.trim()}`).toContain('-nostdin');
+    }
   });
 
   it('uses portrait dimensions for 9:16', async () => {
