@@ -5,7 +5,9 @@
     "dev": "wrangler types; wrangler dev --env development",
     "start": "wrangler dev --env development",
     "dev:remote": "wrangler dev --remote --env development",
-    "deploy": "wrangler deploy --minify",
+    "wait:workflows": "node deploy/wait-for-workflows.mjs",
+    "deploy": "node deploy/wait-for-workflows.mjs && wrangler deploy --minify",
+    "deploy:force": "FORCE_DEPLOY=1 wrangler deploy --minify",
     "cf-typegen": "wrangler types --env-interface CloudflareBindings",
     "update-schema": "bash schema/dump-prod-schema.sh"
   },
