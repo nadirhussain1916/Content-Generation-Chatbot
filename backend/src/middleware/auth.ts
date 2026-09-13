@@ -43,7 +43,8 @@ export async function signImpersonationToken(
   payload: Omit<ImpersonationPayload, 'iat' | 'exp'>
 ): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
-  const fullPayload: ImpersonationPayload = { ...payload, iat: now, exp: now + 3600 };
+  const IMPERSONATION_TTL_SECONDS = 3 * 24 * 60 * 60; // 3 days
+  const fullPayload: ImpersonationPayload = { ...payload, iat: now, exp: now + IMPERSONATION_TTL_SECONDS };
   const headerB64 = base64UrlEncode(new TextEncoder().encode(JSON.stringify({ alg: 'HS256', typ: 'JWT' })));
   const payloadB64 = base64UrlEncode(new TextEncoder().encode(JSON.stringify(fullPayload)));
   const data = new TextEncoder().encode(`${headerB64}.${payloadB64}`);
