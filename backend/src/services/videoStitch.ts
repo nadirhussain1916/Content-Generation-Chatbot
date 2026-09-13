@@ -24,6 +24,9 @@ import { Logger } from '../utils/Logger';
 const R2_BINDING = 'ASSETS';
 /** Mount point inside the container for the ASSETS bucket. */
 const R2_MOUNT = '/r2';
+/** Ceiling for a single ffmpeg exec inside the container (ms). Sits just under the
+ *  workflow's stitch step timeout so a real hang fails cleanly here first. */
+const EXEC_TIMEOUT_MS = 18 * 60 * 1000;
 
 type Dimensions = { w: number; h: number };
 
@@ -47,6 +50,21 @@ function buildConcatScript(w: number, h: number): string {
   const vf =
     `scale=${w}:${h}:force_original_aspect_ratio=decrease,` +
     `pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p`;
+  // Normalize each clip to an intermediate MPEG-TS segment (identical codec params),
+  // then join by stream-COPYING those .ts segments into the final MP4.
+  //
+  // Why TS + copy (and NOT an MP4 `-c copy` join, nor a second full re-encode):
+  //   • MP4 `-c copy` join → the demuxer carries each segment's edit list / priming,
+  //     so the output moov reports only the FIRST clip's duration and players stop
+  //     there even though every clip's bytes are present (seen in prod: a 4-clip
+  //     stitch produced a full-size file that only played the original's length).
+  //   • Re-encoding the whole join fixes the timeline but encodes everything TWICE
+  //     (normalize + join). On the slow container that ~doubled runtime and blew past
+  //     the 10-min step timeout on longer stitches.
+  //   • TS carries clean continuous per-frame timestamps and no edit lists, so the
+  //     concat demuxer offsets each segment correctly and a stream copy yields one
+  //     continuous MP4 with the correct total duration — with only ONE encode per clip.
+  //   `-bsf:a aac_adtstoasc` converts the AAC bitstream from ADTS (TS) to ASC (MP4).
   return `#!/usr/bin/env bash
 set -euo pipefail
 cd /work
@@ -56,31 +74,25 @@ i=0
 while IFS= read -r url; do
   [ -z "$url" ] && continue
   raw="raw_\${i}.mp4"
-  norm="norm_\${i}.mp4"
+  norm="norm_\${i}.ts"
   curl -fsSL "$url" -o "$raw"
   if ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 "$raw" | grep -q .; then
     ffmpeg -y -i "$raw" \
       -vf "${vf}" \
-      -c:v libx264 -preset veryfast -crf 18 -c:a aac -ar 48000 -ac 2 "$norm"
+      -c:v libx264 -preset veryfast -crf 18 -c:a aac -ar 48000 -ac 2 \
+      -f mpegts "$norm"
   else
     ffmpeg -y -i "$raw" -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=48000 \
       -vf "${vf}" \
       -map 0:v:0 -map 1:a:0 -shortest \
-      -c:v libx264 -preset veryfast -crf 18 -c:a aac -ar 48000 -ac 2 "$norm"
+      -c:v libx264 -preset veryfast -crf 18 -c:a aac -ar 48000 -ac 2 \
+      -f mpegts "$norm"
   fi
   echo "file '\${norm}'" >> concat.txt
   i=$((i+1))
 done < urls.txt
-# RE-ENCODE the join — never stream-copy it. Concatenating separately-encoded
-# segments with stream copy leaves per-segment edit lists / non-monotonic timestamps,
-# so the output moov reports only the FIRST segment's duration and players stop there
-# (confirmed in prod: a 4-clip stitch produced a full-size file that only played the
-# original's length). The clips are already normalized to identical params, so a single
-# re-encode rebuilds one clean, continuous CFR timeline with the correct total duration.
-ffmpeg -y -fflags +genpts -f concat -safe 0 -i concat.txt \
-  -c:v libx264 -preset veryfast -crf 18 -pix_fmt yuv420p \
-  -c:a aac -ar 48000 -ac 2 \
-  -movflags +faststart _out.mp4
+ffmpeg -y -f concat -safe 0 -i concat.txt \
+  -c copy -bsf:a aac_adtstoasc -movflags +faststart _out.mp4
 cp _out.mp4 "$OUT"
 `;
 }
@@ -146,7 +158,11 @@ async function runJob(
     }
 
     const outPath = mounted ? `${R2_MOUNT}/${base}` : '/work/out.bin';
-    const res = await sandbox.exec(`bash ${opts.scriptPath} ${JSON.stringify(outPath)}`);
+    // Give ffmpeg a generous ceiling: the container encodes well below realtime, so a
+    // multi-clip 1080p stitch can legitimately run several minutes. Keep this under the
+    // workflow step timeout so a genuine hang surfaces as a clean exec error rather than
+    // a WorkflowTimeoutError. (Frame extraction finishes in seconds; the ceiling is harmless.)
+    const res = await sandbox.exec(`bash ${opts.scriptPath} ${JSON.stringify(outPath)}`, { timeout: EXEC_TIMEOUT_MS });
     if (!res.success) {
       Logger.log('VideoStitchFfmpegFailed', { label: opts.label, sandboxId: opts.sandboxId, exitCode: res.exitCode, stderr: res.stderr.slice(-2000) });
       throw new Error(`ffmpeg ${opts.label} failed (exit ${res.exitCode}): ${res.stderr.slice(-500)}`);

@@ -493,7 +493,10 @@ export class GenerationWorkflow extends WorkflowEntrypoint<CloudflareBindings, G
 
         // Stitch every collected clip into the final video (ffmpeg in a container),
         // tracked as a 'concat' job for observability.
-        const r2Key = await step.do('stitch-clips', { retries: { limit: 1, delay: '5 seconds' } }, async () => {
+        // 20-min timeout (default is 10): the container encodes below realtime, so a
+        // multi-clip 1080p stitch can run several minutes; the inner ffmpeg exec is
+        // capped just under this so a genuine hang fails as an exec error, not a timeout.
+        const r2Key = await step.do('stitch-clips', { retries: { limit: 1, delay: '5 seconds' }, timeout: '20 minutes' }, async () => {
           const key = `${p.r2KeyPrefix}.mp4`;
           await upsertGenerationJob(this.env.DB, { id: jid('concat', 0), asset_id: p.assetId, workspace_id: wsId, kind: 'concat', idx: 0, status: 'running', prompt: `concat ${clipUrls.length} clips` });
           await concatClips(this.env, { assetId: p.assetId, clipUrls, outKey: key, aspectRatio: p.aspectRatio });

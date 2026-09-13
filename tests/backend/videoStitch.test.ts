@@ -119,11 +119,13 @@ describe('concatClips — mounted (direct-to-R2)', () => {
     expect(script).toContain('cp _out.mp4 "$OUT"');   // sequential copy onto the mount
     expect(script).toContain('scale=1920:1080');      // 16:9 target resolution
 
-    // Regression: the final join must RE-ENCODE, never `-c copy`. Stream-copying
-    // separately-encoded segments produces a file whose duration reflects only the
-    // first clip (players stop early), even though all clips' bytes are present.
-    expect(script).not.toContain('-c copy');
-    expect(script).toContain('-c:v libx264');
+    // Regression: normalize to MPEG-TS and stream-copy the join. This yields the correct
+    // total duration (an MP4 `-c copy` join truncated playback to the first clip) with
+    // only ONE encode per clip (a full re-encode of the join doubled runtime and hit the
+    // step timeout on longer stitches).
+    expect(script).toContain('-f mpegts');            // segments normalized to TS
+    expect(script).toContain('norm_${i}.ts');         // .ts segments, not .mp4
+    expect(script).toContain('aac_adtstoasc');        // AAC ADTS→ASC bitstream fix on copy
   });
 
   it('uses portrait dimensions for 9:16', async () => {
